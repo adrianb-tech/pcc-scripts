@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version      1.0
-// @updateURL     https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.js
-// @downloadURL   https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.js
+// @version 1.1
+// @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.js
+// @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.js
 // @match        https://*.pointclickcare.com/*
 // @run-at       document-idle
 // @grant        none
@@ -911,6 +911,17 @@
     });
     if (!rows.length) return;
     var W = '5px solid ' + borderColor;
+    // Find the last visible row for the bottom border (detail rows may be hidden)
+    var lastVisible = null;
+    for (var vi = rows.length - 1; vi >= 0; vi--) {
+      var vr = rows[vi];
+      // A row is visible if it has layout (offsetParent) or is not display:none
+      try {
+        var cs = vr.ownerDocument.defaultView.getComputedStyle(vr);
+        if (cs && cs.display !== 'none' && cs.visibility !== 'hidden') { lastVisible = vr; break; }
+      } catch(e){ lastVisible = vr; break; }
+    }
+    if (!lastVisible) lastVisible = rows[rows.length - 1];
     rows.forEach(function(r, idx) {
       var cells = r.cells;
       if (!cells.length) return;
@@ -919,7 +930,7 @@
       if (idx === 0) {
         for (var c = 0; c < cells.length; c++) cells[c].style.setProperty('border-top', W, 'important');
       }
-      if (idx === rows.length - 1) {
+      if (r === lastVisible) {
         for (var c2 = 0; c2 < cells.length; c2++) cells[c2].style.setProperty('border-bottom', W, 'important');
       }
     });
