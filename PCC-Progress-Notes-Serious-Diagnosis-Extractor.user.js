@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Progress Notes - Serious Diagnosis Extractor
-// @version 1.4
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -206,6 +206,7 @@
     var text = items.join(', ');
     out.textContent = text;
     copy.style.display = '';
+    copy.setAttribute('data-fill-value', text);
     copy.onclick = function(){
       copyText(text, copy);
       // Also drop a fill request so the note panel can insert after "Medical Hx".
@@ -226,7 +227,7 @@
     box.innerHTML =
       '<div style="font-weight:bold;color:#1d4ed8;margin-bottom:4px;">Diagnoses from notes ' +
       '<button id="pnDxRun" type="button" style="margin-left:6px;padding:1px 6px;font-size:11px;font-weight:normal;cursor:pointer;">Find diagnoses</button> ' +
-      '<button id="pnDxCopy" type="button" style="margin-left:4px;padding:1px 6px;font-size:11px;font-weight:normal;cursor:pointer;display:none;">Copy</button></div>' +
+      '<button class="pcc-fill-copy" id="pnDxCopy" data-fill-label="Diagnoses" type="button" style="margin-left:4px;padding:1px 6px;font-size:11px;font-weight:normal;cursor:pointer;display:none;">Copy</button></div>' +
       '<div id="pnDxOut"></div>';
     bar.parentNode.insertBefore(box, bar.nextSibling);
     document.getElementById('pnDxRun').onclick = runDx;
