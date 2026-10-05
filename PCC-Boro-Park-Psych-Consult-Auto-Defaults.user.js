@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.11
+// @version 1.12
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -206,6 +206,7 @@
 
     // "Reasons for Assessment" popup:
     // - New Psych Consult (Assessment dropdown = "Psych: Consult") -> Type = Admission
+    // - READMISSION flag present in opener (re-admitted after last psych form) -> Type = Admission
     // - Follow-up / anything else -> Type = Other
     function applyPopupDefaults() {
         if (userTouched) return;
@@ -230,7 +231,19 @@
         }
         if (!typeSel) return;
 
-        var target = isPsychConsult ? 'Admission' : 'Other';
+        // Check for READMISSION flag in the opener (assessments list page)
+        var isReadmission = false;
+        try {
+            var openerDocs = [];
+            if (window.opener) { openerDocs.push(window.opener.document); }
+            try { if (window.opener && window.opener.top) openerDocs.push(window.opener.top.document); } catch(e){}
+            for (var d = 0; d < openerDocs.length && !isReadmission; d++) {
+                var ot = openerDocs[d].body ? (openerDocs[d].body.innerText || '') : '';
+                if (/\bREADMISSION\b/i.test(ot)) isReadmission = true;
+            }
+        } catch(e){}
+
+        var target = (isPsychConsult || isReadmission) ? 'Admission' : 'Other';
         var opts = typeSel.options;
         var re = new RegExp('^' + target, 'i');
         for (var j = 0; j < opts.length; j++) {
