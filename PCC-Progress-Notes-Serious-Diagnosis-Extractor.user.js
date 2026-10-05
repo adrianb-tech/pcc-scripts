@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Progress Notes - Serious Diagnosis Extractor
-// @version 1.1
+// @version 1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -85,6 +85,17 @@
     var EXCLUDE_EXACT = /^(?:constipation|insomnia|advance careplanning|moderate protein-calorie malnutrition|muscle weakness|difficulty in walking|falling|need for assistance with personal care|gw|generalized weakness|history of|hx of|hx|past surgical history|surgical history|psh|reviewed in electronic medical record|reviewed in emr)$/i;
     var ADMIN_JUNK = /^(?:CPT Codes|ICD Codes|Admission|Minimal Depression|Moderate Depression|Severe Depression|Score|Attestation|Time spent|Date of Service|Transition of Care)/i;
     var PROSE = /^(?:the |res\b|resident|patient\b|pt\b|he |she )|\b(?:arrived|accompanied|presents?|presented|reports?|reported|denies|stretcher|ambulance|admitted to|was admitted|hospitalized|was hospitalized|seen (?:at|by))\b/i;
+    // Fragments: start with preposition/conjunction/verb, or are narrative leftovers
+    var FRAGMENT = /^(?:of|with|and|or|is|are|was|were|has|have|had|for|in|on|at|by|to|presence of)\b/i;
+    var NARRATIVE = /\b(?:significant for|status post|s\/p|baseline|goals of care)\b/i;
+
+    // Normalize for dedup: lowercase, strip qualifiers, keep the core concept
+    function normDx(s){
+      return s.toLowerCase()
+        .replace(/\b(?:chronic|acute|bilateral|unilateral|recurrent|severe|mild|moderate)\b/g, '')
+        .replace(/\s*(?:with|s\/p|\/)\s*.*$/, '')  // strip "with X", "s/p X", "/ X" tails
+        .replace(/[^a-z0-9]/g, '');
+    }
 
     var seen = {}, out = [];
     raw.forEach(function(str){
@@ -104,6 +115,10 @@
 
         if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it)) return;
         if (/\d+\.\d+/.test(it)) return;
+        // Reject fragments and narrative leftovers
+        if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
+        // Reject overly long items (real diagnoses are concise; longer = narrative)
+        if (it.split(/\s+/).length > 6 || it.length > 50) return;
 
         // Apply Abbreviation Mappings
         for (var i = 0; i < ABBR.length; i++) {
@@ -112,15 +127,24 @@
         it = it.replace(/\s+/g, ' ').trim();
 
         if (!it || ADMIN_JUNK.test(it) || EXCLUDE_EXACT.test(it)) return;
+        if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
+        if (it.split(/\s+/).length > 6 || it.length > 50) return;
 
-        // Strict Deduplication Check
-        var k = it.toLowerCase().replace(/[^a-z0-9]/g, '');
-        if (seen[k]) return;
-        seen[k] = 1;
+        // Smart Deduplication: normalize and keep the shortest form
+        var k = normDx(it);
+        if (!k) return;
+        if (seen[k]) {
+          // Keep the shorter (cleaner) version
+          var idx = seen[k] - 1;
+          if (it.length < out[idx].length) out[idx] = it;
+          return;
+        }
+        seen[k] = out.length + 1;
         out.push(it);
       });
     });
-    return out;
+    // Cap at 12 most important (ICD lines come first, so they're prioritized)
+    return out.slice(0, 12);
   }
 
   // ===== DOM Helpers =====
