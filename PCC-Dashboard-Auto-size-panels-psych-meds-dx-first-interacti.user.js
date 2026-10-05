@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -686,7 +686,10 @@
       });
 
       if (!pairs.length) return;
-      var entry = '- ' + c.r0.disp + ' ' + pairs.join(' and ') + ' for ' + c.r0.ind;
+      // Detect PRN: "as needed", "prn", "p.r.n.", "as necessary", "when needed", "if needed"
+      var isPrn = /\bas\s+needed\b|\bprn\b|p\.r\.n\.|\bas\s+necessary\b|\bwhen\s+needed\b|\bif\s+needed\b/i.test(c.r0.raw);
+      var freqWithPrn = pairs.join(' and ') + (isPrn ? ' PRN' : '');
+      var entry = '- ' + c.r0.disp + ' ' + freqWithPrn + ' for ' + c.r0.ind;
       if (seen[entry]) return;
       seen[entry] = 1;
       (c.r0.tier === 1 ? last : main).push(entry);
