@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.1
+// @version 1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -157,7 +157,33 @@
         }
     }
 
+    // "Reasons for Assessment" popup (new assessment dialog): default
+    // Type of Assessment to "Other" — the common Boro Park case.
+    // (He changes it manually to Admission for new-admission consults.)
+    function applyPopupDefaults() {
+        if (userTouched) return;
+        if (!isBoroPark()) return;
+        var bodyText = document.body ? document.body.innerText : '';
+        if (!/Reasons for Assessment/i.test(bodyText)) return;
+        if (!/Type of Assessment/i.test(bodyText)) return;
+
+        var selects = document.querySelectorAll('select');
+        for (var i = 0; i < selects.length; i++) {
+            var sel = selects[i];
+            var opts = sel.options;
+            var hasOther = false, otherIdx = -1;
+            for (var j = 0; j < opts.length; j++) {
+                if (/^other/i.test(opts[j].text.trim())) { hasOther = true; otherIdx = j; break; }
+            }
+            if (hasOther && sel.selectedIndex !== otherIdx) {
+                sel.selectedIndex = otherIdx;
+                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+    }
+
     applyDefaultsOnce();
+    applyPopupDefaults();
     var evalDone = false;
     var timer = setInterval(function () {
         applyDefaultsOnce();
