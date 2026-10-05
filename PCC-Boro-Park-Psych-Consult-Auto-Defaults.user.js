@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.3
+// @version 1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -165,9 +165,8 @@
         }
     }
 
-    // "Reasons for Assessment" popup (new assessment dialog): default
-    // Type of Assessment to "Other" — the common Boro Park case.
-    // (He changes it manually to Admission for new-admission consults.)
+    // "Reasons for Assessment" popup (NEW form creator): when the Assessment
+    // dropdown is set to Psych Consult, default Type of Assessment to Admission.
     function applyPopupDefaults() {
         if (userTouched) return;
         if (!isBoroPark()) return;
@@ -176,16 +175,29 @@
         if (!/Type of Assessment/i.test(bodyText)) return;
 
         var selects = document.querySelectorAll('select');
+        var isPsychConsult = false;
+        var typeSel = null;
         for (var i = 0; i < selects.length; i++) {
             var sel = selects[i];
-            var opts = sel.options;
-            var hasOther = false, otherIdx = -1;
-            for (var j = 0; j < opts.length; j++) {
-                if (/^other/i.test(opts[j].text.trim())) { hasOther = true; otherIdx = j; break; }
+            var selText = sel.innerText || sel.textContent || '';
+            // The Assessment dropdown (contains "Psych: Consult" option)
+            if (/Psych:\s*Consult/i.test(selText)) {
+                var cur = sel.options[sel.selectedIndex];
+                if (cur && /Psych:\s*Consult/i.test(cur.text)) isPsychConsult = true;
             }
-            if (hasOther && sel.selectedIndex !== otherIdx) {
-                sel.selectedIndex = otherIdx;
-                sel.dispatchEvent(new Event('change', { bubbles: true }));
+            // The Type of Assessment dropdown (has Admission option)
+            if (/Admission/i.test(selText) && !typeSel) typeSel = sel;
+        }
+        if (!isPsychConsult || !typeSel) return;
+
+        var opts = typeSel.options;
+        for (var j = 0; j < opts.length; j++) {
+            if (/^admission/i.test(opts[j].text.trim())) {
+                if (typeSel.selectedIndex !== j) {
+                    typeSel.selectedIndex = j;
+                    typeSel.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                break;
             }
         }
     }
