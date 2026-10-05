@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.25
+// @version 1.26
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -160,8 +160,15 @@
         }
         // Enforce "either or, never both"
         if (wantFollow) {
-            // Content -> Follow Up only. If both are checked, New loses.
+            // Content -> Follow Up only.
+            // Sequence: uncheck New, uncheck Follow Up, then re-check Follow Up.
+            // The full off-off-on cycle ensures PCC registers the change.
             setCb(cbNew, false);
+            // Force Follow Up through off->on even if already checked
+            if (cbFollow.checked) {
+                cbFollow.checked = false;
+                try { cbFollow.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
+            }
             setCb(cbFollow, true);
         } else {
             // Empty -> New only. If both are checked, Follow Up loses.
