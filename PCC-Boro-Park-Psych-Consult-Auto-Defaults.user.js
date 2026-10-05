@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.26
+// @version 1.27
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -477,8 +477,8 @@
                 txt = txt.replace(/^([ \t]*Family\/Social Hx[ \t]+)xx\b/gim, '$1' + demoStr);
             }
         }
-        // 7. BIMS "15 on xx" -> "15 on 9/10/26"
-        if (snap.bims) {
+        // 7. BIMS — DISABLED 2026-10-05 per Adrian: manual only, never auto-pushed.
+        if (false && snap.bims) {
             // snap.bims might be "15" or "15 on 9/10/26" — extract date if present
             var bimsDate = snap.bims;
             var dm = snap.bims.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
