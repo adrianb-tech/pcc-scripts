@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.14
+// @version 1.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -270,6 +270,8 @@
     try { lastFillTs = parseInt(localStorage.getItem('pccFillAllergiesSeen') || '0', 10); } catch(e){}
     var lastRelTs = 0;
     try { lastRelTs = parseInt(localStorage.getItem('pccFillRelationshipsSeen') || '0', 10); } catch(e){}
+    var lastDxTs = 0;
+    try { lastDxTs = parseInt(localStorage.getItem('pccFillDiagnosesSeen') || '0', 10); } catch(e){}
     function doFillNote(replacer){
         var noteField = findNoteField();
         if (!noteField) return;
@@ -313,6 +315,23 @@
                     return txt.replace(re2, '$1' + rreq.value);
                 });
             } else if (rreq && rreq.ts) { lastRelTs = Math.max(lastRelTs, rreq.ts); }
+        }
+        // Diagnoses -> append after "Medical Hx" line (only if that line is empty)
+        var draw = null;
+        try { draw = localStorage.getItem('pccFillDiagnoses'); } catch(e){}
+        if (draw) {
+            var dreq = null;
+            try { dreq = JSON.parse(draw); } catch(e){}
+            if (dreq && dreq.value && dreq.ts && dreq.ts > lastDxTs && Date.now() - dreq.ts <= 60000) {
+                lastDxTs = dreq.ts;
+                try { localStorage.setItem('pccFillDiagnosesSeen', String(dreq.ts)); } catch(e){}
+                doFillNote(function(txt){
+                    // Match "Medical Hx" line with nothing (or only whitespace) after it
+                    var re3 = /^([ \t]*Medical Hx[ \t]*)$/gim;
+                    if (!re3.test(txt)) return txt;
+                    return txt.replace(re3, '$1 ' + dreq.value);
+                });
+            } else if (dreq && dreq.ts) { lastDxTs = Math.max(lastDxTs, dreq.ts); }
         }
     }
     setInterval(checkFillRequest, 500);
