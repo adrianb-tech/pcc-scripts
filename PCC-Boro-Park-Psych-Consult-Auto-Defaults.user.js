@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.27
+// @version 1.28
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -155,20 +155,17 @@
         var wantFollow = hasContent;
         function setCb(cb, want){
             if (!cb || cb.checked === want) return;
-            cb.checked = want;
-            try { cb.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
+            // Use .click() — toggles AND fires click/input/change so PCC registers it.
+            // (Setting .checked directly + dispatching change wasn't enough.)
+            try { cb.click(); } catch(e){}
         }
         // Enforce "either or, never both"
         if (wantFollow) {
             // Content -> Follow Up only.
             // Sequence: uncheck New, uncheck Follow Up, then re-check Follow Up.
-            // The full off-off-on cycle ensures PCC registers the change.
+            // Using .click() so PCC gets real events.
             setCb(cbNew, false);
-            // Force Follow Up through off->on even if already checked
-            if (cbFollow.checked) {
-                cbFollow.checked = false;
-                try { cbFollow.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
-            }
+            setCb(cbFollow, false);
             setCb(cbFollow, true);
         } else {
             // Empty -> New only. If both are checked, Follow Up loses.
