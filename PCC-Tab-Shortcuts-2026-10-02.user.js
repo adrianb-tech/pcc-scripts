@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.3
+// @version 1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -495,6 +495,44 @@
     }
     return false;
   }
+
+  // ---- G key: push all Copy-button values on this page to the note ----
+  // Finds every .pcc-fill-copy button, clicks them (each drops a fill request
+  // for the note panel). Skips Allergies if NKA. On the form page itself,
+  // the Boro Park script's G handles the snapshot fill instead.
+  document.addEventListener('keydown', function(e){
+    try {
+      if (!e.isTrusted) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      var t = e.target;
+      var tag = (t && t.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+      if (e.key !== 'g' && e.key !== 'G') return;
+      // On the Psych Consult form, the Boro Park script owns G.
+      var bodyT = document.body ? document.body.innerText : '';
+      if (/A\.\s*Evaluation Type/i.test(bodyT)) return;
+      var btns = document.querySelectorAll('.pcc-fill-copy');
+      if (!btns.length) return;
+      e.preventDefault();
+      var n = 0;
+      for (var i = 0; i < btns.length; i++) {
+        var b = btns[i];
+        if (!b || b.disabled || b.offsetParent === null) continue;
+        var label = b.getAttribute('data-fill-label') || '';
+        var val = b.getAttribute('data-fill-value') || '';
+        // Skip Allergies when it's NKA — nothing to push.
+        if (/allerg/i.test(label) && /^\s*(NKA|NKDA|none)\b/i.test(val)) continue;
+        try { b.click(); n++; } catch(err){}
+      }
+      if (n) {
+        var badge = document.createElement('div');
+        badge.textContent = 'Pushed ' + n + ' to note';
+        badge.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1d4ed8;color:#fff;padding:8px 16px;border-radius:8px;font:14px sans-serif;z-index:999999;';
+        document.body.appendChild(badge);
+        setTimeout(function(){ badge.remove(); }, 1500);
+      }
+    } catch(err){}
+  });
 
   // ---- F key: edit the most recent psych note (Boro Park only) ----
   // Boro Park detection: the header facility picker shows the facility name.
