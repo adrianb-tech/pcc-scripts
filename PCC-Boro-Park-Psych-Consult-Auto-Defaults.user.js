@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.22
+// @version 1.23
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -366,9 +366,9 @@
                 lastMedsTs = mreq.ts;
                 try { localStorage.setItem('pccFillPsychMedsSeen', String(mreq.ts)); } catch(e){}
                 doFillNote(function(txt){
-                    var re5 = /^([ \t]*Psych meds[ \t]*\n[ \t]*-[ \t]*)none[ \t]*$/gim;
-                    if (!re5.test(txt)) return txt;
-                    return txt.replace(re5, '$1' + mreq.value);
+                    // Replace the whole "- none" line; med list already has its own "- " prefixes
+                    var re5 = /^([ \t]*Psych meds[ \t]*)\n[ \t]*-[ \t]*none[ \t]*$/gim;
+                    return txt.replace(re5, '$1\n' + mreq.value);
                 });
             } else if (mreq && mreq.ts) { lastMedsTs = Math.max(lastMedsTs, mreq.ts); }
         }
@@ -443,7 +443,7 @@
         }
         // 4. "Psych meds\n- none" -> "Psych meds\n- <meds>"
         if (snap.meds) {
-            txt = txt.replace(/^([ \t]*Psych meds[ \t]*\n[ \t]*-[ \t]*)none[ \t]*$/gim, '$1' + snap.meds);
+            txt = txt.replace(/^([ \t]*Psych meds[ \t]*)\n[ \t]*-[ \t]*none[ \t]*$/gim, '$1\n' + snap.meds);
         }
         // 5. "Allergies NKA" -> "Allergies <value>" (also handled by fill request)
         if (snap.allergies && snap.allergies !== 'NKA') {
