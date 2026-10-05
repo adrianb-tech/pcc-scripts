@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1362,14 +1362,17 @@
           if (headers[h] === 'SCORE') si = h;
           if (/ASSESSMENT DATE/.test(headers[h])) di = h;
         }
-        if (si === -1 || di === -1 || !/bims/i.test(tables[ti].textContent)) continue;
+        if (si === -1 || di === -1 || !/bims|social service assessment/i.test(tables[ti].textContent)) continue;
         var best = null, rows = tables[ti].querySelectorAll('tr');
         for (var r = 1; r < rows.length; r++) {
           if (rows[r].querySelector('tr')) continue;
           var cells = rows[r].querySelectorAll('td');
           if (!cells.length || si >= cells.length || di >= cells.length) continue;
-          if (!/bims/i.test(norm(rows[r].textContent))) continue;
+          if (!/bims|social service assessment/i.test(norm(rows[r].textContent))) continue;
           var score = (cells[si].textContent || '').trim();
+          // Handle "0.0" -> "0" (SSA reports scores with decimal)
+          var sm = score.match(/^(\d{1,2})(?:\.0)?$/);
+          if (sm) score = sm[1];
           var dm = (cells[di].textContent || '').trim().match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
           if (!dm || !/^\d{1,2}$/.test(score)) continue;
           var dt = new Date(+dm[3], +dm[1] - 1, +dm[2]).getTime();
