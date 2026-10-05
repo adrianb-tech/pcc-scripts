@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.31
+// @version 1.32
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -84,9 +84,11 @@
     // Stops if he picks "Other" manually or touches anything.
     var evalPollCount = 0;
     var userChoseEvalType = false;  // set if he clicks New/Follow Up/Other himself
+    var evalDone = false;           // set after 3 polls — then NEVER touch again
     function applyEvalTypeAndFocus() {
-        if (userChoseEvalType) return;  // his manual click always wins
+        if (userChoseEvalType || evalDone) return;
         evalPollCount++;
+        if (evalPollCount > 3) { evalDone = true; return; }
         if (userTouched) return;
         if (isListPage()) return;
         if (!isBoroPark()) return;
@@ -154,8 +156,8 @@
         // If we can't find the note field, do NOTHING — don't assume empty
         // and re-check New. (This was fighting the user.)
         if (!noteField) {
-            // Still repoll in case the field loads late, but don't touch checkboxes
-            if (evalPollCount < 15) setTimeout(applyEvalTypeAndFocus, 1000);
+            if (evalPollCount < 3) setTimeout(applyEvalTypeAndFocus, 1000);
+            else evalDone = true;
             if (evalPollCount === 1) focusNoteField();
             return;
         }
@@ -180,10 +182,11 @@
             }
         }
 
-        // Poll for max 15 seconds, then stop permanently. No more fighting.
-        // (User can click manually after that.)
-        if (evalPollCount < 15 && !userChoseEvalType) {
+        // Run 3 times (0s, 1s, 2s) then STOP FOREVER. No fighting.
+        if (evalPollCount < 3) {
             setTimeout(applyEvalTypeAndFocus, 1000);
+        } else {
+            evalDone = true;
         }
 
         // Focus the note field only on the first pass.
