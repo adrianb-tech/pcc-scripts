@@ -1,5 +1,8 @@
 // ==UserScript==
 // @name         PCC Progress Notes - Serious Diagnosis Extractor
+// @version      1.0
+// @updateURL     https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.js
+// @downloadURL   https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.js
 // @match        https://*.pointclickcare.com/*
 // @run-at       document-idle
 // @grant        none
