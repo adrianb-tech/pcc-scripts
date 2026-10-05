@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.19
+// @version 1.20
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -455,7 +455,20 @@
             txt = txt.replace(/^([ \t]*Allergies[ \t]*:?[ \t]*)(NKA|NKDA|No[ \t]+known[ \t]+(?:drug[ \t]+)?allergies|none)[ \t]*$/gim,
                 function(m, prefix){ return prefix + snap.allergies; });
         }
-        // 6. BIMS "15 on xx" -> "15 on 9/10/26"
+        // 6. "Family/Social Hx xx" -> "Family/Social Hx married, Jewish, white, English"
+        if (snap.demographics) {
+            var d = snap.demographics;
+            var parts = [];
+            if (d.marital) parts.push(d.marital.toLowerCase());
+            if (d.religion) parts.push(d.religion);
+            if (d.race) parts.push(d.race.toLowerCase());
+            if (d.language) parts.push(d.language);
+            if (parts.length) {
+                var demoStr = parts.join(', ');
+                txt = txt.replace(/^([ \t]*Family\/Social Hx[ \t]+)xx\b/gim, '$1' + demoStr);
+            }
+        }
+        // 7. BIMS "15 on xx" -> "15 on 9/10/26"
         if (snap.bims) {
             // snap.bims might be "15" or "15 on 9/10/26" — extract date if present
             var bimsDate = snap.bims;
