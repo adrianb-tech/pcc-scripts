@@ -1,8 +1,8 @@
 // ==UserScript==
-// @version 1.0
+// @version 1.1
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-E-signature-username-hint-test.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-E-signature-username-hint-test.user.js
-// @name         PCC - E-signature username hint (test)
+// @name         PCC - E-signature auto-fill username
 // @match        https://*.pointclickcare.com/*
 // @run-at       document-idle
 // @grant        none
@@ -89,7 +89,17 @@
     pw.parentNode.insertBefore(u, pw);
     tag('login hint: ' + user);
     focusSignWhenFilled(pw);
-    setTimeout(function(){ pw.blur(); pw.focus(); }, 500);   // experiment: may wake Chrome's dropdown so Enter alone works
+
+    // Auto-focus the password field and show which login to pick.
+    // (Browser security prevents scripts from selecting the native
+    // password dropdown, so type the prefix + Enter yourself.)
+    setTimeout(function(){
+      try {
+        pw.focus();
+        var prefix = user.split('.')[0] || user;
+        tag(user + ' — type "' + prefix + '" + Enter');
+      } catch(e){}
+    }, 600);
   }
 
   setTimeout(run, 300);
