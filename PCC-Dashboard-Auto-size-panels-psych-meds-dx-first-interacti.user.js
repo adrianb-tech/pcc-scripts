@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.3
+// @version 1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -723,7 +723,7 @@
   }
 
   function buildMedListHtml(res) {
-    var h = '<div style="font-weight:bold;margin-bottom:3px;color:#1d4ed8;">Psych med list <button id="copyMedListBtn" type="button" style="margin-left:10px;padding:3px 14px;font-size:16px;font-weight:700;cursor:pointer;border:2px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:8px;">Copy</button></div>';
+    var h = '<div style="font-weight:bold;margin-bottom:3px;color:#1d4ed8;">Psych med list <button class="pcc-fill-copy" id="copyMedListBtn" data-fill-label="Psych meds" type="button" style="margin-left:10px;padding:3px 14px;font-size:16px;font-weight:700;cursor:pointer;border:2px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:8px;">Copy</button></div>';
     var lines = res.lines.length ? res.lines : ['- none'];
     h += lines.map(function(l) { return '<div>' + esc(l) + '</div>'; }).join('');
     if (res.review.length) {
@@ -1367,6 +1367,7 @@
     if (copyBtn) copyBtn.onclick = function(e) {
       e.stopPropagation();
       var medText = medRes.lines.join('\n');
+      copyBtn.setAttribute('data-fill-value', medText);
       copyToClipboard(doc, medText, copyBtn);
       // Also drop a fill request so the note panel can replace "- none".
       try {
