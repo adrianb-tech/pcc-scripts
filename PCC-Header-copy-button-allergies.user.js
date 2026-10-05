@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.8
+// @version 1.9
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -198,6 +198,12 @@
       if (label === 'Allergies') {
         try {
           localStorage.setItem('pccFillAllergies', JSON.stringify({ value: text, ts: Date.now() }));
+        } catch(err){}
+      }
+      // For Age/Sex: drop a fill request so the note can replace "HPI xx".
+      if (label === 'Age/Sex') {
+        try {
+          localStorage.setItem('pccFillAgeSex', JSON.stringify({ value: text, ts: Date.now() }));
         } catch(err){}
       }
       var o = b.textContent; b.textContent = 'Copied'; setTimeout(function(){ b.textContent = o; }, 1000);
