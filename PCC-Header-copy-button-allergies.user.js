@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.7
+// @version 1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -186,13 +186,20 @@
     return rows;
   }
 
-  function smallCopyBtn(doc, text){
+  function smallCopyBtn(doc, text, label){
     var b = doc.createElement('button');
     b.type = 'button'; b.textContent = 'Copy';
     b.style.cssText = BTN_BLUE + 'display:inline-block;font-size:14px;padding:4px 12px;margin-left:6px;';
     b.addEventListener('click', function(e){
       e.preventDefault(); e.stopPropagation();
       copyText(text);
+      // For Allergies: also drop a fill request so the note panel can
+      // replace "Allergies NKA" with the real value.
+      if (label === 'Allergies') {
+        try {
+          localStorage.setItem('pccFillAllergies', JSON.stringify({ value: text, ts: Date.now() }));
+        } catch(err){}
+      }
       var o = b.textContent; b.textContent = 'Copied'; setTimeout(function(){ b.textContent = o; }, 1000);
     });
     return b;
@@ -227,7 +234,7 @@
         (bigVal ? 'font-size:20px;font-weight:700;' : '');
       var tdB = doc.createElement('td');
       tdB.style.cssText = 'padding:4px 2px 4px 6px;vertical-align:top;white-space:nowrap;';
-      tdB.appendChild(smallCopyBtn(doc, rows[i].value));
+      tdB.appendChild(smallCopyBtn(doc, rows[i].value, rows[i].label));
       tr.appendChild(tdL); tr.appendChild(tdV); tr.appendChild(tdB);
       tbl.appendChild(tr);
     }
