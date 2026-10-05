@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.18
+// @version 1.19
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -84,10 +84,12 @@
     // Stops if he picks "Other" manually or touches anything.
     var evalPollCount = 0;
     var userChoseEvalType = false;  // set if he clicks New/Follow Up/Other himself
+    var evalDecided = false;        // set once we've made the New/FollowUp call
     function applyEvalTypeAndFocus() {
-        if (userChoseEvalType) return;  // his explicit choice wins, always
+        if (userChoseEvalType || evalDecided) return;
         evalPollCount++;
-        var keepPolling = true;  // keep watching; content may arrive late via paste/ajax
+        // Give PCC up to ~6s to load existing content via AJAX.
+        // After that, decide once and stop — his typing must not flip it.
         if (userTouched) return;
         if (isListPage()) return;
         if (!isBoroPark()) return;
@@ -168,9 +170,13 @@
             changed = setCb(cbFollow, false) || setCb(cbNew, true) || changed;
         }
 
-        // Keep polling so paste/ajax content flips it even after he types.
-        // Stops only when he clicks a checkbox himself.
-        setTimeout(applyEvalTypeAndFocus, 1000);
+        // Decide once: content at open -> Follow Up; empty after 6s -> New.
+        // His typing/pasting after the decision must NOT flip it.
+        if (changed || evalPollCount >= 12) {
+            evalDecided = true;
+        } else {
+            setTimeout(applyEvalTypeAndFocus, 500);
+        }
 
         // Focus the note field only on the first pass.
         if (evalPollCount === 1) focusNoteField();
