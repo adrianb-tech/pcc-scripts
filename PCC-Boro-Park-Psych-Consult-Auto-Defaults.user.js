@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.28
+// @version 1.29
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -140,7 +140,9 @@
         [cbNew, cbFollow, cbOther].forEach(function(cb){
             if (cb && !cb.__tmWatched) {
                 cb.__tmWatched = true;
-                cb.addEventListener('click', function(){ userChoseEvalType = true; }, true);
+                // Only real user clicks stop the auto-switch; our programmatic
+                // .click() calls are untrusted (isTrusted=false) and must not.
+                cb.addEventListener('click', function(e){ if (e.isTrusted) userChoseEvalType = true; }, true);
             }
         });
         // "Other" checked means his explicit choice — stop.
