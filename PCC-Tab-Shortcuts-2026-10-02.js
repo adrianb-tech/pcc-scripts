@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version      1.0
-// @updateURL     https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.js
-// @downloadURL   https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.js
+// @version 1.1
+// @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.js
+// @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.js
 // @namespace    pcc-tab-shortcuts
 // @description  Letter badges + single-key tab jumps (Q/W/E/R yellow top row, V/B green bottom row, A focuses resident search). Context number keys: Profile 1=Admission Record; Forms 1=Psych 2=BIMS 3=All; Prog Notes 1=View All. C copies a chart snapshot (allergies, contact, BIMS, dx, psych meds). S copies "Last, First<TAB>room" for visit sheets (E/W prefix at Crown Heights only). F edits/copies the most recent psych note. 0 toggles everything off/on. Never fires while typing. Nothing runs on its own.
 // @match        https://*.pointclickcare.com/*
