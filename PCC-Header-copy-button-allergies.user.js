@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -273,9 +273,8 @@
     for (var i = 0; i < ifr.length; i++){ try { if (ifr[i].contentDocument) docs.push(ifr[i].contentDocument); } catch(e){} }
     docs.forEach(function(d){
       try {
-        // Skip form pages at Bedford/Crown Heights — the table is for the
-        // chart header, not form fields. Boro Park behavior unchanged.
-        if (isFormPage(d) && !isBoroParkSimple(d)) {
+        // The info table belongs in the chart header, never inside a form.
+        if (isFormPage(d)) {
           var old = d.getElementById('copyInfoTable');
           if (old && old.parentNode) old.parentNode.removeChild(old);
           return;
