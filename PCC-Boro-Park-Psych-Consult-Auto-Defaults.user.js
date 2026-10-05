@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.20
+// @version 1.21
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -84,12 +84,9 @@
     // Stops if he picks "Other" manually or touches anything.
     var evalPollCount = 0;
     var userChoseEvalType = false;  // set if he clicks New/Follow Up/Other himself
-    var evalDecided = false;        // set once we've made the New/FollowUp call
     function applyEvalTypeAndFocus() {
-        if (userChoseEvalType || evalDecided) return;
+        if (userChoseEvalType) return;  // his manual click always wins
         evalPollCount++;
-        // Give PCC up to ~6s to load existing content via AJAX.
-        // After that, decide once and stop — his typing must not flip it.
         if (userTouched) return;
         if (isListPage()) return;
         if (!isBoroPark()) return;
@@ -153,30 +150,28 @@
         var noteField = findNoteField();
         var hasContent = noteField && noteField.value.trim().length > 0;
 
-        // Content -> Follow Up checked, New unchecked. Empty -> New checked.
-        // Set explicitly (not click-toggle) so the other one always ends up off.
+        // Simple rule: content -> ONLY Follow Up checked. Empty -> ONLY New checked.
+        // Runs every second; his manual checkbox click stops it permanently.
         var wantFollow = hasContent;
-        var changed = false;
         function setCb(cb, want){
-            if (!cb || cb.checked === want) return false;
+            if (!cb || cb.checked === want) return;
             cb.checked = want;
             try { cb.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
-            try { cb.dispatchEvent(new Event('click', { bubbles: true })); } catch(e){}
-            return true;
         }
         if (wantFollow) {
-            changed = setCb(cbNew, false) || setCb(cbFollow, true) || changed;
+            setCb(cbNew, false);
+            setCb(cbFollow, true);
         } else {
-            changed = setCb(cbFollow, false) || setCb(cbNew, true) || changed;
+            // Only set New if neither New nor Follow Up is already checked
+            // (don't fight him if he's mid-click)
+            if (!cbNew.checked && !cbFollow.checked) {
+                setCb(cbNew, true);
+            }
         }
 
-        // Decide once: content at open -> Follow Up; empty after 6s -> New.
-        // His typing/pasting after the decision must NOT flip it.
-        if (changed || evalPollCount >= 12) {
-            evalDecided = true;
-        } else {
-            setTimeout(applyEvalTypeAndFocus, 500);
-        }
+        // Keep watching — content arriving late (AJAX, paste, F-copy) flips it.
+        // Stops only when he clicks New/Follow Up/Other himself.
+        setTimeout(applyEvalTypeAndFocus, 1000);
 
         // Focus the note field only on the first pass.
         if (evalPollCount === 1) focusNoteField();
