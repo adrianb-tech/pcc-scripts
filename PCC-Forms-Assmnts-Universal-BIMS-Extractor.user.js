@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.0
+// @version 1.1
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Assmnts-Universal-BIMS-Extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Assmnts-Universal-BIMS-Extractor.user.js
 // @name         PCC Forms & Assmnts - Universal BIMS Extractor
@@ -174,7 +174,8 @@
 
         var best = items.filter(function (i) {
             var n = parseFloat(i.score);
-            return i.kind === 'bims' && i.complete && i.score !== undefined && n >= 0 && n <= 15;
+            // Don't require Complete: SSA is often In Progress but BIMS score is valid
+            return i.kind === 'bims' && i.score !== undefined && n >= 0 && n <= 15;
         }).sort(function (a, b) { return b.d - a.d; })[0];
 
         var box = document.getElementById('custom-bims-badge') || makeBadge();
