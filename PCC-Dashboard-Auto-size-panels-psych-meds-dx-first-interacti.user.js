@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.2
+// @version 1.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1364,7 +1364,15 @@
     var medRes = buildMedList(groups);
     setBox(doc, 'medListBox', MED_BOX_CSS, buildMedListHtml(medRes));
     var copyBtn = doc.getElementById('copyMedListBtn');
-    if (copyBtn) copyBtn.onclick = function(e) { e.stopPropagation(); copyToClipboard(doc, medRes.lines.join('\n'), copyBtn); };
+    if (copyBtn) copyBtn.onclick = function(e) {
+      e.stopPropagation();
+      var medText = medRes.lines.join('\n');
+      copyToClipboard(doc, medText, copyBtn);
+      // Also drop a fill request so the note panel can replace "- none".
+      try {
+        localStorage.setItem('pccFillPsychMeds', JSON.stringify({ value: medText, ts: Date.now() }));
+      } catch(err){}
+    };
 
     // Labs + Warnings row: two half-width boxes side by side
     var labsData = buildLabsData(groups);
