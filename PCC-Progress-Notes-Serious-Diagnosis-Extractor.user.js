@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Progress Notes - Serious Diagnosis Extractor
-// @version 1.2
+// @version 1.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -81,6 +81,16 @@
     grab(text, /(?:past\s+)?(?:medical|psychiatric)\s+history\s*(?:of|significant\s+for|includes?|notable\s+for|:|\/psh)\s*([^\n]+?)(?=\.\s+[A-Z]|\n|$)/gi).forEach(push);
     grab(text, /\bPMHx?\b\s*:?\s*(?:significant for\s*)?([^\n]+?)(?=\.\s+[A-Z]|\n|$)/gi).forEach(push);
 
+    // "Additional Diagnosis:" / "Secondary diagnosis:" — capture verbatim
+    // (explicit clinician statements, bypass condensing filters)
+    var verbatim = [];
+    grab(text, /\bAdditional Diagnosis\s*:\s*([^\n]+)/gi).forEach(function(s){ verbatim.push(s.trim()); });
+    grab(text, /\bSecondary diagnosis\s*:\s*([^\n]+)/gi).forEach(function(s){
+      // Avoid double-counting if already inside an Additional Diagnosis capture
+      var dup = verbatim.some(function(v){ return v.toLowerCase().indexOf(s.trim().toLowerCase()) >= 0; });
+      if (!dup) verbatim.push(s.trim());
+    });
+
     // Filters for non-serious symptoms, functional items, and admission fluff
     var EXCLUDE_EXACT = /^(?:constipation|insomnia|advance careplanning|moderate protein-calorie malnutrition|muscle weakness|difficulty in walking|falling|need for assistance with personal care|gw|generalized weakness|history of|hx of|hx|past surgical history|surgical history|psh|reviewed in electronic medical record|reviewed in emr)$/i;
     var ADMIN_JUNK = /^(?:CPT Codes|ICD Codes|Admission|Minimal Depression|Moderate Depression|Severe Depression|Score|Attestation|Time spent|Date of Service|Transition of Care)/i;
@@ -98,6 +108,10 @@
     }
 
     var seen = {}, out = [];
+    // Verbatim diagnoses go first, unfiltered
+    verbatim.forEach(function(v){
+      if (v && !seen['v:'+v.toLowerCase()]) { seen['v:'+v.toLowerCase()] = 1; out.push(v); }
+    });
     raw.forEach(function(str){
       // Clean out tailing narrative phrases like "seen today for PA admission"
       str = str.replace(/\bseen\s+today\s+for\s+[^\n,]*/gi, '');
