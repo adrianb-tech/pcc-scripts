@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Progress Notes - Serious Diagnosis Extractor
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -194,6 +194,73 @@
     }
   }
 
+  // Common diagnosis abbreviations. Full name (lowercase) -> abbreviation.
+  // If already abbreviated (e.g. "HTN"), it's left alone.
+  var DX_ABBR = {
+    'hypertension': 'HTN',
+    'hyperlipidemia': 'HLD',
+    'major depressive disorder': 'MDD',
+    'major depression': 'MDD',
+    'depressive disorder': 'MDD',
+    'diabetes mellitus': 'DM',
+    'diabetes mellitus type 2': 'DM2',
+    'type 2 diabetes mellitus': 'DM2',
+    'type 2 diabetes': 'DM2',
+    'chronic kidney disease': 'CKD',
+    'congestive heart failure': 'CHF',
+    'coronary artery disease': 'CAD',
+    'atrial fibrillation': 'AFib',
+    'gastroesophageal reflux disease': 'GERD',
+    'urinary tract infection': 'UTI',
+    'benign prostatic hyperplasia': 'BPH',
+    'chronic obstructive pulmonary disease': 'COPD',
+    'cerebrovascular accident': 'CVA',
+    'transient ischemic attack': 'TIA',
+    'deep vein thrombosis': 'DVT',
+    'pulmonary embolism': 'PE',
+    'altered mental status': 'AMS',
+    'urinary incontinence': 'UI',
+    'fecal incontinence': 'FI',
+    'chronic pain': 'chronic pain',
+    'low back pain': 'LBP',
+    'dementia': 'dementia',
+    "alzheimer's disease": "Alz",
+    'alzheimers disease': 'Alz',
+    'parkinson disease': "Parkinson's",
+    "parkinson's disease": "Parkinson's",
+    'anxiety disorder': 'anxiety',
+    'generalized anxiety disorder': 'GAD',
+    'bipolar disorder': 'bipolar',
+    'schizophrenia': 'schizophrenia',
+    'schizoaffective disorder': 'schizoaffective',
+    'insomnia': 'insomnia',
+    'hypothyroidism': 'hypothyroid',
+    'hyperthyroidism': 'hyperthyroid',
+    'anemia': 'anemia',
+    'hyponatremia': 'hyponatremia',
+    'hypernatremia': 'hypernatremia',
+    'hypokalemia': 'hypokalemia',
+    'hyperkalemia': 'hyperkalemia',
+    'leukocytosis': 'leukocytosis'
+  };
+
+  function abbrDx(items){
+    var seen = {}, out = [];
+    for (var i = 0; i < items.length; i++) {
+      var raw = (items[i] || '').trim().replace(/\.+$/, '');
+      if (!raw) continue;
+      var low = raw.toLowerCase();
+      var ab = raw;
+      // Already abbreviated? (all caps, short, no spaces) -> leave it
+      if (!/^[A-Z0-9]+$/.test(raw) || raw.length > 6) {
+        if (DX_ABBR[low]) ab = DX_ABBR[low];
+      }
+      var key = ab.toLowerCase();
+      if (!seen[key]) { seen[key] = true; out.push(ab); }
+    }
+    return out;
+  }
+
   function runDx(){
     var out = document.getElementById('pnDxOut');
     var copy = document.getElementById('pnDxCopy');
@@ -203,6 +270,7 @@
       copy.style.display = 'none';
       return;
     }
+    items = abbrDx(items);
     var text = items.join(', ');
     out.textContent = text;
     copy.style.display = '';
