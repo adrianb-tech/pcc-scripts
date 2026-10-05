@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.0
+// @version 1.1
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Profile-Contact-relationships-copy-box.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Profile-Contact-relationships-copy-box.user.js
 // @name         PCC Profile - Contact relationships (copy box)
@@ -208,7 +208,15 @@
     var box = ensureBox(table);
     box.querySelector('#relOut').textContent = out;
     var btn = box.querySelector('#relCopyBtn');
-    btn.onclick = function (e) { e.preventDefault(); e.stopPropagation(); copyText(out, btn); };
+    btn.onclick = function (e) {
+      e.preventDefault(); e.stopPropagation();
+      copyText(out, btn);
+      // Also drop a fill request so the note panel can replace
+      // "Primary contact xx" with the relationships.
+      try {
+        localStorage.setItem('pccFillRelationships', JSON.stringify({ value: out, ts: Date.now() }));
+      } catch(err){}
+    };
   }
 
   setTimeout(run, 800);
