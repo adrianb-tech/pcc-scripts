@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.8
+// @version 1.9
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -820,6 +820,44 @@
     } catch (e4) {}
   }
 
+  // Check if the Reasons for Assessment popup is open
+  function isReasonsPopupOpen(doc) {
+    try {
+      var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null, false);
+      var tn;
+      while (tn = walker.nextNode()) {
+        if ((tn.nodeValue || '').trim() === 'Reasons for Assessment') return true;
+      }
+    } catch(e){}
+    return false;
+  }
+
+  // Add F badge to the Reasons popup Save button
+  function badgeReasonsPopupSave(doc) {
+    try {
+      var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null, false);
+      var tn, titleEl = null;
+      while (tn = walker.nextNode()) {
+        if ((tn.nodeValue || '').trim() === 'Reasons for Assessment') { titleEl = tn.parentElement; break; }
+      }
+      if (!titleEl) return;
+      var container = titleEl;
+      for (var d = 0; d < 8 && container; d++) {
+        var btns = container.querySelectorAll('button, input[type="button"], input[type="submit"]');
+        for (var b = 0; b < btns.length; b++) {
+          var bt = ((btns[b].textContent || '') + ' ' + (btns[b].value || '')).trim();
+          if (/^Save$/i.test(bt) && !btns[b].hasAttribute(BADGE_ATTR)) {
+            btns[b].setAttribute(BADGE_ATTR, 'F');
+            btns[b].setAttribute(TONE_ATTR, 'red');
+            btns[b].setAttribute('title', 'Shortcut: press F');
+          }
+        }
+        container = container.parentElement;
+        if (!container || container === doc.body) break;
+      }
+    } catch(e){}
+  }
+
   // Red "F" badge on the F target's edit link. Removed when not applicable.
   // On the form page, also makes the F target the active (focused) element
   // shortly after load, so F works immediately instead of being swallowed by
@@ -829,6 +867,14 @@
   // link. (The clickable F button covers completed rows with no edit link.)
   function applyFBadge(doc) {
     try {
+      // If Reasons popup is open, F = Save on the popup. Suppress the
+      // copy-link badge and badge the popup Save instead.
+      if (isReasonsPopupOpen(doc)) {
+        var olds = doc.querySelectorAll('[' + BADGE_ATTR + '="F"]'), i;
+        for (i = 0; i < olds.length; i++) { olds[i].removeAttribute(BADGE_ATTR); olds[i].removeAttribute(TONE_ATTR); }
+        badgeReasonsPopupSave(doc);
+        return;
+      }
       var links = [];
       {
         var link = null;
