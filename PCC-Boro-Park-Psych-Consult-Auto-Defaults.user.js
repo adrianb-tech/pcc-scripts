@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.24
+// @version 1.25
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -158,14 +158,20 @@
             cb.checked = want;
             try { cb.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
         }
+        // Enforce "either or, never both"
         if (wantFollow) {
+            // Content -> Follow Up only. If both are checked, New loses.
             setCb(cbNew, false);
             setCb(cbFollow, true);
         } else {
-            // Only set New if neither New nor Follow Up is already checked
-            // (don't fight him if he's mid-click)
-            if (!cbNew.checked && !cbFollow.checked) {
+            // Empty -> New only. If both are checked, Follow Up loses.
+            // (Unless he picked Other — that's handled above.)
+            if (cbNew.checked && cbFollow.checked) {
+                setCb(cbFollow, false);
+            } else if (!cbNew.checked && !cbFollow.checked) {
                 setCb(cbNew, true);
+            } else if (cbFollow.checked && !cbNew.checked) {
+                // Empty but Follow Up checked (he may have clicked it) — leave it
             }
         }
 
