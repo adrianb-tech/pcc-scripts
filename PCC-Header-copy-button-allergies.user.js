@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -42,8 +42,8 @@
       item = item.replace(/(?:Copy|Copied)$/i, '').trim();
       if (!item) continue;
 
-      // Abbreviate penicillin (handles penicillin, penecillin, etc.)
-      item = item.replace(/\bpen[ee]cill?in\b/gi, 'PCN');
+      // Abbreviate penicillin -> PCN
+      item = item.replace(/\bpen[ie]cill?in\b/gi, 'PCN');
 
       formattedList.push(item);
     }
