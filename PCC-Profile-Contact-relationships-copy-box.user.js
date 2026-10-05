@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.1
+// @version 1.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Profile-Contact-relationships-copy-box.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Profile-Contact-relationships-copy-box.user.js
 // @name         PCC Profile - Contact relationships (copy box)
@@ -194,7 +194,7 @@
     box.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
         '<b style="color:#1d4ed8;">Relationships</b>' +
-        '<button type="button" id="relCopyBtn" style="cursor:pointer;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:5px;padding:2px 10px;font:12px sans-serif;">Copy</button>' +
+        '<button type="button" id="relCopyBtn" class="pcc-fill-copy" data-fill-label="Relationships" style="cursor:pointer;border:1px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:5px;padding:2px 10px;font:12px sans-serif;">Copy</button>' +
       '</div>' +
       '<div id="relOut" style="color:#111;white-space:pre-wrap;"></div>';
     table.parentNode.insertBefore(box, table);
