@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.10
+// @version 1.11
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -79,9 +79,14 @@
     }
 
     // Auto-check New/Follow Up based on form content, and focus the note field.
-    // Empty form -> "New"; form with content -> "Follow Up". Only when none
-    // of the three are already checked, and only before the user touches anything.
+    // Empty form -> "New"; form with content -> "Follow Up".
+    // Polls for up to 6s because PCC may load note content via AJAX after page load.
+    // Stops if he picks "Other" manually or touches anything.
+    var evalPollCount = 0;
     function applyEvalTypeAndFocus() {
+        if (userTouched) return;
+        evalPollCount++;
+        var keepPolling = evalPollCount < 12;
         if (userTouched) return;
         if (isListPage()) return;
         if (!isBoroPark()) return;
@@ -145,12 +150,22 @@
         // Content -> Follow Up checked, New unchecked. Empty -> New checked.
         // Actively switch even if PCC defaulted to New.
         var wantFollow = hasContent;
+        var changed = false;
         if (wantFollow && !cbFollow.checked) {
             if (cbNew.checked) cbNew.click();
             cbFollow.click();
+            changed = true;
         } else if (!wantFollow && !cbNew.checked) {
             if (cbFollow.checked) cbFollow.click();
             cbNew.click();
+            changed = true;
+        }
+
+        // If we just changed it, or the state matches, we're done.
+        // Otherwise (e.g. content not loaded yet), keep polling.
+        if (!changed && keepPolling) {
+            setTimeout(applyEvalTypeAndFocus, 500);
+            return;
         }
 
         focusNoteField();
