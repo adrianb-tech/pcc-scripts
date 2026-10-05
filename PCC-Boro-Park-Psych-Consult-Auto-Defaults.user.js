@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.12
+// @version 1.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -231,15 +231,18 @@
         }
         if (!typeSel) return;
 
-        // Check for READMISSION flag in the opener (assessments list page)
+        // Check for the actual READMISSION flag element (id tmReadmitBox, mode alert)
+        // in the opener — not just the word, which can appear elsewhere.
         var isReadmission = false;
         try {
             var openerDocs = [];
             if (window.opener) { openerDocs.push(window.opener.document); }
             try { if (window.opener && window.opener.top) openerDocs.push(window.opener.top.document); } catch(e){}
             for (var d = 0; d < openerDocs.length && !isReadmission; d++) {
-                var ot = openerDocs[d].body ? (openerDocs[d].body.innerText || '') : '';
-                if (/\bREADMISSION\b/i.test(ot)) isReadmission = true;
+                try {
+                    var flagEl = openerDocs[d].getElementById('tmReadmitBox');
+                    if (flagEl && flagEl.__mode === 'alert') isReadmission = true;
+                } catch(e2){}
             }
         } catch(e){}
 
