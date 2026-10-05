@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.17
+// @version 1.18
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -83,10 +83,11 @@
     // Polls for up to 6s because PCC may load note content via AJAX after page load.
     // Stops if he picks "Other" manually or touches anything.
     var evalPollCount = 0;
+    var userChoseEvalType = false;  // set if he clicks New/Follow Up/Other himself
     function applyEvalTypeAndFocus() {
-        if (userTouched) return;
+        if (userChoseEvalType) return;  // his explicit choice wins, always
         evalPollCount++;
-        var keepPolling = evalPollCount < 12;
+        var keepPolling = true;  // keep watching; content may arrive late via paste/ajax
         if (userTouched) return;
         if (isListPage()) return;
         if (!isBoroPark()) return;
@@ -136,12 +137,15 @@
             }
         }
         if (!cbNew || !cbFollow) return;
-
-        // If he explicitly picked "Other", leave it alone.
-        if (cbOther && cbOther.checked) {
-            focusNoteField();
-            return;
-        }
+        // If he clicks any of the three himself, stop auto-switching permanently.
+        [cbNew, cbFollow, cbOther].forEach(function(cb){
+            if (cb && !cb.__tmWatched) {
+                cb.__tmWatched = true;
+                cb.addEventListener('click', function(){ userChoseEvalType = true; }, true);
+            }
+        });
+        // "Other" checked means his explicit choice — stop.
+        if (cbOther && cbOther.checked) { userChoseEvalType = true; return; }
 
         // Find the Psychiatry Consult textarea
         var noteField = findNoteField();
@@ -164,14 +168,12 @@
             changed = setCb(cbFollow, false) || setCb(cbNew, true) || changed;
         }
 
-        // If we just changed it, or the state matches, we're done.
-        // Otherwise (e.g. content not loaded yet), keep polling.
-        if (!changed && keepPolling) {
-            setTimeout(applyEvalTypeAndFocus, 500);
-            return;
-        }
+        // Keep polling so paste/ajax content flips it even after he types.
+        // Stops only when he clicks a checkbox himself.
+        setTimeout(applyEvalTypeAndFocus, 1000);
 
-        focusNoteField();
+        // Focus the note field only on the first pass.
+        if (evalPollCount === 1) focusNoteField();
     }
 
     function findNoteField() {
