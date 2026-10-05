@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.13
+// @version 1.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -181,11 +181,7 @@
     if (asx) rows.push({ label: 'Age/Sex', value: asx });
     var alg = currentAllergies(doc);
     if (alg) rows.push({ label: 'Allergies', value: alg });
-    if (snap && snap.bims && snap.bims.score){
-      var b = String(snap.bims.score) + (/\//.test(String(snap.bims.score)) ? '' : '/15');
-      if (snap.bims.date) b += ' (' + snap.bims.date + ')';
-      rows.push({ label: 'BIMS', value: b });
-    }
+    // BIMS row removed 2026-10-05 per Adrian: manual-only, not in info table.
     if (snap && snap.meds && snap.meds.length){
       rows.push({ label: 'Psych meds', value: snap.meds.join('; ') });
     }
