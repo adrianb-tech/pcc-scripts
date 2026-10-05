@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.13
+// @version 1.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -148,17 +148,20 @@
         var hasContent = noteField && noteField.value.trim().length > 0;
 
         // Content -> Follow Up checked, New unchecked. Empty -> New checked.
-        // Actively switch even if PCC defaulted to New.
+        // Set explicitly (not click-toggle) so the other one always ends up off.
         var wantFollow = hasContent;
         var changed = false;
-        if (wantFollow && !cbFollow.checked) {
-            if (cbNew.checked) cbNew.click();
-            cbFollow.click();
-            changed = true;
-        } else if (!wantFollow && !cbNew.checked) {
-            if (cbFollow.checked) cbFollow.click();
-            cbNew.click();
-            changed = true;
+        function setCb(cb, want){
+            if (!cb || cb.checked === want) return false;
+            cb.checked = want;
+            try { cb.dispatchEvent(new Event('change', { bubbles: true })); } catch(e){}
+            try { cb.dispatchEvent(new Event('click', { bubbles: true })); } catch(e){}
+            return true;
+        }
+        if (wantFollow) {
+            changed = setCb(cbNew, false) || setCb(cbFollow, true) || changed;
+        } else {
+            changed = setCb(cbFollow, false) || setCb(cbNew, true) || changed;
         }
 
         // If we just changed it, or the state matches, we're done.
