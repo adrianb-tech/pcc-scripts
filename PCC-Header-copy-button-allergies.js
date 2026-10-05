@@ -257,13 +257,19 @@
   }
   function isFormPage(doc){
     try {
+      // The forms/assessments LIST has a Type filter dropdown — that's not a
+      // form page, the header box belongs there. Only the actual
+      // Consult-Psychiatry form (no Type filter) should hide it.
+      var sels = doc.querySelectorAll('select');
+      for (var i = 0; i < sels.length; i++) {
+        var st = (sels[i].textContent || '').replace(/\s+/g, ' ');
+        if (/psych/i.test(st) && /bims/i.test(st)) return false;  // Type filter -> list page
+      }
       var t = doc.body ? (doc.body.textContent || '') : '';
       var nt = t.replace(/\s+/g, ' ');
-      // Consult-Psychiatry form toolbar / section markers (Bedford/Crown Heights)
-      if (/\bSIGN ALL\b/i.test(nt)) return true;
-      if (/\bB1\.\s/.test(nt) && /\bB3\.\s/.test(nt) && /Allergies/i.test(nt)) return true;
-      // Boro Park Psych: Consult form markers
-      if (/\bSECTION\b/i.test(nt) && /\bDESCRIPTION\b/i.test(nt)) return true;
+      // Consult-Psychiatry form: the save-button row or B-section markers.
+      if (/save\s*&\s*sign\s*&\s*lock\s*&\s*exit/i.test(nt)) return true;
+      if (/\bB1\.\s/.test(nt) && /\bB3\.\s/.test(nt)) return true;
     } catch(e){}
     return false;
   }
