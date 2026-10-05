@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.15
+// @version 1.16
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -272,6 +272,8 @@
     try { lastRelTs = parseInt(localStorage.getItem('pccFillRelationshipsSeen') || '0', 10); } catch(e){}
     var lastDxTs = 0;
     try { lastDxTs = parseInt(localStorage.getItem('pccFillDiagnosesSeen') || '0', 10); } catch(e){}
+    var lastAgeTs = 0;
+    try { lastAgeTs = parseInt(localStorage.getItem('pccFillAgeSexSeen') || '0', 10); } catch(e){}
     function doFillNote(replacer){
         var noteField = findNoteField();
         if (!noteField) return;
@@ -294,7 +296,7 @@
                 lastFillTs = req.ts;
                 try { localStorage.setItem('pccFillAllergiesSeen', String(req.ts)); } catch(e){}
                 doFillNote(function(txt){
-                    var re = /^(\s*Allergies\s*:?\s*)(NKA|NKDA|No\s+known\s+(?:drug\s+)?allergies|none)\s*$/gim;
+                    var re = /^([ \t]*Allergies[ \t]*:?\s*)(NKA|NKDA|No[ \t]+known[ \t]+(?:drug[ \t]+)?allergies|none)[ \t]*$/gim;
                     if (!re.test(txt)) return txt;
                     return txt.replace(re, function(m, prefix){ return prefix + req.value; });
                 });
@@ -332,6 +334,22 @@
                     return txt.replace(re3, '$1 ' + dreq.value);
                 });
             } else if (dreq && dreq.ts) { lastDxTs = Math.max(lastDxTs, dreq.ts); }
+        }
+        // Age/Sex -> "HPI xx" becomes "HPI 86F"
+        var araw = null;
+        try { araw = localStorage.getItem('pccFillAgeSex'); } catch(e){}
+        if (araw) {
+            var areq = null;
+            try { areq = JSON.parse(araw); } catch(e){}
+            if (areq && areq.value && areq.ts && areq.ts > lastAgeTs && Date.now() - areq.ts <= 60000) {
+                lastAgeTs = areq.ts;
+                try { localStorage.setItem('pccFillAgeSexSeen', String(areq.ts)); } catch(e){}
+                doFillNote(function(txt){
+                    var re4 = /^([ \t]*HPI[ \t]+)xx\b/gim;
+                    if (!re4.test(txt)) return txt;
+                    return txt.replace(re4, '$1' + areq.value);
+                });
+            } else if (areq && areq.ts) { lastAgeTs = Math.max(lastAgeTs, areq.ts); }
         }
     }
     setInterval(checkFillRequest, 500);
@@ -408,7 +426,7 @@
         }
         // 5. "Allergies NKA" -> "Allergies <value>" (also handled by fill request)
         if (snap.allergies && snap.allergies !== 'NKA') {
-            txt = txt.replace(/^([ \t]*Allergies[ \t]*:?\s*)(NKA|NKDA|No\s+known\s+(?:drug\s+)?allergies|none)\s*$/gim,
+            txt = txt.replace(/^([ \t]*Allergies[ \t]*:?[ \t]*)(NKA|NKDA|No[ \t]+known[ \t]+(?:drug[ \t]+)?allergies|none)[ \t]*$/gim,
                 function(m, prefix){ return prefix + snap.allergies; });
         }
         // 6. BIMS "15 on xx" -> "15 on 9/10/26"
