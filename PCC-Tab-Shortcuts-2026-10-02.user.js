@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -882,8 +882,41 @@
   // Psych: Consult form page it clicks the section edit link, or Lock if the
   // form is signed (the sign-then-lock workflow). Toasts the reason when it
   // can't act, so a dead button is diagnosable.
+  // If the "Reasons for Assessment" popup is open (from F-copy), F clicks Save.
+  function clickReasonsPopupSave(doc) {
+    try {
+      // Find the popup by its title
+      var els = doc.querySelectorAll('div, span, td, th, h1, h2, h3, h4');
+      for (var i = 0; i < els.length; i++) {
+        var t = (els[i].textContent || '').trim();
+        if (t === 'Reasons for Assessment') {
+          // Found the popup; now find the Save button within its container
+          var container = els[i];
+          // Walk up to find the modal/dialog container
+          for (var d = 0; d < 6 && container; d++) {
+            var btns = container.querySelectorAll('button, input[type="button"], input[type="submit"]');
+            for (var b = 0; b < btns.length; b++) {
+              var bt = (btns[b].textContent || btns[b].value || '').trim();
+              if (bt === 'Save' && btns[b].offsetParent !== null) {
+                btns[b].click();
+                return true;
+              }
+            }
+            container = container.parentElement;
+          }
+        }
+      }
+    } catch(e){}
+    return false;
+  }
+
   function doFAction() {
     var fWhy = '';
+    // First: if Reasons popup is open, F = Save (not the normal F action)
+    var popupSaved = findInFrames(window.top, function (doc) {
+      return clickReasonsPopupSave(doc) ? true : null;
+    });
+    if (popupSaved) return;
     var fClicked = findInFrames(window.top, function (doc) {
       if (findTypeSelect(doc)) {
         // Assessments list: edit the most recent psych note; if completed,
