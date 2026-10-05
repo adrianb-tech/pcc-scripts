@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Progress Notes - Serious Diagnosis Extractor
-// @version 1.3
+// @version 1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Progress-Notes-Serious-Diagnosis-Extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -206,7 +206,13 @@
     var text = items.join(', ');
     out.textContent = text;
     copy.style.display = '';
-    copy.onclick = function(){ copyText(text, copy); };
+    copy.onclick = function(){
+      copyText(text, copy);
+      // Also drop a fill request so the note panel can insert after "Medical Hx".
+      try {
+        localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: text, ts: Date.now() }));
+      } catch(err){}
+    };
   }
 
   function insertBox(){
