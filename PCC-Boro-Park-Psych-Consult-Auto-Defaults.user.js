@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.7
+// @version 1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -273,4 +273,95 @@
         if (done && evalDone) clearInterval(timer);
     }, 300);
     setTimeout(function () { clearInterval(timer); }, 8000);   // never poll past 8s
+
+    // G key: fill the Psych Consult note from the chart snapshot (Panel A).
+    // Context-aware replacements — no template changes needed.
+    function snapshotResidentId(){
+        try {
+            var txt = document.body ? (document.body.textContent || '') : '';
+            var re = /[A-Za-z][A-Za-z'’.\-]*\s*,\s*[A-Za-z][A-Za-z'’.\- ]*?\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/g;
+            var m, ids = {}, order = [];
+            while ((m = re.exec(txt))) { var id = m[1].toLowerCase(); if (!ids[id]) { ids[id] = 1; order.push(m[1]); } }
+            return order.length === 1 ? order[0] : null;
+        } catch(e){ return null; }
+    }
+
+    function fillNoteFromSnapshot(){
+        var id = snapshotResidentId();
+        if (!id) return;
+        var snap = null;
+        try {
+            var s = localStorage.getItem('pccSnap_' + id.toLowerCase());
+            snap = s ? JSON.parse(s) : null;
+        } catch(e){}
+        // Fallback: try case as-is
+        if (!snap) {
+            try {
+                var s2 = localStorage.getItem('pccSnap_' + id);
+                snap = s2 ? JSON.parse(s2) : null;
+            } catch(e){}
+        }
+        if (!snap) return;
+
+        var noteField = findNoteField();
+        if (!noteField) return;
+        var txt = noteField.value;
+        var orig = txt;
+
+        // 1. "HPI xx" -> "HPI 89M" (age + sex letter)
+        if (snap.age && snap.sex) {
+            var sexL = /^f/i.test(snap.sex) ? 'F' : 'M';
+            txt = txt.replace(/^([ \t]*HPI[ \t]+)xx\b/gim, '$1' + snap.age + sexL);
+        }
+        // 2. Diagnoses after "Medical Hx" line
+        if (snap.dx) {
+            txt = txt.replace(/^([ \t]*Medical Hx[ \t]*)$/gim, function(m, p1){
+                // Don't duplicate if diagnoses already there
+                return p1 + '\n' + snap.dx;
+            });
+        }
+        // 3. "Primary contact xx" -> "Primary contact <name>"
+        if (snap.primaryContact) {
+            txt = txt.replace(/^([ \t]*Primary contact[ \t]+)xx\b/gim, '$1' + snap.primaryContact);
+        }
+        // 4. "Psych meds\n- none" -> "Psych meds\n- <meds>"
+        if (snap.meds) {
+            txt = txt.replace(/^([ \t]*Psych meds[ \t]*\n[ \t]*-[ \t]*)none[ \t]*$/gim, '$1' + snap.meds);
+        }
+        // 5. "Allergies NKA" -> "Allergies <value>" (also handled by fill request)
+        if (snap.allergies && snap.allergies !== 'NKA') {
+            txt = txt.replace(/^([ \t]*Allergies[ \t]*:?\s*)(NKA|NKDA|No\s+known\s+(?:drug\s+)?allergies|none)\s*$/gim,
+                function(m, prefix){ return prefix + snap.allergies; });
+        }
+        // 6. BIMS "15 on xx" -> "15 on 9/10/26"
+        if (snap.bims) {
+            // snap.bims might be "15" or "15 on 9/10/26" — extract date if present
+            var bimsDate = snap.bims;
+            var dm = snap.bims.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+            if (dm) bimsDate = dm[1];
+            else bimsDate = snap.bims;  // use as-is if no date
+            txt = txt.replace(/\b(\d{1,2}[ \t]+on[ \t]+)xx\b/gim, '$1' + bimsDate);
+        }
+
+        if (txt !== orig) {
+            noteField.value = txt;
+            noteField.dispatchEvent(new Event('input', { bubbles: true }));
+            noteField.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+
+    document.addEventListener('keydown', function(e){
+        if (!e.isTrusted) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        var t = e.target;
+        var tag = (t && t.tagName || '').toLowerCase();
+        if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+        if (e.key !== 'g' && e.key !== 'G') return;
+        if (isListPage()) return;
+        if (!isBoroPark()) return;
+        // Only in the Psych Consult form (has the Evaluation Type checkboxes)
+        if (!/A\.\s*Evaluation Type/i.test(document.body ? document.body.innerText : '')) return;
+        e.preventDefault();
+        fillNoteFromSnapshot();
+    }, true);
 })();
