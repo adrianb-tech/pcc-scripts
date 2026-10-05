@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.3
+// @version 1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.js
 // @match        https://*.pointclickcare.com/*
