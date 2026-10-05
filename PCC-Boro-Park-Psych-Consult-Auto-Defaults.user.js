@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.30
+// @version 1.31
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -143,6 +143,7 @@
                 // Only real user clicks stop the auto-switch; our programmatic
                 // .click() calls are untrusted (isTrusted=false) and must not.
                 cb.addEventListener('click', function(e){ if (e.isTrusted) userChoseEvalType = true; }, true);
+                cb.addEventListener('mousedown', function(e){ if (e.isTrusted) userChoseEvalType = true; }, true);
             }
         });
         // "Other" checked means his explicit choice — stop.
@@ -150,7 +151,15 @@
 
         // Find the Psychiatry Consult textarea
         var noteField = findNoteField();
-        var hasContent = noteField && noteField.value.trim().length > 0;
+        // If we can't find the note field, do NOTHING — don't assume empty
+        // and re-check New. (This was fighting the user.)
+        if (!noteField) {
+            // Still repoll in case the field loads late, but don't touch checkboxes
+            if (evalPollCount < 15) setTimeout(applyEvalTypeAndFocus, 1000);
+            if (evalPollCount === 1) focusNoteField();
+            return;
+        }
+        var hasContent = noteField.value.trim().length > 0;
 
         // Simple rule: content -> ONLY Follow Up checked. Empty -> ONLY New checked.
         // Runs every second; his manual checkbox click stops it permanently.
@@ -171,9 +180,11 @@
             }
         }
 
-        // Keep watching — content arriving late (AJAX, paste, F-copy) flips it.
-        // Stops only when he clicks New/Follow Up/Other himself.
-        setTimeout(applyEvalTypeAndFocus, 1000);
+        // Poll for max 15 seconds, then stop permanently. No more fighting.
+        // (User can click manually after that.)
+        if (evalPollCount < 15 && !userChoseEvalType) {
+            setTimeout(applyEvalTypeAndFocus, 1000);
+        }
 
         // Focus the note field only on the first pass.
         if (evalPollCount === 1) focusNoteField();
