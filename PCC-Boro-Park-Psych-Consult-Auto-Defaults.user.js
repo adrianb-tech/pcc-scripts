@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.23
+// @version 1.24
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -450,8 +450,9 @@
             txt = txt.replace(/^([ \t]*Allergies[ \t]*:?[ \t]*)(NKA|NKDA|No[ \t]+known[ \t]+(?:drug[ \t]+)?allergies|none)[ \t]*$/gim,
                 function(m, prefix){ return prefix + snap.allergies; });
         }
-        // 6. "Family/Social Hx xx" -> "Family/Social Hx married, Jewish, white, English"
-        if (snap.demographics) {
+        // 6. "Family/Social Hx xx" -> DISABLED 2026-10-05: was pulling wrong patient's
+        // demographics from stale snapshot. Manual fill only until verified.
+        if (false && snap.demographics) {
             var d = snap.demographics;
             var parts = [];
             if (d.marital) parts.push(d.marital.toLowerCase());
