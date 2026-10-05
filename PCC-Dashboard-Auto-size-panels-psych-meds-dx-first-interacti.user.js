@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.1
+// @version 1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -450,7 +450,7 @@
     ['estazolam|prosom','ProSom'], ['quazepam|doral','Doral'], ['nitrazepam|mogadon','Mogadon'],
     ['lormetazepam|noctamid','Noctamid'], ['loprazolam','loprazolam'], ['flunitrazepam|rohypnol','Rohypnol'],
     ['zolpidem|ambien','Ambien'], ['zaleplon|sonata','Sonata'], ['eszopiclone|lunesta','Lunesta'],
-    ['zopiclone|imovane','Imovane'], ['ramelteon|rozerem','Rozerem'], ['tasimelteon|hetlioz','Hetlioz'],
+    ['zopiclone|imovane','Imovane'], ['ramelteon|rozerem','Ramelteon'], ['tasimelteon|hetlioz','Hetlioz'],
     ['suvorexant|belsomra','Belsomra'], ['lemborexant|dayvigo','Dayvigo'], ['daridorexant|quviviq','Quviviq'],
     ['melatonin','Melatonin','poor sleep'], ['chloral hydrate','chloral hydrate']
   ]);
