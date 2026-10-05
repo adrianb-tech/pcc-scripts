@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.8
+// @version 1.9
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -189,8 +189,9 @@
         }
     }
 
-    // "Reasons for Assessment" popup (NEW form creator): when the Assessment
-    // dropdown is set to Psych Consult, default Type of Assessment to Admission.
+    // "Reasons for Assessment" popup:
+    // - New Psych Consult (Assessment dropdown = "Psych: Consult") -> Type = Admission
+    // - Follow-up / anything else -> Type = Other
     function applyPopupDefaults() {
         if (userTouched) return;
         if (!isBoroPark()) return;
@@ -209,14 +210,16 @@
                 var cur = sel.options[sel.selectedIndex];
                 if (cur && /Psych:\s*Consult/i.test(cur.text)) isPsychConsult = true;
             }
-            // The Type of Assessment dropdown (has Admission option)
-            if (/Admission/i.test(selText) && !typeSel) typeSel = sel;
+            // The Type of Assessment dropdown (has Admission/Other options)
+            if (/Admission/i.test(selText) && /Other/i.test(selText) && !typeSel) typeSel = sel;
         }
-        if (!isPsychConsult || !typeSel) return;
+        if (!typeSel) return;
 
+        var target = isPsychConsult ? 'Admission' : 'Other';
         var opts = typeSel.options;
+        var re = new RegExp('^' + target, 'i');
         for (var j = 0; j < opts.length; j++) {
-            if (/^admission/i.test(opts[j].text.trim())) {
+            if (re.test(opts[j].text.trim())) {
                 if (typeSel.selectedIndex !== j) {
                     typeSel.selectedIndex = j;
                     typeSel.dispatchEvent(new Event('change', { bubbles: true }));
