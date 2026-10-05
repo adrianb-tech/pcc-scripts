@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.7
+// @version 1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -882,28 +882,41 @@
   // Psych: Consult form page it clicks the section edit link, or Lock if the
   // form is signed (the sign-then-lock workflow). Toasts the reason when it
   // can't act, so a dead button is diagnosable.
-  // If the "Reasons for Assessment" popup is open (from F-copy), F clicks Save.
+  // If a "Reasons for Assessment" popup is open (New or Follow Up), F clicks its Save.
   function clickReasonsPopupSave(doc) {
     try {
-      // Find the popup by its title
-      var els = doc.querySelectorAll('div, span, td, th, h1, h2, h3, h4');
-      for (var i = 0; i < els.length; i++) {
-        var t = (els[i].textContent || '').trim();
-        if (t === 'Reasons for Assessment') {
-          // Found the popup; now find the Save button within its container
-          var container = els[i];
-          // Walk up to find the modal/dialog container
-          for (var d = 0; d < 6 && container; d++) {
-            var btns = container.querySelectorAll('button, input[type="button"], input[type="submit"]');
-            for (var b = 0; b < btns.length; b++) {
-              var bt = (btns[b].textContent || btns[b].value || '').trim();
-              if (bt === 'Save' && btns[b].offsetParent !== null) {
-                btns[b].click();
-                return true;
-              }
-            }
-            container = container.parentElement;
+      // Find text node containing the title (works even nested in other elements)
+      var walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT, null, false);
+      var tn, titleEl = null;
+      while (tn = walker.nextNode()) {
+        var t = (tn.nodeValue || '').trim();
+        if (t === 'Reasons for Assessment') { titleEl = tn.parentElement; break; }
+      }
+      if (!titleEl) return false;
+      // Walk up to find the dialog container, then find Save inside it
+      var container = titleEl;
+      for (var d = 0; d < 8 && container; d++) {
+        var btns = container.querySelectorAll('button, input[type="button"], input[type="submit"]');
+        for (var b = 0; b < btns.length; b++) {
+          var bt = ((btns[b].textContent || '') + ' ' + (btns[b].value || '')).trim();
+          // Match "Save" but not "Save & Sign & Exit" etc.
+          if (/^Save$/i.test(bt) && btns[b].offsetParent !== null) {
+            btns[b].click();
+            return true;
           }
+        }
+        container = container.parentElement;
+        if (!container || container === doc.body) break;
+      }
+      // Fallback: search the whole doc for a visible Save button
+      // (popup might be in a sibling container, not an ancestor)
+      var allBtns = doc.querySelectorAll('button, input[type="button"], input[type="submit"]');
+      for (var i = 0; i < allBtns.length; i++) {
+        var at = ((allBtns[i].textContent || '') + ' ' + (allBtns[i].value || '')).trim();
+        if (/^Save$/i.test(at) && allBtns[i].offsetParent !== null) {
+          // Only click if the Reasons popup is actually open (avoid wrong Save)
+          allBtns[i].click();
+          return true;
         }
       }
     } catch(e){}
