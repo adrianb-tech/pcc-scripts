@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.4
+// @version 1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -86,25 +86,49 @@
         if (isListPage()) return;
         if (!isBoroPark()) return;
 
-        // Find the three Evaluation Type checkboxes by their labels
-        var labels = document.querySelectorAll('label');
+        // Find the three Evaluation Type checkboxes: locate the "1. New" / "2. Follow Up"
+        // / "3. Other" text nodes, then take the nearest checkbox before each.
         var cbNew = null, cbFollow = null, cbOther = null;
-        // Also try inputs with adjacent text
-        var inputs = document.querySelectorAll('input[type="checkbox"]');
-        for (var i = 0; i < inputs.length; i++) {
-            var inp = inputs[i];
-            var txt = '';
-            // Check associated label, parent text, or following sibling text
-            if (inp.id) {
-                var lbl = document.querySelector('label[for="' + inp.id + '"]');
-                if (lbl) txt = lbl.textContent;
+        function checkboxBefore(node) {
+            // Walk backwards in document order looking for a checkbox
+            var els = document.querySelectorAll('input[type="checkbox"]');
+            var best = null;
+            for (var k = 0; k < els.length; k++) {
+                if (els[k].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING) {
+                    // els[k] is before node; keep the closest one
+                    best = els[k];
+                } else {
+                    break;
+                }
             }
-            if (!txt && inp.parentElement) txt = inp.parentElement.textContent;
-            if (!txt && inp.nextSibling) txt = inp.nextSibling.textContent || '';
-            txt = (txt || '').replace(/\s+/g, ' ').trim();
-            if (/^1\.\s*New$/i.test(txt)) cbNew = inp;
-            else if (/^2\.\s*Follow\s*Up$/i.test(txt)) cbFollow = inp;
-            else if (/^3\.\s*Other$/i.test(txt)) cbOther = inp;
+            return best;
+        }
+        // Also try: checkbox whose parent row/cell text contains the label
+        var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+        var tn;
+        while (tn = walker.nextNode()) {
+            var t = (tn.nodeValue || '').replace(/\s+/g, ' ').trim();
+            if (/^1\.\s*New$/i.test(t) && !cbNew) {
+                cbNew = checkboxBefore(tn);
+            } else if (/^2\.\s*Follow\s*Up$/i.test(t) && !cbFollow) {
+                cbFollow = checkboxBefore(tn);
+            } else if (/^3\.\s*Other$/i.test(t) && !cbOther) {
+                cbOther = checkboxBefore(tn);
+            }
+        }
+        // Fallback: check parent containers of each checkbox for label text
+        if (!cbNew || !cbFollow) {
+            var inputs = document.querySelectorAll('input[type="checkbox"]');
+            for (var i = 0; i < inputs.length; i++) {
+                var p = inputs[i].parentElement;
+                for (var depth = 0; depth < 4 && p; depth++) {
+                    var pt = (p.textContent || '').replace(/\s+/g, ' ').trim();
+                    if (!cbNew && /\b1\.\s*New\b/i.test(pt) && !/\b2\.\s*Follow/i.test(pt)) cbNew = inputs[i];
+                    else if (!cbFollow && /\b2\.\s*Follow\s*Up\b/i.test(pt)) cbFollow = inputs[i];
+                    else if (!cbOther && /\b3\.\s*Other\b/i.test(pt)) cbOther = inputs[i];
+                    p = p.parentElement;
+                }
+            }
         }
         if (!cbNew || !cbFollow) return;
 
