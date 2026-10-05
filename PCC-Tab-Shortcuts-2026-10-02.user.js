@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.4
+// @version 1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1581,8 +1581,9 @@
       if (pc) { patch.primaryContact = pc; has = true; }
       var demo = readDemographics(doc);
       if (demo) { patch.demographics = demo; has = true; }
-      // Also try the Face Sheet PDF (demographics may only be there)
-      fetchFaceSheetDemographics(doc);
+      // DISABLED 2026-10-05: Face Sheet PDF fetch was pulling wrong patient's
+      // demographics. Do not re-enable until resident-ID scoping is verified.
+      // fetchFaceSheetDemographics(doc);
       var meds = readDashboardMedList(doc);
       if (meds !== null) { patch.meds = meds; has = true; }
       var bims = readLatestBims(doc);
