@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PCC Forms - Readmission flag
-// @version      1.0
-// @updateURL     https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Readmission-flag.js
-// @downloadURL   https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Readmission-flag.js
+// @version 1.1
+// @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Readmission-flag.js
+// @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Readmission-flag.js
 // @match        https://*.pointclickcare.com/*
 // @run-at       document-idle
 // @grant        none
