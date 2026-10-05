@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.16
+// @version 1.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -274,6 +274,8 @@
     try { lastDxTs = parseInt(localStorage.getItem('pccFillDiagnosesSeen') || '0', 10); } catch(e){}
     var lastAgeTs = 0;
     try { lastAgeTs = parseInt(localStorage.getItem('pccFillAgeSexSeen') || '0', 10); } catch(e){}
+    var lastMedsTs = 0;
+    try { lastMedsTs = parseInt(localStorage.getItem('pccFillPsychMedsSeen') || '0', 10); } catch(e){}
     function doFillNote(replacer){
         var noteField = findNoteField();
         if (!noteField) return;
@@ -350,6 +352,22 @@
                     return txt.replace(re4, '$1' + areq.value);
                 });
             } else if (areq && areq.ts) { lastAgeTs = Math.max(lastAgeTs, areq.ts); }
+        }
+        // Psych meds -> "Psych meds\n- none" becomes "Psych meds\n- <meds>"
+        var mraw = null;
+        try { mraw = localStorage.getItem('pccFillPsychMeds'); } catch(e){}
+        if (mraw) {
+            var mreq = null;
+            try { mreq = JSON.parse(mraw); } catch(e){}
+            if (mreq && mreq.value && mreq.ts && mreq.ts > lastMedsTs && Date.now() - mreq.ts <= 60000) {
+                lastMedsTs = mreq.ts;
+                try { localStorage.setItem('pccFillPsychMedsSeen', String(mreq.ts)); } catch(e){}
+                doFillNote(function(txt){
+                    var re5 = /^([ \t]*Psych meds[ \t]*\n[ \t]*-[ \t]*)none[ \t]*$/gim;
+                    if (!re5.test(txt)) return txt;
+                    return txt.replace(re5, '$1' + mreq.value);
+                });
+            } else if (mreq && mreq.ts) { lastMedsTs = Math.max(lastMedsTs, mreq.ts); }
         }
     }
     setInterval(checkFillRequest, 500);
