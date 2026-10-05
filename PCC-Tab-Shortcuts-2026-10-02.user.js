@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.2
+// @version 1.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1441,6 +1441,78 @@
     return null;
   }
 
+  // Fetch the Face Sheet PDF in the background and extract demographics.
+  // The PDF isn't DOM, so we pull the raw bytes and regex the text out.
+  function fetchFaceSheetDemographics(doc) {
+    try {
+      // Find the Face Sheet link/button to get the PDF URL
+      var el = findByExactText(doc, 'FACE SHEET')[0] || findByExactText(doc, 'Face Sheet')[0];
+      if (!el) return;
+      var url = null;
+      if (el.tagName === 'A' && el.href) url = el.href;
+      else {
+        var a = el.querySelector('a');
+        if (a && a.href) url = a.href;
+      }
+      if (!url) return;
+      // Fetch the PDF
+      fetch(url, { credentials: 'include' })
+        .then(function(r){ return r.arrayBuffer(); })
+        .then(function(buf){
+          var bytes = new Uint8Array(buf);
+          var bin = '';
+          for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+          // Extract text from PDF: (text) Tj and <hex> Tj operators
+          var texts = [];
+          var re1 = /\(([^\)\\]*(?:\\.[^\)\\]*)*)\)\s*Tj/gi, m1;
+          while ((m1 = re1.exec(bin)) !== null) {
+            var t = m1[1].replace(/\\([\\()])/g, '$1').replace(/\\n/g, ' ').trim();
+            if (t) texts.push(t);
+          }
+          var re2 = /<([0-9A-Fa-f]+)>\s*Tj/gi, m2;
+          while ((m2 = re2.exec(bin)) !== null) {
+            try {
+              var hex = m2[1], s = '';
+              for (var h = 0; h < hex.length; h += 2) s += String.fromCharCode(parseInt(hex.substr(h, 2), 16));
+              s = s.trim();
+              if (s) texts.push(s);
+            } catch(e){}
+          }
+          // Find demographics: label followed by value
+          var demo = {};
+          var labelMap = {
+            'marital status': 'marital', 'marital': 'marital',
+            'religion': 'religion',
+            'race': 'race',
+            'primary lang': 'language', 'primary language': 'language'
+          };
+          for (var i = 0; i < texts.length; i++) {
+            var tl = texts[i].toLowerCase().trim();
+            for (var lbl in labelMap) {
+              if (tl === lbl || tl === lbl + ':') {
+                var val = (texts[i+1] || '').trim();
+                if (val && val.length < 30 && !labelMap[val.toLowerCase()]) {
+                  demo[labelMap[lbl]] = val;
+                }
+              }
+            }
+          }
+          if (demo.marital || demo.religion || demo.race || demo.language) {
+            // Save to snapshot
+            var rid = pccResidentId();
+            if (rid) {
+              var key = 'pccSnap_' + rid;
+              var snap = {};
+              try { snap = JSON.parse(localStorage.getItem(key) || '{}'); } catch(e){}
+              snap.demographics = demo;
+              try { localStorage.setItem(key, JSON.stringify(snap)); } catch(e){}
+            }
+          }
+        })
+        .catch(function(){});
+    } catch(e){}
+  }
+
   // Age + sex from the chart header "(74/Male)" — your Emphasize script
   // renders this big and blue, so it's easy to find.
   function readAgeSex(doc) {
@@ -1471,6 +1543,8 @@
       if (pc) { patch.primaryContact = pc; has = true; }
       var demo = readDemographics(doc);
       if (demo) { patch.demographics = demo; has = true; }
+      // Also try the Face Sheet PDF (demographics may only be there)
+      fetchFaceSheetDemographics(doc);
       var meds = readDashboardMedList(doc);
       if (meds !== null) { patch.meds = meds; has = true; }
       var bims = readLatestBims(doc);
