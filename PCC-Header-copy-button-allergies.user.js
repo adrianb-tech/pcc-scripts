@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.12
+// @version 1.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -53,9 +53,12 @@
 
   function makeBtn(doc, id, getText, sizeCss){
     var b = doc.createElement('button');
-    b.className = 'pcc-fill-copy';
-    b.setAttribute('data-fill-value', text);
-    b.setAttribute('data-fill-label', label);
+    // BIMS is manual-only per Adrian 2026-10-05 — never G-pushed
+    if (label !== 'BIMS') {
+        b.className = 'pcc-fill-copy';
+        b.setAttribute('data-fill-value', text);
+        b.setAttribute('data-fill-label', label);
+    }
     b.id = id; b.type = 'button'; b.textContent = 'Copy';
     b.style.cssText = BTN_BLUE + sizeCss;
     b.addEventListener('click', function(e){
@@ -192,9 +195,12 @@
   function smallCopyBtn(doc, text, label){
     // Mark buttons that can push to the note via G
     var b = doc.createElement('button');
-    b.className = 'pcc-fill-copy';
-    b.setAttribute('data-fill-value', text);
-    b.setAttribute('data-fill-label', label);
+    // BIMS is manual-only per Adrian 2026-10-05 — never G-pushed
+    if (label !== 'BIMS') {
+        b.className = 'pcc-fill-copy';
+        b.setAttribute('data-fill-value', text);
+        b.setAttribute('data-fill-label', label);
+    }
     b.type = 'button'; b.textContent = 'Copy';
     b.style.cssText = BTN_BLUE + 'display:inline-block;font-size:14px;padding:4px 12px;margin-left:6px;';
     b.addEventListener('click', function(e){
