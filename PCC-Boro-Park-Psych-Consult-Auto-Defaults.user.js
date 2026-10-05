@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.2
+// @version 1.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -108,8 +108,8 @@
         }
         if (!cbNew || !cbFollow) return;
 
-        // Don't override an existing selection
-        if (cbNew.checked || cbFollow.checked || (cbOther && cbOther.checked)) {
+        // If he explicitly picked "Other", leave it alone.
+        if (cbOther && cbOther.checked) {
             focusNoteField();
             return;
         }
@@ -118,8 +118,16 @@
         var noteField = findNoteField();
         var hasContent = noteField && noteField.value.trim().length > 0;
 
-        var target = hasContent ? cbFollow : cbNew;
-        target.click();  // use click so PCC's handlers fire
+        // Content -> Follow Up checked, New unchecked. Empty -> New checked.
+        // Actively switch even if PCC defaulted to New.
+        var wantFollow = hasContent;
+        if (wantFollow && !cbFollow.checked) {
+            if (cbNew.checked) cbNew.click();
+            cbFollow.click();
+        } else if (!wantFollow && !cbNew.checked) {
+            if (cbFollow.checked) cbFollow.click();
+            cbNew.click();
+        }
 
         focusNoteField();
     }
