@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.1
+// @version 1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1397,6 +1397,50 @@
     return null;
   }
 
+  // Demographics from Profile page: Marital Status, Religion, Race, Primary Language.
+  // Searches for label-value pairs in tables and definition lists.
+  function readDemographics(doc) {
+    try {
+      var out = {};
+      var labels = {
+        'marital status': 'marital', 'marital': 'marital',
+        'religion': 'religion',
+        '\braces?\b': 'race',
+        'primary language': 'language', 'primary lang': 'language'
+      };
+      // Walk all elements, look for label text, then take the next sibling or cell value
+      var els = doc.querySelectorAll('td, th, div, span, dt, dd, li, p');
+      for (var i = 0; i < els.length; i++) {
+        var t = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (t.length > 60) continue;
+        for (var pat in labels) {
+          var re = new RegExp('^' + pat + '\\s*:?\\s*(.+)$', 'i');
+          var m = t.match(re);
+          if (m && m[1] && m[1].length < 40) {
+            var key = labels[pat];
+            if (!out[key]) out[key] = m[1].trim();
+          }
+        }
+        // Also try: label in one cell, value in next cell
+        for (var pat2 in labels) {
+          var re2 = new RegExp('^' + pat2 + '\\s*:?$', 'i');
+          if (re2.test(t)) {
+            var key2 = labels[pat2];
+            if (!out[key2]) {
+              var sib = els[i].nextElementSibling;
+              if (sib) {
+                var vt = (sib.textContent || '').replace(/\s+/g, ' ').trim();
+                if (vt && vt.length < 40) out[key2] = vt;
+              }
+            }
+          }
+        }
+      }
+      if (out.marital || out.religion || out.race || out.language) return out;
+    } catch(e){}
+    return null;
+  }
+
   // Age + sex from the chart header "(74/Male)" — your Emphasize script
   // renders this big and blue, so it's easy to find.
   function readAgeSex(doc) {
@@ -1425,6 +1469,8 @@
       }
       var pc = readPrimaryContact(doc);
       if (pc) { patch.primaryContact = pc; has = true; }
+      var demo = readDemographics(doc);
+      if (demo) { patch.demographics = demo; has = true; }
       var meds = readDashboardMedList(doc);
       if (meds !== null) { patch.meds = meds; has = true; }
       var bims = readLatestBims(doc);
