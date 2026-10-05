@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.21
+// @version 1.22
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -350,8 +350,8 @@
                 lastAgeTs = areq.ts;
                 try { localStorage.setItem('pccFillAgeSexSeen', String(areq.ts)); } catch(e){}
                 doFillNote(function(txt){
-                    var re4 = /^([ \t]*HPI[ \t]+)xx\b/gim;
-                    if (!re4.test(txt)) return txt;
+                    // Replace "HPI xx" OR any existing "HPI 81M" with the correct value
+                    var re4 = /^([ \t]*HPI[ \t]+)(xx|\d+[MF])\b/gim;
                     return txt.replace(re4, '$1' + areq.value);
                 });
             } else if (areq && areq.ts) { lastAgeTs = Math.max(lastAgeTs, areq.ts); }
@@ -428,7 +428,7 @@
         // 1. "HPI xx" -> "HPI 89M" (age + sex letter)
         if (snap.age && snap.sex) {
             var sexL = /^f/i.test(snap.sex) ? 'F' : 'M';
-            txt = txt.replace(/^([ \t]*HPI[ \t]+)xx\b/gim, '$1' + snap.age + sexL);
+            txt = txt.replace(/^([ \t]*HPI[ \t]+)(xx|\d+[MF])\b/gim, '$1' + snap.age + sexL);
         }
         // 2. Diagnoses after "Medical Hx" line
         if (snap.dx) {
