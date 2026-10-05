@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.9
+// @version 1.10
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1904,6 +1904,9 @@
       addTypeKeyBadges(document);
       // F badge on the most-recent-psych-note edit link
       applyFBadge(document);
+      // Re-run every second so the Reasons popup Save gets its F badge
+      // when the popup opens (it's not there on page load).
+      setInterval(function(){ try { applyFBadge(document); } catch(e){} }, 1000);
       // Clickable red F button by the most recent psych row's action links
       applyFButton(document);
       // Clickable red F button next to Lock on the Psych: Consult form page —
