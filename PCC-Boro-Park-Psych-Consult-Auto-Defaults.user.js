@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -231,7 +231,10 @@
     var evalDone = false;
     var timer = setInterval(function () {
         applyDefaultsOnce();
-        if (!evalDone && done) {
+        applyPopupDefaults();
+        // Run eval-type logic independently — the form page has no dropdowns,
+        // so it must not wait on applyDefaultsOnce()'s done flag.
+        if (!evalDone && !userTouched && !isListPage() && isBoroPark() && document.readyState !== 'loading') {
             evalDone = true;
             setTimeout(applyEvalTypeAndFocus, 400);
         }
