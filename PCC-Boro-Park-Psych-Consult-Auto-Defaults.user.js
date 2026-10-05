@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -225,6 +225,38 @@
             }
         }
     }
+
+    // Fill-request listener: when the chart panel's Allergies Copy button is
+    // clicked, it drops {value, ts} in localStorage. Replace "Allergies NKA"
+    // (or NKDA / No known allergies / none) in the note with the real value.
+    var lastFillTs = 0;
+    try { lastFillTs = parseInt(localStorage.getItem('pccFillAllergiesSeen') || '0', 10); } catch(e){}
+    function checkFillRequest(){
+        var raw = null;
+        try { raw = localStorage.getItem('pccFillAllergies'); } catch(e){}
+        if (!raw) return;
+        var req = null;
+        try { req = JSON.parse(raw); } catch(e){}
+        if (!req || !req.value || !req.ts || req.ts <= lastFillTs) return;
+        // Only honor fresh requests (within 60s) to avoid stale fills
+        if (Date.now() - req.ts > 60000) { lastFillTs = req.ts; return; }
+        lastFillTs = req.ts;
+        try { localStorage.setItem('pccFillAllergiesSeen', String(req.ts)); } catch(e){}
+
+        var noteField = findNoteField();
+        if (!noteField) return;
+        var txt = noteField.value;
+        // Match "Allergies NKA" / "Allergies: NKDA" / "Allergies none" etc. (line-based)
+        var re = /^(\s*Allergies\s*:?\s*)(NKA|NKDA|No\s+known\s+(?:drug\s+)?allergies|none)\s*$/gim;
+        if (!re.test(txt)) return;
+        var updated = txt.replace(re, function(m, prefix){ return prefix + req.value; });
+        if (updated !== txt) {
+            noteField.value = updated;
+            noteField.dispatchEvent(new Event('input', { bubbles: true }));
+            noteField.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+    setInterval(checkFillRequest, 500);
 
     applyDefaultsOnce();
     applyPopupDefaults();
