@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.1
+// @version 1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-E-signature-username-hint-test.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-E-signature-username-hint-test.user.js
 // @name         PCC - E-signature auto-fill username
@@ -28,19 +28,29 @@
     t.textContent = msg;
   }
 
-  // Reads the facility name from the main PCC window that opened this popup
+  // Reads the facility name from the main PCC window that opened this popup.
+  // Scans aggressively: direct facility keywords anywhere in the opener,
+  // then falls back to the Brooklyn/NY/SNF heuristic in the header area.
   function facilityText(){
     var docs = [];
     try { if (window.opener){ docs.push(window.opener.top.document); docs.push(window.opener.document); } } catch(e){}
+    try { if (window.top && window.top !== window) docs.push(window.top.document); } catch(e){}
+    var FAC_RE = /boro\s*park|bedford|crown\s*heights|saints?|joachim|downtown|\bbpcnr\b|\bcnr\b/i;
     for (var d = 0; d < docs.length; d++){
-      var els = docs[d].querySelectorAll('span,div,a,button,li,p');
+      var bodyT = '';
+      try { bodyT = docs[d].body ? docs[d].body.innerText : ''; } catch(e){ continue; }
+      var m = bodyT.match(FAC_RE);
+      if (m) return m[0];
+      // Fallback: header-area heuristic
+      var els = docs[d].querySelectorAll('span,div,a,button,li,p,td,th,h1,h2,h3');
       var best = '';
       for (var i = 0; i < els.length; i++){
-        var r = els[i].getBoundingClientRect();
-        if (r.top > 200 || r.height === 0) continue;
         var t = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
-        if (t.length < 15 || t.length > 120) continue;
-        if (/(?:Brooklyn|,\s*NY|\bSNF\b)/i.test(t) && (!best || t.length < best.length)) best = t;
+        if (t.length < 10 || t.length > 150) continue;
+        if (FAC_RE.test(t)) return t.match(FAC_RE)[0];
+        var r = els[i].getBoundingClientRect();
+        if (r.top > 300 || r.height === 0) continue;
+        if (/(?:Brooklyn|,\s*NY|\bSNF\b|Rehabilitation|Nursing)/i.test(t) && (!best || t.length < best.length)) best = t;
       }
       if (best) return best;
     }
