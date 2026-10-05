@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.9
+// @version 1.10
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -234,29 +234,51 @@
     // (or NKDA / No known allergies / none) in the note with the real value.
     var lastFillTs = 0;
     try { lastFillTs = parseInt(localStorage.getItem('pccFillAllergiesSeen') || '0', 10); } catch(e){}
-    function checkFillRequest(){
-        var raw = null;
-        try { raw = localStorage.getItem('pccFillAllergies'); } catch(e){}
-        if (!raw) return;
-        var req = null;
-        try { req = JSON.parse(raw); } catch(e){}
-        if (!req || !req.value || !req.ts || req.ts <= lastFillTs) return;
-        // Only honor fresh requests (within 60s) to avoid stale fills
-        if (Date.now() - req.ts > 60000) { lastFillTs = req.ts; return; }
-        lastFillTs = req.ts;
-        try { localStorage.setItem('pccFillAllergiesSeen', String(req.ts)); } catch(e){}
-
+    var lastRelTs = 0;
+    try { lastRelTs = parseInt(localStorage.getItem('pccFillRelationshipsSeen') || '0', 10); } catch(e){}
+    function doFillNote(replacer){
         var noteField = findNoteField();
         if (!noteField) return;
         var txt = noteField.value;
-        // Match "Allergies NKA" / "Allergies: NKDA" / "Allergies none" etc. (line-based)
-        var re = /^(\s*Allergies\s*:?\s*)(NKA|NKDA|No\s+known\s+(?:drug\s+)?allergies|none)\s*$/gim;
-        if (!re.test(txt)) return;
-        var updated = txt.replace(re, function(m, prefix){ return prefix + req.value; });
-        if (updated !== txt) {
+        var updated = replacer(txt);
+        if (updated && updated !== txt) {
             noteField.value = updated;
             noteField.dispatchEvent(new Event('input', { bubbles: true }));
             noteField.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+    function checkFillRequest(){
+        // Allergies
+        var raw = null;
+        try { raw = localStorage.getItem('pccFillAllergies'); } catch(e){}
+        if (raw) {
+            var req = null;
+            try { req = JSON.parse(raw); } catch(e){}
+            if (req && req.value && req.ts && req.ts > lastFillTs && Date.now() - req.ts <= 60000) {
+                lastFillTs = req.ts;
+                try { localStorage.setItem('pccFillAllergiesSeen', String(req.ts)); } catch(e){}
+                doFillNote(function(txt){
+                    var re = /^(\s*Allergies\s*:?\s*)(NKA|NKDA|No\s+known\s+(?:drug\s+)?allergies|none)\s*$/gim;
+                    if (!re.test(txt)) return txt;
+                    return txt.replace(re, function(m, prefix){ return prefix + req.value; });
+                });
+            } else if (req && req.ts) { lastFillTs = Math.max(lastFillTs, req.ts); }
+        }
+        // Relationships -> "Primary contact xx"
+        var rraw = null;
+        try { rraw = localStorage.getItem('pccFillRelationships'); } catch(e){}
+        if (rraw) {
+            var rreq = null;
+            try { rreq = JSON.parse(rraw); } catch(e){}
+            if (rreq && rreq.value && rreq.ts && rreq.ts > lastRelTs && Date.now() - rreq.ts <= 60000) {
+                lastRelTs = rreq.ts;
+                try { localStorage.setItem('pccFillRelationshipsSeen', String(rreq.ts)); } catch(e){}
+                doFillNote(function(txt){
+                    var re2 = /^([ \t]*Primary contact[ \t]+)xx\b/gim;
+                    if (!re2.test(txt)) return txt;
+                    return txt.replace(re2, '$1' + rreq.value);
+                });
+            } else if (rreq && rreq.ts) { lastRelTs = Math.max(lastRelTs, rreq.ts); }
         }
     }
     setInterval(checkFillRequest, 500);
