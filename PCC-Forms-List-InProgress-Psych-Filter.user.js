@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      1.3
+// @version      1.4
 // @description  On the facility Forms List: filter Form Type to the psychiatry consult form. Runs once per load. (Tab/sort disabled v1.2 — manual for now.)
 // @match        *://*.pointclickcare.com/*
 // @grant        none
@@ -30,28 +30,7 @@
 
   function norm(s){ return (s || '').replace(/\s+/g, ' ').trim(); }
 
-  // 1. Click the "In Progress" sub-tab if it's not active
-  function ensureInProgressTab(){
-    try {
-      // Find tabs: Scheduled, In Progress, In Progress List
-      var tabs = document.querySelectorAll('a, span, div, td, li');
-      var inProgTab = null, scheduledActive = false;
-      for (var i = 0; i < tabs.length; i++) {
-        var t = norm(tabs[i].textContent);
-        // Match the tab element itself (short text, not containing other content)
-        if (t === 'In Progress' && tabs[i].children.length === 0) {
-          inProgTab = tabs[i];
-        }
-      }
-      if (!inProgTab) return false;
-      // Check if it's already active (has active class or is bold/highlighted)
-      var cls = (inProgTab.className || '') + ' ' + ((inProgTab.parentElement || {}).className || '');
-      if (/active|selected|current/i.test(cls)) return true; // already on it
-      // Click it
-      inProgTab.click();
-      return true;
-    } catch(e){ return false; }
-  }
+  // (ensureInProgressTab v1.4 defined below, before init)
 
   // 2. Set the Form Type filter to the psychiatry consult form
   function setPsychFormFilter(){
@@ -167,14 +146,67 @@
     } catch(e){}
   }
 
-  // Main: run once per page load, with delays for PCC's AJAX
+  // Helper: full mouse event click (PCC ignores plain .click())
+  function fireClick(el){
+    try {
+      el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+      el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+      el.click();
+    } catch(e){ try { el.click(); } catch(e2){} }
+  }
+
+  // 1. Click the "In Progress" tab (v1.4: re-enabled with TreeWalker)
+  function ensureInProgressTab(){
+    try {
+      // Already on In Progress? Check the active tab or page title.
+      var bodyText = document.body ? document.body.innerText.slice(0, 1000) : '';
+      if (/In Progress (Forms )?List/i.test(bodyText)) {
+        // Check if "In Progress" tab is the active one (not Scheduled)
+        // If the title says "Scheduled List", we're on the wrong tab
+        if (/Scheduled List/i.test(bodyText) && !/In Progress List/i.test(bodyText)) {
+          // Fall through to click
+        } else {
+          return true; // already on In Progress
+        }
+      }
+      // Find the "In Progress" tab text node (exact match, not "In Progress List")
+      var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null, false);
+      var tn, tabEl = null;
+      while (tn = walker.nextNode()) {
+        if ((tn.nodeValue || '').trim() === 'In Progress') {
+          var el = tn.parentElement;
+          if (el && norm(el.textContent).length < 30) { tabEl = el; break; }
+        }
+      }
+      if (!tabEl) return false;
+      // Find clickable ancestor
+      var clickable = tabEl;
+      for (var d = 0; d < 5 && clickable; d++) {
+        var tag = clickable.tagName;
+        if (tag === 'A' || tag === 'BUTTON' || clickable.onclick || clickable.getAttribute('onclick') ||
+            clickable.getAttribute('role') === 'tab') break;
+        clickable = clickable.parentElement;
+      }
+      if (!clickable) clickable = tabEl;
+      fireClick(clickable);
+      return true;
+    } catch(e){ return false; }
+  }
+
+  // Main: SEQUENCED — tab first, wait, filter, wait, sort (v1.4)
   function init(){
     if (done) return;
     done = true;
-    // Step 1: ensure In Progress tab (immediate)
-    // ensureInProgressTab(); // DISABLED v1.2 — was not working, keep manual
-    // Step 2+3: filter and sort after the list loads
-    setTimeout(setPsychFormFilter, 2000);
+    // Step 1: click In Progress tab
+    ensureInProgressTab();
+    // Step 2: after 3s (list loads), set the psych form filter
+    setTimeout(function(){
+      setPsychFormFilter();
+      // Step 3: after 3 more seconds (filter applies), sort Score ascending
+      // (sortScoreAscending is called inside setPsychFormFilter's completion,
+      // but we also trigger it here as a backup)
+      setTimeout(sortScoreAscending, 3000);
+    }, 3000);
   }
 
   // Wait for the page to be ready
