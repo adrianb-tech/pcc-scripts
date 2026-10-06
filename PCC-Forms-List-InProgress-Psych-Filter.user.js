@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      1.2
+// @version      1.3
 // @description  On the facility Forms List: filter Form Type to the psychiatry consult form. Runs once per load. (Tab/sort disabled v1.2 — manual for now.)
 // @match        *://*.pointclickcare.com/*
 // @grant        none
@@ -114,7 +114,8 @@
                 }
               }
             }
-            // sortScoreAscending disabled v1.2
+            // sortScoreAscending re-enabled v1.3 with full mouse events
+            setTimeout(sortScoreAscending, 1500);
           }, 500);
         } catch(e){}
       }, 800);
@@ -129,9 +130,16 @@
       for (var i = 0; i < headers.length; i++) {
         var t = norm(headers[i].textContent);
         if (t === 'Score' && headers[i].children.length <= 1) {
-          // Click once for ascending; check current sort direction
-          // If it has a sort indicator, click until ascending
-          headers[i].click();
+          // Use full mouse event sequence — PCC ignores plain .click()
+          var th = headers[i];
+          function fireClick(el){
+            try {
+              el.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+              el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+              el.click();
+            } catch(e){ try { el.click(); } catch(e2){} }
+          }
+          fireClick(th);
           // Wait and check if we need another click (some grids toggle desc first)
           setTimeout(function(){
             // If the first data row's score is higher than the second, it's descending — click again
@@ -148,7 +156,7 @@
               if (scores.length >= 2 && scores[0] > scores[1]) {
                 // Descending — click again for ascending
                 for (var k = 0; k < headers.length; k++) {
-                  if (norm(headers[k].textContent) === 'Score') { headers[k].click(); break; }
+                  if (norm(headers[k].textContent) === 'Score') { fireClick(headers[k]); break; }
                 }
               }
             } catch(e){}
