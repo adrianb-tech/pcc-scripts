@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      1.4
+// @version      1.5
 // @description  On the facility Forms List: filter Form Type to the psychiatry consult form. Runs once per load. (Tab/sort disabled v1.2 — manual for now.)
 // @match        *://*.pointclickcare.com/*
 // @grant        none
@@ -100,6 +100,34 @@
       }, 800);
       return true;
     } catch(e){ return false; }
+  }
+
+  // 4. Highlight rows with Score 1.0 (pending consults) — yellow highlight + border
+  function highlightScoreOne(){
+    try {
+      var tables = document.querySelectorAll('table');
+      for (var ti = 0; ti < tables.length; ti++) {
+        // Find the Score column index
+        var headers = tables[ti].querySelectorAll('th');
+        var scoreIdx = -1;
+        for (var hi = 0; hi < headers.length; hi++) {
+          if (norm(headers[hi].textContent) === 'Score') { scoreIdx = hi; break; }
+        }
+        if (scoreIdx === -1) continue;
+        // Highlight data rows where Score is 1.0
+        var rows = tables[ti].querySelectorAll('tr');
+        for (var r = 0; r < rows.length; r++) {
+          var tds = rows[r].querySelectorAll('td');
+          if (tds.length <= scoreIdx) continue;
+          var v = norm(tds[scoreIdx].textContent);
+          if (v === '1.0' || v === '1') {
+            rows[r].style.backgroundColor = '#fff9c4'; // light yellow
+            rows[r].style.outline = '2px solid #f9a825'; // orange border
+            rows[r].style.outlineOffset = '-2px';
+          }
+        }
+      }
+    } catch(e){}
   }
 
   // 3. Click Score column header to sort ascending (lowest first)
@@ -205,7 +233,11 @@
       // Step 3: after 3 more seconds (filter applies), sort Score ascending
       // (sortScoreAscending is called inside setPsychFormFilter's completion,
       // but we also trigger it here as a backup)
-      setTimeout(sortScoreAscending, 3000);
+      setTimeout(function(){
+        sortScoreAscending();
+        // Step 4: highlight the 1.0 rows after sorting settles
+        setTimeout(highlightScoreOne, 2000);
+      }, 3000);
     }, 3000);
   }
 
