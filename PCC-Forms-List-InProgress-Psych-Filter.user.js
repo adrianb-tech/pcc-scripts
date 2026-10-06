@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      1.1
-// @description  On the facility Forms List: land on In Progress tab, filter Form Type to the psychiatry consult form, sort Score ascending. Runs once per load — never fights manual changes.
+// @version      1.2
+// @description  On the facility Forms List: filter Form Type to the psychiatry consult form. Runs once per load. (Tab/sort disabled v1.2 — manual for now.)
 // @match        *://*.pointclickcare.com/*
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-List-InProgress-Psych-Filter.user.js
@@ -114,8 +114,7 @@
                 }
               }
             }
-            // 3. Sort by Score ascending after filter applies
-            setTimeout(sortScoreAscending, 1500);
+            // sortScoreAscending disabled v1.2
           }, 500);
         } catch(e){}
       }, 800);
@@ -165,7 +164,7 @@
     if (done) return;
     done = true;
     // Step 1: ensure In Progress tab (immediate)
-    ensureInProgressTab();
+    // ensureInProgressTab(); // DISABLED v1.2 — was not working, keep manual
     // Step 2+3: filter and sort after the list loads
     setTimeout(setPsychFormFilter, 2000);
   }
