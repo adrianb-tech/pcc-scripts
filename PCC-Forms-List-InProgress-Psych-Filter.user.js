@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      2.0
-// @description  Forms List: auto-switch to In Progress tab, filter to psychiatry consult form, sort Score ascending, highlight 1.0 rows. Uses MutationObserver to survive pagination.
+// @version      2.1
+// @description  Forms List: auto-switch to In Progress tab, filter to psychiatry consult form. (Sort/highlight disabled v2.1 — manual.)
 // @match        *://*.pointclickcare.com/*
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-List-InProgress-Psych-Filter.user.js
@@ -207,14 +207,15 @@
     ensureInProgressTab();
     // Step 2: filter (after tab loads)
     setTimeout(setPsychFormFilter, 2500);
-    // Step 3: sort (after filter applies)
-    setTimeout(sortScoreAscending, 6000);
-    // Step 4: highlight (after sort settles)
-    setTimeout(highlightScoreOnes, 9000);
+    // Step 3: sort DISABLED v2.1 — was mis-ordering
+    // setTimeout(sortScoreAscending, 6000);
+    // Step 4: highlight DISABLED v2.1 — was bordering all rows
+    // setTimeout(highlightScoreOnes, 9000);
     // Watch for changes (pagination, etc.)
-    try {
-      observer.observe(document.body, { childList: true, subtree: true });
-    } catch(e){}
+    // MutationObserver DISABLED v2.1 — was causing infinite loop
+    // try {
+    //   observer.observe(document.body, { childList: true, subtree: true });
+    // } catch(e){}
   }
 
   if (document.readyState === 'complete') {
