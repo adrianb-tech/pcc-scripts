@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      1.0
+// @version      1.1
 // @description  On the facility Forms List: land on In Progress tab, filter Form Type to the psychiatry consult form, sort Score ascending. Runs once per load — never fights manual changes.
 // @match        *://*.pointclickcare.com/*
 // @grant        none
