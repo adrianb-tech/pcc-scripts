@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      2.1
-// @description  Forms List: auto-switch to In Progress tab, filter to psychiatry consult form. (Sort/highlight disabled v2.1 — manual.)
+// @version      2.2
+// @description  Forms List: auto-switch to In Progress tab, filter to psychiatry consult form. (Sort/highlight v2.2 — single run, no watcher.)
 // @match        *://*.pointclickcare.com/*
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-List-InProgress-Psych-Filter.user.js
@@ -164,24 +164,25 @@
   // --- STEP 4: Highlight Score 1.0 rows (runs on every table change) ---
   function highlightScoreOnes(){
     try {
-      var tables = document.querySelectorAll('table');
-      for (var ti = 0; ti < tables.length; ti++) {
-        var headers = tables[ti].querySelectorAll('th');
-        var scoreIdx = -1;
-        for (var hi = 0; hi < headers.length; hi++) {
-          if (norm(headers[hi].textContent) === 'Score') { scoreIdx = hi; break; }
+      // Find data rows: must contain "Consult Form - Psychiatry" (right table)
+      // and have a cell with exactly "1.0" (the Score)
+      var rows = document.querySelectorAll('tr');
+      for (var r = 0; r < rows.length; r++) {
+        var rowText = rows[r].textContent || '';
+        // Must be a psychiatry consult data row
+        if (rowText.indexOf('Consult Form - Psychiatry') === -1) continue;
+        // Must have table cells (not a header row)
+        var tds = rows[r].querySelectorAll('td');
+        if (tds.length < 5) continue;
+        // Check if any cell is exactly "1.0"
+        var hasOne = false;
+        for (var c = 0; c < tds.length; c++) {
+          if (norm(tds[c].textContent) === '1.0') { hasOne = true; break; }
         }
-        if (scoreIdx === -1) continue;
-        var rows = tables[ti].querySelectorAll('tr');
-        for (var r = 0; r < rows.length; r++) {
-          var tds = rows[r].querySelectorAll('td');
-          if (tds.length <= scoreIdx) continue;
-          var v = norm(tds[scoreIdx].textContent);
-          if (v === '1.0' || v === '1') {
-            rows[r].style.backgroundColor = '#fff9c4';
-            rows[r].style.outline = '2px solid #f9a825';
-            rows[r].style.outlineOffset = '-2px';
-          }
+        if (hasOne) {
+          rows[r].style.backgroundColor = '#fff9c4';
+          rows[r].style.outline = '2px solid #f9a825';
+          rows[r].style.outlineOffset = '-2px';
         }
       }
     } catch(e){}
@@ -207,10 +208,12 @@
     ensureInProgressTab();
     // Step 2: filter (after tab loads)
     setTimeout(setPsychFormFilter, 2500);
-    // Step 3: sort DISABLED v2.1 — was mis-ordering
-    // setTimeout(sortScoreAscending, 6000);
-    // Step 4: highlight DISABLED v2.1 — was bordering all rows
-    // setTimeout(highlightScoreOnes, 9000);
+    // Step 3: sort by Score ascending (v2.2: single attempt + one retry max)
+    setTimeout(function(){
+      sortScoreAscending();
+      // Step 4: highlight 1.0 rows after sort settles (v2.2: runs once, no observer)
+      setTimeout(highlightScoreOnes, 4000);
+    }, 6000);
     // Watch for changes (pagination, etc.)
     // MutationObserver DISABLED v2.1 — was causing infinite loop
     // try {
