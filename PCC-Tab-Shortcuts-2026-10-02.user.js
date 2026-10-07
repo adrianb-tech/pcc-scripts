@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.16
+// @version 1.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -700,7 +700,84 @@
 
       // Update the DOS date line in the note to the stored DOS date
       updateDOSDate(doc);
+
+      // Compare note psych meds vs chart psych meds (from G-push cache)
+      checkMedsMatch(doc, meds);
     } catch(e){ toast('D: error'); }
+  }
+
+  // Brand/generic normalization for med comparison
+  var MED_SYNONYMS = {
+    'sertraline': 'zoloft', 'zoloft': 'zoloft',
+    'fluoxetine': 'prozac', 'prozac': 'prozac',
+    'escitalopram': 'lexapro', 'lexapro': 'lexapro',
+    'citalopram': 'celexa', 'celexa': 'celexa',
+    'paroxetine': 'paxil', 'paxil': 'paxil',
+    'mirtazapine': 'remeron', 'remeron': 'remeron',
+    'bupropion': 'wellbutrin', 'wellbutrin': 'wellbutrin',
+    'venlafaxine': 'effexor', 'effexor': 'effexor',
+    'duloxetine': 'cymbalta', 'cymbalta': 'cymbalta',
+    'quetiapine': 'seroquel', 'seroquel': 'seroquel',
+    'olanzapine': 'zyprexa', 'zyprexa': 'zyprexa',
+    'risperidone': 'risperdal', 'risperdal': 'risperdal',
+    'aripiprazole': 'abilify', 'abilify': 'abilify',
+    'memantine': 'namenda', 'namenda': 'namenda',
+    'donepezil': 'aricept', 'aricept': 'aricept',
+    'trazodone': 'trazodone', 'lorazepam': 'ativan', 'ativan': 'ativan',
+    'clonazepam': 'klonopin', 'klonopin': 'klonopin',
+    'alprazolam': 'xanax', 'xanax': 'xanax',
+    'haloperidol': 'haldol', 'haldol': 'haldol'
+  };
+  function canonMedName(name) {
+    var n = (name || '').toLowerCase().trim();
+    return MED_SYNONYMS[n] || n;
+  }
+  function extractDrugName(line) {
+    // "- Zoloft 50mg QD for depression" → "zoloft"
+    var m = (line || '').replace(/^\s*-\s*/, '').match(/^([A-Za-z]+)/);
+    return m ? canonMedName(m[1]) : '';
+  }
+
+  // Compare the note's psych meds against the chart's (from G-push cache).
+  // Alerts if they don't match — med rec check.
+  function checkMedsMatch(doc, noteMeds) {
+    try {
+      var cached = null;
+      try { cached = JSON.parse(localStorage.getItem('pccFillPsychMeds') || 'null'); } catch(e){}
+      if (!cached || !cached.value) {
+        toast('D: no chart meds cached — press G on the profile page first');
+        return;
+      }
+      // Check freshness (older than 2 hours = stale)
+      var ageHrs = (Date.now() - (cached.ts || 0)) / 3600000;
+      if (ageHrs > 2) {
+        toast('D: chart meds cache is ' + Math.round(ageHrs) + 'h old — re-press G on profile');
+      }
+      var chartLines = (cached.value || '').split('\n').filter(function(l){ return l.trim(); });
+      var chartMeds = chartLines.map(extractDrugName).filter(function(n){ return n; });
+      var noteMedNames = (noteMeds || []).map(extractDrugName).filter(function(n){ return n; });
+
+      var inNoteNotChart = noteMedNames.filter(function(n){ return chartMeds.indexOf(n) === -1; });
+      var inChartNotNote = chartMeds.filter(function(n){ return noteMedNames.indexOf(n) === -1; });
+
+      if (inNoteNotChart.length === 0 && inChartNotNote.length === 0) {
+        toast('D: meds match chart ✓');
+      } else {
+        var msg = 'D: MED MISMATCH — ';
+        if (inNoteNotChart.length) msg += 'in note not chart: ' + inNoteNotChart.join(', ') + '. ';
+        if (inChartNotNote.length) msg += 'in chart not note: ' + inChartNotNote.join(', ') + '.';
+        // Persistent alert (not auto-fading) for mismatches
+        var alertBox = doc.createElement('div');
+        alertBox.textContent = msg;
+        alertBox.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
+          'background:#c0392b;color:#fff;padding:12px 20px;border-radius:8px;font:14px sans-serif;' +
+          'z-index:999999;max-width:80%;box-shadow:0 4px 12px rgba(0,0,0,0.3);cursor:pointer;';
+        alertBox.title = 'Click to dismiss';
+        alertBox.addEventListener('click', function(){ alertBox.remove(); });
+        doc.body.appendChild(alertBox);
+        setTimeout(function(){ if (alertBox.parentNode) alertBox.remove(); }, 15000);
+      }
+    } catch(e){}
   }
 
   // Stored DOS date (set once a week via Shift+D). Used by D to update
