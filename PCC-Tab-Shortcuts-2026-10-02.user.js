@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.36
+// @version 1.37
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1317,7 +1317,9 @@
   function doFAction() {
     var fWhy = '';
     // First: if Reasons popup is open, F = Save (not the normal F action)
+    // Crown Heights/Bedford only.
     var popupSaved = findInFrames(window.top, function (doc) {
+      if (!isBedfordOrCrownHeights(doc)) return null;
       return clickReasonsPopupSave(doc) ? true : null;
     });
     if (popupSaved) return;
@@ -1779,7 +1781,7 @@
   // there's also an F on the page underneath.
   function applyFButtonReasonsPopup(doc) {
     try {
-      if (!isAnyFacility(doc)) return;
+      if (!isBedfordOrCrownHeights(doc)) return;
       // Detect the popup by its title or the "Type of Form:" label
       var nt = (doc.body ? (doc.body.textContent || '') : '').replace(/\s+/g, ' ');
       if (!/reasons\s+for\s+form/i.test(nt)) return;
