@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.14
+// @version 1.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -117,8 +117,9 @@
     return allergyValueFromHost(allergyEl(doc));
   }
   function addAllergies(doc){
+    // Never inject into a form page — the info table belongs in the chart header only.
+    if (isFormPage(doc)) return;
     // Standalone allergies Copy button removed per user request (2026-10-02) —
-    // the info table has per-row Copy buttons. Remove any leftover button.
     try {
       var oldBtn = doc.getElementById('copyAllergiesBtn');
       if (oldBtn && oldBtn.parentNode) oldBtn.parentNode.removeChild(oldBtn);
@@ -287,9 +288,10 @@
     try {
       var t = doc.body ? (doc.body.textContent || '') : '';
       var nt = t.replace(/\s+/g, ' ');
-      // Consult-Psychiatry form: the save-button row or B-section markers.
+      // Consult-Psychiatry form: the save-button row, B-section markers, or form title.
       // (No Type-filter check — form dropdowns can contain those words.)
       if (/save\s*&\s*sign\s*&\s*lock\s*&\s*exit/i.test(nt)) return true;
+      if (/consult-psychiatry\s+1\.0/i.test(nt)) return true;
       if (/\bB1\./.test(nt) && /\bB3\./.test(nt)) return true;
     } catch(e){}
     return false;
