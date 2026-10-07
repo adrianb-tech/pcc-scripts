@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.17
+// @version 1.18
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1299,6 +1299,9 @@
           if (sslBtn) { sslBtn.click(); return true; }
         }
         if (isCNROrSaints(doc) && isConsultPsychiatryFormPage(doc)) {
+          // Section-list page: F signs Section 2 if ready (sign link exists).
+          var signLink = findSectionSignLink(doc);
+          if (signLink) { signLink.click(); return true; }
           // Section-list page: F opens the Reason for Consultation view
           // (review the referral). Only when the view link exists.
           var reasonView = findReasonViewLink(doc);
@@ -1537,6 +1540,50 @@
         e.preventDefault();
         e.stopPropagation();
         var tb = findSaveExitButton(doc);
+        if (tb) tb.click();
+      });
+      if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
+      else target.parentNode.appendChild(btn);
+    } catch (e) {}
+  }
+
+  // Find the "sign" link for Section 2 (Psychiatry MD - Evaluation and
+  // Recommendation) on the CNR/Saints section-list page.
+  function findSectionSignLink(doc) {
+    try {
+      var links = doc.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        if ((links[i].textContent || '').trim().toLowerCase() !== 'sign') continue;
+        var row = links[i].closest('tr');
+        if (row && /psychiatry md|evaluation and recommendation/i.test(row.textContent)) {
+          if (visible(links[i])) return links[i];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Clickable red "F" button next to "sign" on Section 2 — CNR/Saints
+  // section-list page only. Signs the note before the popup comes up.
+  function applyFButtonSectionSign(doc) {
+    try {
+      var olds = doc.querySelectorAll('.pcc-f-btn-sign'), i;
+      for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
+      if (!isCNROrSaints(doc)) return;
+      if (!isConsultPsychiatryFormPage(doc)) return;
+      var target = findSectionSignLink(doc);
+      if (!target || !target.parentNode) return;
+      var btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pcc-f-btn-sign';
+      btn.textContent = 'F';
+      btn.title = 'Sign Section 2 (same as F key)';
+      btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
+        'font-weight:bold;font-size:14px;padding:2px 8px;margin-left:6px;cursor:pointer;');
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var tb = findSectionSignLink(doc);
         if (tb) tb.click();
       });
       if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
@@ -2408,6 +2455,8 @@
       applyFButtonReasonView(document);
       // Clickable red F button next to "Next Section" — CNR/Saints only.
       applyFButtonNextSection(document);
+      // Clickable red F button next to "sign" on Section 2 — CNR/Saints only.
+      applyFButtonSectionSign(document);
       // Form section edit page: focus the main writing field on load
       focusNoteField(document);
       // Admission alert DISABLED (2026-10-02): the standalone PCC-Forms-Readmission-flag
