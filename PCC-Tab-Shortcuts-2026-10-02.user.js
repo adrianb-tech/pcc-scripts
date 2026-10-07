@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.41
+// @version 1.42
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2523,27 +2523,28 @@
       // Re-run every second so the Reasons popup Save gets its F badge
       // when the popup opens (it's not there on page load). Search frames
       // too — the popup may not be in the top document.
-      setInterval(function(){
-        try {
-          findInFrames(window.top, function(doc){
-            // Skip DASH/resident-dashboard pages: no F badges needed there,
-            // and the per-second DOM scan was blocking the med list from loading.
-            try {
-              var url = (doc.location && doc.location.href) || '';
-              var bodyText = (doc.body ? (doc.body.textContent || '').substring(0, 500) : '');
-              if (/Resident Dashboard/i.test(url) || /Resident Dashboard/i.test(bodyText)) return null;
-            } catch (e) {}
-            applyFBadge(doc);
-            // applyFButtonCNRForm disabled 2026-10-07 per user: no F button on Save & Exit
-            applyFButtonReasonView(doc);
-            applyFButtonNextSection(doc);
-            applyFButtonSectionSign(doc);
-            // applyFButtonReasonsPopup disabled 2026-10-07: heavy DOM scan every second
-            // was slowing PCC. F KEY still works for the popup via clickReasonsPopupSave.
-            return null;
-          });
-        } catch(e){}
-      }, 1000);
+      // INTERVAL DISABLED 2026-10-07 v1.42: testing if per-second scan is the DASH killer
+      // setInterval(function(){
+      //   try {
+      //     findInFrames(window.top, function(doc){
+      //       // Skip DASH/resident-dashboard pages: no F badges needed there,
+      //       // and the per-second DOM scan was blocking the med list from loading.
+      //       try {
+      //         var url = (doc.location && doc.location.href) || '';
+      //         var bodyText = (doc.body ? (doc.body.textContent || '').substring(0, 500) : '');
+      //         if (/Resident Dashboard/i.test(url) || /Resident Dashboard/i.test(bodyText)) return null;
+      //       } catch (e) {}
+      //       applyFBadge(doc);
+      //       // applyFButtonCNRForm disabled 2026-10-07 per user: no F button on Save & Exit
+      //       applyFButtonReasonView(doc);
+      //       applyFButtonNextSection(doc);
+      //       applyFButtonSectionSign(doc);
+      //       // applyFButtonReasonsPopup disabled 2026-10-07: heavy DOM scan every second
+      //       // was slowing PCC. F KEY still works for the popup via clickReasonsPopupSave.
+      //       return null;
+      //     });
+      //   } catch(e){}
+      // }, 1000);
       // Clickable red F button by the most recent psych row's action links
       applyFButton(document);
       // Clickable red F button next to Lock on the Psych: Consult form page —
