@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.28
+// @version 1.29
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -585,8 +585,12 @@
       }
 
       // Dementia meds, Ambien, melatonin → excluded (not psychotropics for GDR)
+      // "none"/"n/a"/"no meds" lines mean no meds at all
       var excluded = /donepezil|aricept|memantine|namenda|rivastigmine|exelon|galantamine|razadyne|zolpidem|ambien|melatonin/i;
-      var qualifying = meds.filter(function(med){ return !excluded.test(med); });
+      var noneLine = /^\s*-\s*(none|n\/a|no\s*meds?|not\s*applicable)\s*$/i;
+      var qualifying = meds.filter(function(med){
+        return !excluded.test(med) && !noneLine.test(med);
+      });
 
       // Find Q4 radios: look for "not on any psychotropic medication" (option C)
       var radios = doc.querySelectorAll('input[type="radio"]');
