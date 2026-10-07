@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.37
+// @version 1.38
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2586,7 +2586,7 @@
         try {
           findInFrames(window.top, function(doc){
             applyFBadge(doc);
-            applyFButtonCNRForm(doc);
+            // applyFButtonCNRForm disabled 2026-10-07 per user: no F button on Save & Exit
             applyFButtonReasonView(doc);
             applyFButtonNextSection(doc);
             applyFButtonSectionSign(doc);
@@ -2603,9 +2603,7 @@
       // Clickable red F button next to Save & Sign & Lock & Exit on the
       // Bedford/Crown Heights Consult-Psychiatry form page.
       applyFButtonBedfordForm(document);
-      // Clickable red F button next to Save & Exit on the CNR/Saints
-      // Consult-Psychiatry form page.
-      applyFButtonCNRForm(document);
+      // applyFButtonCNRForm disabled 2026-10-07 per user: no F button on Save & Exit
       // Clickable red F button next to "view" on Section 1 (Reason for
       // Consultation) — CNR/Saints section-list page only.
       applyFButtonReasonView(document);
