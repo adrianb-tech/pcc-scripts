@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.0
+// @version 1.1
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-S-Copy-name-and-room.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-S-Copy-name-and-room.user.js
 // @name         PCC S - Copy name and room
@@ -90,11 +90,19 @@
   }
 
   // "6 West 612-B" -> "612B" (or "W612B" at Crown Heights).
+  // "2 East 237-B" -> "237B" (no wing prefix except Crown Heights).
   function roomBedNumber(doc, withWing) {
     try {
       var txt = (doc.body && doc.body.textContent) ? doc.body.textContent : '';
+      // Try the Location label first, then fall back to searching near "Location"
+      var v = '';
       var m = txt.match(/\bLocation\s*:?\s*([^\n]*?)(?=\s*(?:Status|Code Status|Physician|DOB|Admission|Initial Admission|Discharge|Allergies|Special Instructions)\b|\n|$)/);
-      var v = m ? m[1].replace(/\s+/g, ' ').trim() : '';
+      if (m) v = m[1].replace(/\s+/g, ' ').trim();
+      // Fallback: find "Location" then grab the next 30 chars
+      if (!v) {
+        var li = txt.search(/\bLocation\b/i);
+        if (li !== -1) v = txt.substr(li, 40).replace(/\s+/g, ' ').trim();
+      }
       var rm = v.match(/\b(\d{2,4})\s*-?\s*([A-Za-z])?\b/);
       if (!rm) return '';
       var pre = '';
