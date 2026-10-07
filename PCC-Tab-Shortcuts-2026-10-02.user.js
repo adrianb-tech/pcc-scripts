@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.19
+// @version 1.20
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1182,7 +1182,10 @@
         } else if (isPsychConsultFormPage(doc) || isConsultPsychiatryFormPage(doc)) {
           // Form page only: badge the section edit link. Other pages
           // (resident search, dashboard, etc.) get no badge.
-          link = findSectionEditLink(doc);
+          // CNR/Saints: no F badge on edit links (only view/sign get F).
+          if (!isCNROrSaints(doc)) {
+            link = findSectionEditLink(doc);
+          }
         }
         if (link) links.push(link);
       }
@@ -1288,8 +1291,9 @@
         // link), F locks the form — the sign-then-lock workflow, same as the
         // F button next to Lock. On a Bedford/Crown Heights
         // Consult-Psychiatry form, F clicks Save & Sign & Lock & Exit.
+        // CNR/Saints: skip the generic edit-link (only view/sign get F there).
         var editLink = findSectionEditLink(doc);
-        if (editLink) { editLink.click(); return true; }
+        if (editLink && !isCNROrSaints(doc)) { editLink.click(); return true; }
         if (isPsychConsultFormPage(doc)) {
           var lockBtn = findLockButton(doc);
           if (lockBtn) { lockBtn.click(); return true; }
