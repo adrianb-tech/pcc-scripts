@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.24
+// @version 1.25
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -535,6 +535,18 @@
   });
 
   // ---- D key: GDR section auto-fill (CNR/Saints only) ----
+  // Proper click sequence for PCC (ignores plain .click())
+  function fireClick(el) {
+    try {
+      if (!el) return;
+      var opts = { bubbles: true, cancelable: true, view: window };
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', opts));
+      el.dispatchEvent(new MouseEvent('click', opts));
+    } catch (e) {
+      try { el.click(); } catch (e2) {}
+    }
+  }
   // Reads the Psych meds from the note's Impression section, then:
   // - Q4 = C (N/A) if no meds, or only dementia meds / Ambien / melatonin
   // - Q4 = B (No) if on any other psychotropic, then fills:
