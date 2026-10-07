@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.40
+// @version 1.41
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2526,6 +2526,13 @@
       setInterval(function(){
         try {
           findInFrames(window.top, function(doc){
+            // Skip DASH/resident-dashboard pages: no F badges needed there,
+            // and the per-second DOM scan was blocking the med list from loading.
+            try {
+              var url = (doc.location && doc.location.href) || '';
+              var bodyText = (doc.body ? (doc.body.textContent || '').substring(0, 500) : '');
+              if (/Resident Dashboard/i.test(url) || /Resident Dashboard/i.test(bodyText)) return null;
+            } catch (e) {}
             applyFBadge(doc);
             // applyFButtonCNRForm disabled 2026-10-07 per user: no F button on Save & Exit
             applyFButtonReasonView(doc);
