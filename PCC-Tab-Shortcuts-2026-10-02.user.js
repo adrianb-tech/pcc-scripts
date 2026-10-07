@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.30
+// @version 1.31
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -800,6 +800,11 @@
 
       if (inNoteNotChart.length === 0 && inChartNotNote.length === 0) {
         toast('D: meds match chart ✓');
+      } else if (noteMedNames.length > 0 && chartMeds.length > 0 &&
+                 inNoteNotChart.length === noteMedNames.length &&
+                 inChartNotNote.length === chartMeds.length) {
+        // Zero overlap = cache is from a different patient, not a real mismatch
+        toast('D: chart meds look like a different patient — press G on this profile to refresh');
       } else {
         var msg = 'D: MED MISMATCH — ';
         if (inNoteNotChart.length) msg += 'in note not chart: ' + inNoteNotChart.join(', ') + '. ';
