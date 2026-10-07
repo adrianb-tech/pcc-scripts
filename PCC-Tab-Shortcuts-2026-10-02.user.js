@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.11
+// @version 1.12
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1000,6 +1000,10 @@
           var sslBtn = findSaveSignLockExitButton(doc);
           if (sslBtn) { sslBtn.click(); return true; }
         }
+        if (isCNROrSaints(doc) && isConsultPsychiatryFormPage(doc)) {
+          var seBtn = findSaveExitButton(doc);
+          if (seBtn) { seBtn.click(); return true; }
+        }
         fWhy = 'no edit link found';
         return null;
       } else {
@@ -1187,6 +1191,47 @@
         e.preventDefault();
         e.stopPropagation();
         var tb = findSaveSignLockExitButton(doc);   // fresh lookup in case the DOM shifted
+        if (tb) tb.click();
+      });
+      if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
+      else target.parentNode.appendChild(btn);
+    } catch (e) {}
+  }
+
+  // The "Save & Exit" button on the CNR/Saints Consult-Psychiatry form.
+  // PCC renders these as inputs or buttons; the label may be in value.
+  function findSaveExitButton(doc) {
+    try {
+      var els = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim();
+        if (/^save\s*&\s*exit$/i.test(label) && visible(els[i])) return els[i];
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Clickable red "F" button next to "Save & Exit" on the CNR/Saints
+  // Consult-Psychiatry form. CNR/Saints only; other facilities unchanged.
+  function applyFButtonCNRForm(doc) {
+    try {
+      var olds = doc.querySelectorAll('.pcc-f-btn-cnr'), i;
+      for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
+      if (!isCNROrSaints(doc)) return;
+      if (!isConsultPsychiatryFormPage(doc)) return;
+      var target = findSaveExitButton(doc);
+      if (!target || !target.parentNode) return;
+      var btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pcc-f-btn-cnr';
+      btn.textContent = 'F';
+      btn.title = 'Save & Exit (same as F key)';
+      btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
+        'font-weight:bold;font-size:14px;padding:2px 10px;margin-left:6px;cursor:pointer;');
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var tb = findSaveExitButton(doc);
         if (tb) tb.click();
       });
       if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
@@ -1800,6 +1845,46 @@
     return false;
   }
 
+  // True when the header facility picker shows CNR (Downtown Brooklyn
+  // Nursing & Rehabilitation Center). Same header-area scoping as others.
+  function isCNR(doc) {
+    try {
+      var els = doc.querySelectorAll('select, button, a, span, div, td');
+      for (var i = 0; i < els.length; i++) {
+        var t = (els[i].textContent || '').trim();
+        if (t.length > 90 || t.length < 3) continue;
+        if (!/\bCNR\b/i.test(t) && !/downtown\s*brooklyn/i.test(t)) continue;
+        var r = null;
+        try { r = els[i].getBoundingClientRect(); } catch (e) {}
+        if (r && r.top >= -50 && r.top < 300) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // True when the header facility picker shows Saints Joachim.
+  function isSaints(doc) {
+    try {
+      var els = doc.querySelectorAll('select, button, a, span, div, td');
+      for (var i = 0; i < els.length; i++) {
+        var t = (els[i].textContent || '').trim();
+        if (t.length > 90 || t.length < 6) continue;
+        if (!/saints?\s*joachim/i.test(t)) continue;
+        var r = null;
+        try { r = els[i].getBoundingClientRect(); } catch (e) {}
+        if (r && r.top >= -50 && r.top < 300) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+
+  // CNR or Saints Joachim (the Tuesday facilities with Save & Exit forms).
+  function isCNROrSaints(doc) {
+    try { if (isCNR(doc)) return true; } catch (e) {}
+    try { if (isSaints(doc)) return true; } catch (e2) {}
+    return false;
+  }
+
   // Bedford or Crown Heights (the Consult-Psychiatry facilities).
   function isBedfordOrCrownHeights(doc) {
     try { if (isBedford(doc)) return true; } catch (e) {}
@@ -1923,6 +2008,9 @@
       // Clickable red F button next to Save & Sign & Lock & Exit on the
       // Bedford/Crown Heights Consult-Psychiatry form page.
       applyFButtonBedfordForm(document);
+      // Clickable red F button next to Save & Exit on the CNR/Saints
+      // Consult-Psychiatry form page.
+      applyFButtonCNRForm(document);
       // Form section edit page: focus the main writing field on load
       focusNoteField(document);
       // Admission alert DISABLED (2026-10-02): the standalone PCC-Forms-Readmission-flag
