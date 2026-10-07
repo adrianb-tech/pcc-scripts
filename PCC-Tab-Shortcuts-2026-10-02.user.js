@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.32
+// @version 1.33
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2522,6 +2522,10 @@
         try {
           findInFrames(window.top, function(doc){
             applyFBadge(doc);
+            applyFButtonCNRForm(doc);
+            applyFButtonReasonView(doc);
+            applyFButtonNextSection(doc);
+            applyFButtonSectionSign(doc);
             return null;
           });
         } catch(e){}
