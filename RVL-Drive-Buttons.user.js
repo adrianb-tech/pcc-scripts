@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         RVL Drive Buttons
 // @namespace    https://muse.ai/
-// @version      1.5
+// @version      1.6
 // @description  Adds "Build RVLs" and "Build Invoice" buttons to the Google Drive folder page. Opens the RVL web app.
 // @match        https://drive.google.com/drive/*
 // @grant        none
@@ -31,10 +31,10 @@
     function mkBtn(label, action) {
       var b = document.createElement('button');
       b.textContent = label;
-      b.style.cssText = 'background:#e8710a;color:#fff;border:none;border-radius:20px;' +
-        'font-size:14px;font-weight:700;padding:10px 20px;cursor:pointer;width:100%;';
-      b.onmouseover = function () { b.style.background = '#c95f08'; };
-      b.onmouseout = function () { b.style.background = '#e8710a'; };
+      b.style.cssText = 'background:#1a73e8;color:#fff;border:none;border-radius:20px;' +
+        'font-size:14px;font-weight:500;padding:8px 20px;cursor:pointer;';
+      b.onmouseover = function () { b.style.background = '#1765cc'; };
+      b.onmouseout = function () { b.style.background = '#1a73e8'; };
       // RVL builds directly; invoice opens the picker page (choose folder, see totals)
       b.onclick = function () {
         var url = action === 'invoice' ? WEBAPP_URL : WEBAPP_URL + '?action=rvl';
@@ -46,33 +46,17 @@
     wrap.appendChild(mkBtn('Build RVLs', 'rvl'));
     wrap.appendChild(mkBtn('Build Invoice', 'invoice'));
 
-    // Place in the left sidebar, halfway between "+ New" and "Home"
+    // Place next to the "+ New" button
     var newBtn = null;
     var btns = document.querySelectorAll('button');
     for (var i = 0; i < btns.length; i++) {
       var t = (btns[i].textContent || '').trim();
       if (t === '+ New' || t === 'New') { newBtn = btns[i]; break; }
     }
-    if (newBtn) {
-      // Find the sidebar container and the Home link
-      var sidebar = newBtn;
-      for (var s = 0; s < 8 && sidebar; s++) {
-        sidebar = sidebar.parentNode;
-        if (sidebar && /home/i.test(sidebar.textContent || '') && (sidebar.textContent || '').length < 2000) break;
-      }
-      wrap.style.cssText = 'display:flex;flex-direction:column;gap:10px;margin:16px 16px 16px 0;';
-      if (newBtn.parentNode) {
-        // Insert right after the New button's container
-        var newContainer = newBtn;
-        // Walk up to find the element that sits alongside the nav items
-        while (newContainer.parentNode && newContainer.parentNode.children.length < 3) {
-          newContainer = newContainer.parentNode;
-        }
-        if (newContainer.parentNode) {
-          newContainer.parentNode.insertBefore(wrap, newContainer.nextSibling);
-          return;
-        }
-      }
+    if (newBtn && newBtn.parentNode) {
+      wrap.style.cssText = 'display:inline-flex;gap:12px;margin-left:48px;vertical-align:middle;';
+      newBtn.parentNode.insertBefore(wrap, newBtn.nextSibling);
+      return;
     }
 
     // Fallback: fixed position top-right, always visible
