@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.21
+// @version 1.22
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1554,6 +1554,7 @@
       btn.className = 'pcc-f-btn-cnr';
       btn.textContent = 'F';
       btn.title = 'Save & Exit (same as F key)';
+      btn.tabIndex = -1;
       btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
         'font-weight:bold;font-size:14px;padding:2px 10px;margin-left:6px;cursor:pointer;');
       btn.addEventListener('click', function (e) {
@@ -1598,6 +1599,7 @@
       btn.className = 'pcc-f-btn-sign';
       btn.textContent = 'F';
       btn.title = 'Sign Section 2 (same as F key)';
+      btn.tabIndex = -1;
       btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
         'font-weight:bold;font-size:14px;padding:2px 8px;margin-left:6px;cursor:pointer;');
       btn.addEventListener('click', function (e) {
@@ -1638,6 +1640,7 @@
       btn.className = 'pcc-f-btn-next';
       btn.textContent = 'F';
       btn.title = 'Next Section (same as F key)';
+      btn.tabIndex = -1;
       btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
         'font-weight:bold;font-size:14px;padding:2px 8px;margin-left:6px;cursor:pointer;');
       btn.addEventListener('click', function (e) {
@@ -1671,13 +1674,16 @@
 
   // Clickable red "F" button next to "view" on Section 1 (Reason for
   // Consultation) — CNR/Saints section-list page only. Lets him review the
-  // referral before writing. Does not touch edit-link F buttons.
+  // referral before writing. Hidden when Section 2 is ready to sign
+  // (then only the sign F shows). Does not touch edit-link F buttons.
   function applyFButtonReasonView(doc) {
     try {
       var olds = doc.querySelectorAll('.pcc-f-btn-reason'), i;
       for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
       if (!isCNROrSaints(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
+      // If Section 2 is ready to sign, only the sign F shows — not view.
+      if (findSectionSignLink(doc)) return;
       var target = findReasonViewLink(doc);
       if (!target || !target.parentNode) return;
       var btn = doc.createElement('button');
@@ -1685,6 +1691,7 @@
       btn.className = 'pcc-f-btn-reason';
       btn.textContent = 'F';
       btn.title = 'View Reason for Consultation (same as F key)';
+      btn.tabIndex = -1;
       btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
         'font-weight:bold;font-size:14px;padding:2px 8px;margin-left:6px;cursor:pointer;');
       btn.addEventListener('click', function (e) {
