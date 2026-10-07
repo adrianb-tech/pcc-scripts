@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.23
+// @version 1.24
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1526,45 +1526,54 @@
     } catch (e) {}
   }
 
-  // The "Save & Exit" button on the CNR/Saints Consult-Psychiatry form.
-  // PCC renders these as inputs or buttons; the label may be in value.
-  function findSaveExitButton(doc) {
+  // The "Save & Exit" buttons on the CNR/Saints Consult-Psychiatry form.
+  // There are two (top and bottom) — returns all of them.
+  function findSaveExitButtons(doc) {
+    var out = [];
     try {
       var els = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
       for (var i = 0; i < els.length; i++) {
         var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim();
-        if (/^save\s*&\s*exit$/i.test(label) && visible(els[i])) return els[i];
+        if (/^save\s*&\s*exit$/i.test(label) && visible(els[i])) out.push(els[i]);
       }
     } catch (e) {}
-    return null;
+    return out;
+  }
+  function findSaveExitButton(doc) {
+    var all = findSaveExitButtons(doc);
+    return all.length ? all[0] : null;
   }
 
-  // Clickable red "F" button next to "Save & Exit" on the CNR/Saints
-  // Consult-Psychiatry form. CNR/Saints only; other facilities unchanged.
+  // Clickable red "F" buttons next to every "Save & Exit" on the CNR/Saints
+  // Consult-Psychiatry form (top and bottom — both do the same thing).
+  // CNR/Saints only; other facilities unchanged.
   function applyFButtonCNRForm(doc) {
     try {
       var olds = doc.querySelectorAll('.pcc-f-btn-cnr'), i;
       for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
       if (!isCNROrSaints(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
-      var target = findSaveExitButton(doc);
-      if (!target || !target.parentNode) return;
-      var btn = doc.createElement('button');
-      btn.type = 'button';
-      btn.className = 'pcc-f-btn-cnr';
-      btn.textContent = 'F';
-      btn.title = 'Save & Exit (same as F key)';
-      btn.tabIndex = -1;
-      btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
-        'font-weight:bold;font-size:14px;padding:2px 10px;margin-left:6px;cursor:pointer;');
-      btn.addEventListener('click', function (e) {
-        e.preventDefault();
-        e.stopPropagation();
-        var tb = findSaveExitButton(doc);
-        if (tb) tb.click();
-      });
-      if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
-      else target.parentNode.appendChild(btn);
+      var targets = findSaveExitButtons(doc);
+      for (var ti = 0; ti < targets.length; ti++) {
+        (function(target){
+          if (!target || !target.parentNode) return;
+          var btn = doc.createElement('button');
+          btn.type = 'button';
+          btn.className = 'pcc-f-btn-cnr';
+          btn.textContent = 'F';
+          btn.title = 'Save & Exit (same as F key)';
+          btn.tabIndex = -1;
+          btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
+            'font-weight:bold;font-size:14px;padding:2px 10px;margin-left:6px;cursor:pointer;');
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            target.click();
+          });
+          if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
+          else target.parentNode.appendChild(btn);
+        })(targets[ti]);
+      }
     } catch (e) {}
   }
 
