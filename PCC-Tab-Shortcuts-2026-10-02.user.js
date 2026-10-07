@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.31
+// @version 1.32
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -733,9 +733,9 @@
             toast('D: GDR filled (' + qualifying.length + ' meds, 4b1=' + (targets41.join(',') || '?') + ')');
             updateDOSDate(doc);
             checkMedsMatch(doc, meds);
-          }, 600);
-        }, 600);
-      }, 600);
+          }, 1200);
+        }, 1200);
+      }, 1200);
       return; // async completion above
     } catch(e){ toast('D: error'); }
   }
