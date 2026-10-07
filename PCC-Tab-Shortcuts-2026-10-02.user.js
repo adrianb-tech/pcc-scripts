@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.26
+// @version 1.27
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -767,7 +767,11 @@
   }
   function extractDrugName(line) {
     // "- Zoloft 50mg QD for depression" → "zoloft"
-    var m = (line || '').replace(/^\s*-\s*/, '').match(/^([A-Za-z]+)/);
+    // Strip meal instructions first ("daily with breakfast", etc.)
+    var clean = (line || '').replace(/\s*(daily\s+)?with\s+(breakfast|lunch|dinner|meals?)\b/gi, '')
+      .replace(/\s*(before|after)\s+(breakfast|lunch|dinner|meals?)\b/gi, '')
+      .replace(/\s*(with|after)\s+food\b/gi, '');
+    var m = clean.replace(/^\s*-\s*/, '').match(/^([A-Za-z]+)/);
     return m ? canonMedName(m[1]) : '';
   }
 
@@ -799,6 +803,7 @@
         var msg = 'D: MED MISMATCH — ';
         if (inNoteNotChart.length) msg += 'in note not chart: ' + inNoteNotChart.join(', ') + '. ';
         if (inChartNotNote.length) msg += 'in chart not note: ' + inChartNotNote.join(', ') + '.';
+        msg += ' (If this looks wrong, press G on the profile page to refresh the chart meds.)';
         // Persistent alert (not auto-fading) for mismatches
         var alertBox = doc.createElement('div');
         alertBox.textContent = msg;
