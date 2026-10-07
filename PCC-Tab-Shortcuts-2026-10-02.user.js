@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.18
+// @version 1.19
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1456,8 +1456,11 @@
     try {
       if (findTypeSelect(doc)) return false;
       if (findSaveSignLockExitButton(doc)) return true;
+      if (findSaveExitButton(doc)) return true;
       var t = doc.body ? norm(doc.body.textContent || '') : '';
       if (t.indexOf('CONSULT-PSYCHIATRY') !== -1) return true;
+      // Section-list page: title says "Consult Form - Psychiatry 4 - V 1"
+      if (/consult form - psychiatry/i.test(t)) return true;
     } catch (e) {}
     return false;
   }
@@ -2285,7 +2288,7 @@
   }
 
   // True when the header facility picker shows CNR (Downtown Brooklyn
-  // Nursing & Rehabilitation Center). Same header-area scoping as others.
+  // Nursing & Rehabilitation Center). Checks header area and footer.
   function isCNR(doc) {
     try {
       var els = doc.querySelectorAll('select, button, a, span, div, td');
@@ -2295,7 +2298,8 @@
         if (!/\bCNR\b/i.test(t) && !/downtown\s*brooklyn/i.test(t)) continue;
         var r = null;
         try { r = els[i].getBoundingClientRect(); } catch (e) {}
-        if (r && r.top >= -50 && r.top < 300) return true;
+        // Header (top 300px) or footer (bottom of page)
+        if (r && (r.top < 300 || r.top > window.innerHeight - 300)) return true;
       }
     } catch (e) {}
     return false;
