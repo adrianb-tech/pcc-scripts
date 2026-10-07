@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.22
+// @version 1.23
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1315,7 +1315,7 @@
           var sslBtn = findSaveSignLockExitButton(doc);
           if (sslBtn) { sslBtn.click(); return true; }
         }
-        if (isCNROrSaints(doc) && isConsultPsychiatryFormPage(doc)) {
+        if (isCNROrSaints(doc) && isConsultPsychiatryFormPage(doc) && !isSection2Signed(doc)) {
           // Section-list page: F signs Section 2 if ready (sign link exists).
           var signLink = findSectionSignLink(doc);
           if (signLink) { signLink.click(); return true; }
@@ -1568,6 +1568,22 @@
     } catch (e) {}
   }
 
+  // True when Section 2 (Psychiatry MD) is signed (green row with "view").
+  // When signed, the note is done — no F buttons needed on this page.
+  function isSection2Signed(doc) {
+    try {
+      var links = doc.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        if ((links[i].textContent || '').trim().toLowerCase() !== 'view') continue;
+        var row = links[i].closest('tr');
+        if (row && /psychiatry md|evaluation and recommendation/i.test(row.textContent)) {
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+
   // Find the "sign" link for Section 2 (Psychiatry MD - Evaluation and
   // Recommendation) on the CNR/Saints section-list page.
   function findSectionSignLink(doc) {
@@ -1592,6 +1608,7 @@
       for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
       if (!isCNROrSaints(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
+      if (isSection2Signed(doc)) return;
       var target = findSectionSignLink(doc);
       if (!target || !target.parentNode) return;
       var btn = doc.createElement('button');
@@ -1682,6 +1699,8 @@
       for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
       if (!isCNROrSaints(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
+      // If Section 2 is signed (green), no F buttons on this page.
+      if (isSection2Signed(doc)) return;
       // If Section 2 is ready to sign, only the sign F shows — not view.
       if (findSectionSignLink(doc)) return;
       var target = findReasonViewLink(doc);
