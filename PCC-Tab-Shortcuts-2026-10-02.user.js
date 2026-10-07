@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.34
+// @version 1.35
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -553,7 +553,7 @@
   //   4b.a checked, 4b1 per indication, 4c.d checked, 4c1 = "see plan"
   function doGDRFill(doc) {
     try {
-      if (!isCNROrSaints(doc)) { toast('D: CNR/Saints form only'); return; }
+      if (!isAnyFacility(doc)) { toast('D: facility not recognized'); return; }
       if (!isConsultPsychiatryFormPage(doc)) { toast('D: not a psych consult form'); return; }
 
       // Find the Impression/Diagnosis textarea (section 5) and extract Psych meds
@@ -1227,7 +1227,7 @@
           // Form page only: badge the section edit link. Other pages
           // (resident search, dashboard, etc.) get no badge.
           // CNR/Saints: no F badge on edit links (only view/sign get F).
-          if (!isCNROrSaints(doc)) {
+          if (!isAnyFacility(doc)) {
             link = findSectionEditLink(doc);
           }
         }
@@ -1337,7 +1337,7 @@
         // Consult-Psychiatry form, F clicks Save & Sign & Lock & Exit.
         // CNR/Saints: skip the generic edit-link (only view/sign get F there).
         var editLink = findSectionEditLink(doc);
-        if (editLink && !isCNROrSaints(doc)) { editLink.click(); return true; }
+        if (editLink && !isAnyFacility(doc)) { editLink.click(); return true; }
         if (isPsychConsultFormPage(doc)) {
           var lockBtn = findLockButton(doc);
           if (lockBtn) { lockBtn.click(); return true; }
@@ -1346,7 +1346,7 @@
           var sslBtn = findSaveSignLockExitButton(doc);
           if (sslBtn) { sslBtn.click(); return true; }
         }
-        if (isCNROrSaints(doc) && isConsultPsychiatryFormPage(doc) && !isSection2Signed(doc)) {
+        if (isAnyFacility(doc) && isConsultPsychiatryFormPage(doc) && !isSection2Signed(doc)) {
           // Section-list page: F signs Section 2 if ready (sign link exists).
           var signLink = findSectionSignLink(doc);
           if (signLink) { signLink.click(); return true; }
@@ -1588,7 +1588,7 @@
   // Only adds missing buttons (no remove-all) to avoid flickering.
   function applyFButtonCNRForm(doc) {
     try {
-      if (!isCNROrSaints(doc)) return;
+      if (!isAnyFacility(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
       var targets = findSaveExitButtons(doc);
       for (var ti = 0; ti < targets.length; ti++) {
@@ -1652,7 +1652,7 @@
     try {
       var olds = doc.querySelectorAll('.pcc-f-btn-sign'), i;
       for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
-      if (!isCNROrSaints(doc)) return;
+      if (!isAnyFacility(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
       if (isSection2Signed(doc)) return;
       var target = findSectionSignLink(doc);
@@ -1694,7 +1694,7 @@
     try {
       var olds = doc.querySelectorAll('.pcc-f-btn-next'), i;
       for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
-      if (!isCNROrSaints(doc)) return;
+      if (!isAnyFacility(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
       var target = findNextSectionButton(doc);
       if (!target || !target.parentNode) return;
@@ -1743,7 +1743,7 @@
     try {
       var olds = doc.querySelectorAll('.pcc-f-btn-reason'), i;
       for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
-      if (!isCNROrSaints(doc)) return;
+      if (!isAnyFacility(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
       // If Section 2 is signed (green), no F buttons on this page.
       if (isSection2Signed(doc)) return;
@@ -2414,6 +2414,14 @@
   function isCNROrSaints(doc) {
     try { if (isCNR(doc)) return true; } catch (e) {}
     try { if (isSaints(doc)) return true; } catch (e2) {}
+    return false;
+  }
+
+  // All four SNFs: CNR, Saints, Bedford, Crown Heights.
+  // (2026-10-07: adrian said everything applies to all four for now.)
+  function isAnyFacility(doc) {
+    try { if (isAnyFacility(doc)) return true; } catch (e) {}
+    try { if (isBedfordOrCrownHeights(doc)) return true; } catch (e2) {}
     return false;
   }
 
