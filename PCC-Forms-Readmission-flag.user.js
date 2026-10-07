@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Forms - Readmission flag
-// @version 1.1
+// @version 1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -145,7 +145,7 @@
       else clear();
       return;
     }
-    if (rd > lf.d) render(re.node, 'alert', 'READMISSION', 'after last psych form ' + lf.s);
+    if (rd >= lf.d) render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
     else if (SHOW_OK) render(re.node, 'ok', '', 're-entry ' + re.str + ' is before last psych form ' + lf.s + ' - OK');
     else clear();
   }
