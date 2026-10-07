@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 2.0
+// @version 2.1
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -479,7 +479,7 @@
     ['buprenorphine\\b.*\\bnaloxone|suboxone','Suboxone'], ['buprenorphine|subutex|sublocade','Subutex'],
     ['methadone|dolophine','methadone'], ['naltrexone|revia|vivitrol','naltrexone'],
     ['acamprosate|campral','Campral'], ['disulfiram|antabuse','Antabuse'], ['nalmefene|selincro','Selincro'],
-    ['varenicline|chantix','Chantix'], ['nicotine','nicotine (NRT)'], ['naloxone|narcan','Narcan'],
+    ['varenicline|chantix','Chantix'], ['nicotine','nicotine (NRT)'],
     ['chlormethiazole|heminevrin','Heminevrin']
   ]);
 
