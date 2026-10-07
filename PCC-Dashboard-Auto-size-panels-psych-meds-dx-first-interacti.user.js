@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.7
+// @version 1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -834,9 +834,21 @@
       b.type = 'button';
       b.style.cssText = 'margin:4px 4px 4px 0;padding:3px 8px;font-size:12px;cursor:pointer;';
       b.onclick = onclick;
-      doc.body.insertBefore(b, doc.body.firstChild);
+      // psychToggle goes right above the psych med list box, not at top of body
+      if (id === 'psychToggle') {
+        var medBox = doc.getElementById('medListBox');
+        if (medBox && medBox.parentNode) medBox.parentNode.insertBefore(b, medBox);
+        else doc.body.insertBefore(b, doc.body.firstChild);
+      } else {
+        doc.body.insertBefore(b, doc.body.firstChild);
+      }
     }
-    b.textContent = text;
+    // psychToggle: make the count very obvious with large bold HTML
+    if (id === 'psychToggle') {
+      b.innerHTML = text;
+    } else {
+      b.textContent = text;
+    }
   }
 
   // Two half-width boxes side by side: flags (left) and psych med list (right)
@@ -1334,11 +1346,15 @@
     var entries = collectEntries(flagged);
     var highCount = entries.filter(function(e) { return e.sev === 'HIGH'; }).length;
 
-    setButton(doc, 'psychToggle',
-      'Psych meds first: ' + (on ? 'ON' : 'OFF') + ' (' + psychCount + ' counted of ' + groups.length + ' meds' +
-      (tier2u ? ', +' + tier2u + ' addiction meds uncounted' : '') +
-      (painCount ? ', ' + painCount + ' pain meds moved to bottom' : '') + ')' +
-      (noExp ? ' | could not open ' + noExp : ''),
+    // psychToggle: big obvious count badge, placed right above the psych med list
+    var psychToggleHtml = 'Psych meds first: ' + (on ? 'ON' : 'OFF') +
+      ' <span style="font-size:20px;font-weight:bold;background:#2563eb;color:#fff;' +
+      'border-radius:6px;padding:2px 10px;margin-left:6px;">' + psychCount + ' psych</span>' +
+      '<span style="font-size:12px;color:#555;"> of ' + groups.length + ' meds' +
+      (tier2u ? ', +' + tier2u + ' addiction uncounted' : '') +
+      (painCount ? ', ' + painCount + ' pain at bottom' : '') + '</span>' +
+      (noExp ? ' | could not open ' + noExp : '');
+    setButton(doc, 'psychToggle', psychToggleHtml,
       function() { setOn('pccPsychFirst', !isOn('pccPsychFirst')); sortMeds(doc); });
 
     setButton(doc, 'interactionInfo',
