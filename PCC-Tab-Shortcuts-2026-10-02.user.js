@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.38
+// @version 1.39
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2590,7 +2590,8 @@
             applyFButtonReasonView(doc);
             applyFButtonNextSection(doc);
             applyFButtonSectionSign(doc);
-            applyFButtonReasonsPopup(doc);
+            // applyFButtonReasonsPopup disabled 2026-10-07: heavy DOM scan every second
+            // was slowing PCC. F KEY still works for the popup via clickReasonsPopupSave.
             return null;
           });
         } catch(e){}
