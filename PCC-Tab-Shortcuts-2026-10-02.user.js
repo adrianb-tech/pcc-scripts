@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.27
+// @version 1.28
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -628,7 +628,11 @@
       }
 
       // Has qualifying meds → Q4 = B (No), fill 4b/4b1/4c/4c1
-      // Find Q4b: locate the Q4 question text, then take the 3 radios after it
+      // The sections cascade: Q4b → 4b appears → 4b.a → 4c appears → 4c.d → 4c1 appears.
+      // Work through them sequentially with delays for PCC to reveal each.
+      var checkboxes = doc.querySelectorAll('input[type="checkbox"]');
+
+      // Step 1: Q4 = B (No)
       var q4bRadio = null;
       var allEls = doc.querySelectorAll('*');
       var q4q = null;
@@ -637,36 +641,23 @@
         if (qt.length < 200 && /was dosage reduction attempted/i.test(qt)) { q4q = allEls[qi]; break; }
       }
       if (q4q) {
-        // Find next 3 radios in document order after the Q4 question
         var allRadios = doc.querySelectorAll('input[type="radio"]');
         var started = false, q4list = [];
         for (var ri = 0; ri < allRadios.length && q4list.length < 3; ri++) {
           if (!started) {
-            // Check if this radio comes after q4q in the DOM
             if (q4q.compareDocumentPosition(allRadios[ri]) & Node.DOCUMENT_POSITION_FOLLOWING) {
               started = true;
             } else continue;
           }
           q4list.push(allRadios[ri]);
         }
-        if (q4list.length >= 2) q4bRadio = q4list[1]; // b is middle of a/b/c
+        if (q4list.length >= 2) q4bRadio = q4list[1];
       }
       if (q4bRadio && !q4bRadio.checked) fireClick(q4bRadio);
 
-      // 4b.a: "I have personally assessed..."
-      var checkboxes = doc.querySelectorAll('input[type="checkbox"]');
-      for (var c = 0; c < checkboxes.length; c++) {
-        var ct = (checkboxes[c].parentElement ? checkboxes[c].parentElement.textContent : '') || '';
-        if (/personally assessed this resident/i.test(ct) && !checkboxes[c].checked) {
-          fireClick(checkboxes[c]);
-          break;
-        }
-      }
-
-      // 4b1: map indication from psych meds to a-g
-      // Priority: schizophrenia > bipolar > depression > psychotic > anxiety
+      // 4b1 target from indications (computed now, used in step 2)
       var indications = qualifying.join(' ').toLowerCase();
-      var target41 = null; // 'a' through 'g'
+      var target41 = null;
       if (/schizophrenia|schizoaffective/i.test(indications)) target41 = 'a';
       else if (/bipolar/i.test(indications)) target41 = 'b';
       else if (/depress/i.test(indications)) target41 = 'c';
@@ -674,68 +665,74 @@
       else if (/tourette/i.test(indications)) target41 = 'e';
       else if (/psychotic|psychosis/i.test(indications)) target41 = 'f';
       else if (/anxiety/i.test(indications)) target41 = 'g';
+      var labels41 = {
+        'a': /schizophrenia/i, 'b': /bipolar disorder/i, 'c': /major depressive disorder/i,
+        'd': /huntington/i, 'e': /tourette/i, 'f': /psychotic disorders.*other than schizophrenia/i,
+        'g': /anxiety disorder/i
+      };
 
-      if (target41) {
-        // Find 4b1 checkboxes: they're in the "Specify Chronic Enduring Condition" section
-        // Look for the label text matching the option
-        var labels41 = {
-          'a': /schizophrenia/i, 'b': /bipolar disorder/i, 'c': /major depressive disorder/i,
-          'd': /huntington/i, 'e': /tourette/i, 'f': /psychotic disorders.*other than schizophrenia/i,
-          'g': /anxiety disorder/i
-        };
-        var in41 = false;
-        for (var c2 = 0; c2 < checkboxes.length; c2++) {
-          var p2 = checkboxes[c2].parentElement;
-          var pt2 = p2 ? (p2.textContent || '') : '';
-          // Track if we're in 4b1 section
-          if (/specify chronic enduring condition/i.test(pt2)) in41 = true;
-          if (/specify contraindication/i.test(pt2)) in41 = false;
-          if (in41 && labels41[target41].test(pt2) && !checkboxes[c2].checked) {
-            fireClick(checkboxes[c2]);
+      // Step 2 (after 4b reveals): click 4b.a and 4b1 option
+      setTimeout(function() {
+        var cbs = doc.querySelectorAll('input[type="checkbox"]');
+        for (var c = 0; c < cbs.length; c++) {
+          var ct = (cbs[c].parentElement ? cbs[c].parentElement.textContent : '') || '';
+          if (/personally assessed this resident/i.test(ct) && !cbs[c].checked) {
+            fireClick(cbs[c]);
             break;
           }
         }
-      }
-
-      // 4c.d: "other"
-      var in4c = false;
-      for (var c3 = 0; c3 < checkboxes.length; c3++) {
-        var p3 = checkboxes[c3].parentElement;
-        var pt3 = p3 ? (p3.textContent || '') : '';
-        if (/specify contraindication of dose reduction/i.test(pt3)) in4c = true;
-        if (/specify other/i.test(pt3)) in4c = false;
-        if (in4c && /^\s*d\.\s*other/i.test(pt3.trim()) && !checkboxes[c3].checked) {
-          fireClick(checkboxes[c3]);
-          break;
-        }
-      }
-
-      // 4c1: "see plan"
-      for (var ta = 0; ta < textareas.length; ta++) {
-        var prev = textareas[ta].parentElement ? textareas[ta].parentElement.textContent : '';
-        // Check if this textarea is under "4c1. Specify other:"
-        var section = '';
-        var el = textareas[ta];
-        for (var d = 0; d < 5 && el; d++) {
-          section = (el.textContent || '') + ' ' + section;
-          el = el.parentElement;
-        }
-        if (/4c1|specify other/i.test(section) && !/impression|diagnosis/i.test(section)) {
-          if (!/see plan/i.test(textareas[ta].value)) {
-            textareas[ta].value = 'see plan';
-            textareas[ta].dispatchEvent(new Event('change', { bubbles: true }));
+        if (target41) {
+          var in41 = false;
+          for (var c2 = 0; c2 < cbs.length; c2++) {
+            var p2 = cbs[c2].parentElement;
+            var pt2 = p2 ? (p2.textContent || '') : '';
+            if (/specify chronic enduring condition/i.test(pt2)) in41 = true;
+            if (/specify contraindication/i.test(pt2)) in41 = false;
+            if (in41 && labels41[target41].test(pt2) && !cbs[c2].checked) {
+              fireClick(cbs[c2]);
+              break;
+            }
           }
-          break;
         }
-      }
-
-      toast('D: GDR filled (' + qualifying.length + ' meds, 4b1=' + (target41 || '?') + ')');
-
-      // Update the DOS date line in the note to the stored DOS date
-      updateDOSDate(doc);
-
-      // Compare note psych meds vs chart psych meds (from G-push cache)
-      checkMedsMatch(doc, meds);
+        // Step 3 (after 4c reveals): click 4c.d (other)
+        setTimeout(function() {
+          var cbs3 = doc.querySelectorAll('input[type="checkbox"]');
+          var in4c = false;
+          for (var c3 = 0; c3 < cbs3.length; c3++) {
+            var p3 = cbs3[c3].parentElement;
+            var pt3 = p3 ? (p3.textContent || '') : '';
+            if (/specify contraindication of dose reduction/i.test(pt3)) in4c = true;
+            if (/specify other/i.test(pt3)) in4c = false;
+            if (in4c && /^\s*d\.\s*other/i.test(pt3.trim()) && !cbs3[c3].checked) {
+              fireClick(cbs3[c3]);
+              break;
+            }
+          }
+          // Step 4 (after 4c1 reveals): fill "see plan"
+          setTimeout(function() {
+            var tas = doc.querySelectorAll('textarea');
+            for (var ta = 0; ta < tas.length; ta++) {
+              var section = '';
+              var el = tas[ta];
+              for (var d = 0; d < 5 && el; d++) {
+                section = (el.textContent || '') + ' ' + section;
+                el = el.parentElement;
+              }
+              if (/4c1|specify other/i.test(section) && !/impression|diagnosis/i.test(section)) {
+                if (!/see plan/i.test(tas[ta].value)) {
+                  tas[ta].value = 'see plan';
+                  tas[ta].dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                break;
+              }
+            }
+            toast('D: GDR filled (' + qualifying.length + ' meds, 4b1=' + (target41 || '?') + ')');
+            updateDOSDate(doc);
+            checkMedsMatch(doc, meds);
+          }, 600);
+        }, 600);
+      }, 600);
+      return; // async completion above
     } catch(e){ toast('D: error'); }
   }
 
