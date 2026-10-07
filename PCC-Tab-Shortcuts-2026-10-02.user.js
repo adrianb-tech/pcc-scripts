@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.42
+// @version 1.43
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2663,13 +2663,10 @@
     applyBadges();
     setTimeout(applyBadges, 1500);
     setTimeout(applyBadges, 4000);
-    var debounce = null;
-    try {
-      new MutationObserver(function () {
-        clearTimeout(debounce);
-        debounce = setTimeout(applyBadges, 400);
-      }).observe(document.documentElement, { childList: true, subtree: true });
-    } catch (e) {}
+    // MutationObserver REMOVED 2026-10-07 v1.43: watching the entire DOM
+    // (subtree:true) and re-running applyBadges on every mutation caused
+    // "Page Unresponsive" hangs on form pages where PCC updates the DOM
+    // constantly. Badges apply on load + 1.5s/4s retries, which is enough.
     try {
       window.addEventListener('scroll', function () { placeABadge(); }, true);
       window.addEventListener('resize', function () { placeABadge(); });
