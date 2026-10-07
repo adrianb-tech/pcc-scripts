@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.8
+// @version 1.9
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1354,9 +1354,6 @@
       (tier2u ? ', +' + tier2u + ' addiction uncounted' : '') +
       (painCount ? ', ' + painCount + ' pain at bottom' : '') + '</span>' +
       (noExp ? ' | could not open ' + noExp : '');
-    setButton(doc, 'psychToggle', psychToggleHtml,
-      function() { setOn('pccPsychFirst', !isOn('pccPsychFirst')); sortMeds(doc); });
-
     setButton(doc, 'interactionInfo',
       '⚠ ' + entries.length + (entries.length === 1 ? ' flag' : ' flags') + ' (' + highCount + ' high) — click to hide/show · screening only',
       function() { togglePanel(doc, 'interactionPanel'); });
@@ -1382,6 +1379,9 @@
 
     var medRes = buildMedList(groups);
     setBox(doc, 'medListBox', MED_BOX_CSS, buildMedListHtml(medRes));
+    // psychToggle placed AFTER medListBox exists, so it sits right above it
+    setButton(doc, 'psychToggle', psychToggleHtml,
+      function() { setOn('pccPsychFirst', !isOn('pccPsychFirst')); sortMeds(doc); });
     var copyBtn = doc.getElementById('copyMedListBtn');
     if (copyBtn) copyBtn.onclick = function(e) {
       e.stopPropagation();
