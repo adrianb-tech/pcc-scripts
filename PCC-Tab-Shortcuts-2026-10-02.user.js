@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.15
+// @version 1.16
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -697,7 +697,47 @@
       }
 
       toast('D: GDR filled (' + qualifying.length + ' meds, 4b1=' + (target41 || '?') + ')');
+
+      // Update the DOS date line in the note to the stored DOS date
+      updateDOSDate(doc);
     } catch(e){ toast('D: error'); }
+  }
+
+  // Stored DOS date (set once a week via Shift+D). Used by D to update
+  // the "DOS - pt was evaluated on [date]" line when copy-pasting notes.
+  function getDOSDate() {
+    try { return localStorage.getItem('pccDOSDate') || ''; } catch(e){ return ''; }
+  }
+  function setDOSDate(v) {
+    try { localStorage.setItem('pccDOSDate', v); } catch(e){}
+  }
+  function promptDOSDate() {
+    var cur = getDOSDate();
+    var v = prompt('DOS date for this week (M/D/YY):', cur || '');
+    if (v && v.trim()) { setDOSDate(v.trim()); toast('DOS date set: ' + v.trim()); }
+  }
+
+  // Find "DOS - pt was evaluated on [old date]" in the Impression textarea
+  // and replace the date with the stored DOS date.
+  function updateDOSDate(doc) {
+    try {
+      var dosDate = getDOSDate();
+      if (!dosDate) { promptDOSDate(); dosDate = getDOSDate(); if (!dosDate) return; }
+      var textareas = doc.querySelectorAll('textarea');
+      for (var i = 0; i < textareas.length; i++) {
+        var v = textareas[i].value || '';
+        if (/DOS\s*-\s*pt was evaluated on/i.test(v)) {
+          var nv = v.replace(/(DOS\s*-\s*pt was evaluated on\s*)\S+/i, '$1' + dosDate);
+          if (nv !== v) {
+            textareas[i].value = nv;
+            textareas[i].dispatchEvent(new Event('input', { bubbles: true }));
+            textareas[i].dispatchEvent(new Event('change', { bubbles: true }));
+            toast('D: DOS date → ' + dosDate);
+          }
+          return;
+        }
+      }
+    } catch(e){}
   }
 
   document.addEventListener('keydown', function(e){
@@ -709,6 +749,8 @@
       if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
       if (e.key !== 'd' && e.key !== 'D') return;
       e.preventDefault();
+      // Shift+D: set the DOS date for the week. Plain D: GDR fill + DOS update.
+      if (e.shiftKey) { promptDOSDate(); return; }
       doGDRFill(document);
     } catch(err){}
   });
