@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -541,7 +541,7 @@
     if (/\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(l)) return 'PRN';
     if (/\bbefore meals?\b|\bante cibum\b|\ba\.c\.?|\bac\b/.test(l)) return 'AC';
     if (/\bafter meals?\b|\bpost cibum\b|\bp\.c\.?|\bpc\b/.test(l)) return 'PC';
-    if (/\bbedtime\b|\bat night\b|\bnightly\b|\bevery night\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return 'QHS';
+    if (/\bbedtime\b|\bat night\b|\bnightly\b|\bevery night\b|\bone time a night\b|\b1 time a night\b|\bonce nightly\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return 'QHS';
     if (/\bevery other day\b|\bqod\b/.test(l)) return 'QOD';
     if (/\btwo times a day\b|\btwice a day\b|\btwice daily\b|\bb\.i\.d\.?|\bbid\b|\b2 times a day\b/.test(l)) return 'BID';
     if (/\bthree times a day\b|\bthrice\b|\bt\.i\.d\.?|\btid\b|\b3 times a day\b/.test(l)) return 'TID';
