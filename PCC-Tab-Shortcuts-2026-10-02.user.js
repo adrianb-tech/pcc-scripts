@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.12
+// @version 1.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -531,6 +531,185 @@
         document.body.appendChild(badge);
         setTimeout(function(){ badge.remove(); }, 1500);
       }
+    } catch(err){}
+  });
+
+  // ---- D key: GDR section auto-fill (CNR/Saints only) ----
+  // Reads the Psych meds from the note's Impression section, then:
+  // - Q4 = C (N/A) if no meds, or only dementia meds / Ambien / melatonin
+  // - Q4 = B (No) if on any other psychotropic, then fills:
+  //   4b.a checked, 4b1 per indication, 4c.d checked, 4c1 = "see plan"
+  function doGDRFill(doc) {
+    try {
+      if (!isCNROrSaints(doc)) { toast('D: CNR/Saints form only'); return; }
+      if (!isConsultPsychiatryFormPage(doc)) { toast('D: not a psych consult form'); return; }
+
+      // Find the Impression/Diagnosis textarea (section 5) and extract Psych meds
+      var psychMedsText = '';
+      var textareas = doc.querySelectorAll('textarea');
+      for (var i = 0; i < textareas.length; i++) {
+        var tv = textareas[i].value || '';
+        if (/psych\s*meds/i.test(tv)) { psychMedsText = tv; break; }
+      }
+      // Fallback: search all text for a Psych meds block
+      if (!psychMedsText) {
+        var bodyT = doc.body ? doc.body.innerText : '';
+        var m = bodyT.match(/psych\s*meds\s*\n([\s\S]{0,2000}?)(?=\n\s*(?:PLAN|DOS|DX|Allergies)\b)/i);
+        if (m) psychMedsText = m[0];
+      }
+
+      // Parse med lines: "- Zoloft 50mg QD for depression and anxiety"
+      var medLines = psychMedsText.split('\n').filter(function(l){
+        return /^\s*-\s*\S/.test(l) && /psych\s*meds/i.test(psychMedsText.split('\n').slice(0, psychMedsText.split('\n').indexOf(l)).join('\n') + '\n' + l) || /for\s+\w+/i.test(l);
+      });
+      // Simpler: get lines between "Psych meds" and "PLAN"
+      var inMeds = false, meds = [];
+      var lines = psychMedsText.split('\n');
+      for (var li = 0; li < lines.length; li++) {
+        var ln = lines[li];
+        if (/^\s*psych\s*meds/i.test(ln)) { inMeds = true; continue; }
+        if (/^\s*plan\b/i.test(ln)) { inMeds = false; break; }
+        if (inMeds && /^\s*-\s*\S/.test(ln)) meds.push(ln.trim());
+      }
+
+      // Dementia meds, Ambien, melatonin → excluded (not psychotropics for GDR)
+      var excluded = /donepezil|aricept|memantine|namenda|rivastigmine|exelon|galantamine|razadyne|zolpidem|ambien|melatonin/i;
+      var qualifying = meds.filter(function(med){ return !excluded.test(med); });
+
+      // Find Q4 radios: look for "not on any psychotropic medication" (option C)
+      var radios = doc.querySelectorAll('input[type="radio"]');
+      var q4c = null, q4b = null;
+      // Find by nearby label text
+      for (var r = 0; r < radios.length; r++) {
+        var lbl = '';
+        var parent = radios[r].parentElement;
+        if (parent) lbl = (parent.textContent || '');
+        // Also check following siblings
+        var sib = radios[r].nextSibling;
+        while (sib && lbl.length < 100) {
+          if (sib.nodeType === 3) lbl += sib.nodeValue;
+          else if (sib.nodeType === 1) lbl += (sib.textContent || '');
+          sib = sib.nextSibling;
+        }
+        if (/not on any psychotropic/i.test(lbl)) q4c = radios[r];
+        // Q4b is the "No" option — harder to identify; look for 4b section context
+      }
+
+      if (qualifying.length === 0) {
+        // No qualifying meds → Q4 = C (N/A)
+        if (q4c && !q4c.checked) { fireClick(q4c); toast('D: Q4 = N/A (no psychotropics)'); }
+        else toast('D: Q4 already N/A');
+        return;
+      }
+
+      // Has qualifying meds → Q4 = B (No), fill 4b/4b1/4c/4c1
+      // Find Q4b: the "No" radio in question 4 (before 4b section)
+      // Strategy: find 4b.a checkbox first, then Q4 radios are before it
+      var allInputs = doc.querySelectorAll('input[type="radio"], input[type="checkbox"]');
+      var q4radios = [];
+      var found4b = false;
+      for (var ai = 0; ai < allInputs.length; ai++) {
+        var at = (allInputs[ai].parentElement ? allInputs[ai].parentElement.textContent : '') || '';
+        if (/personally assessed this resident/i.test(at)) { found4b = true; break; }
+        if (allInputs[ai].type === 'radio') q4radios.push(allInputs[ai]);
+      }
+      // Q4b is likely the last radio before 4b section; Q4 has 3 options (a/b/c)
+      // Take the last 3 radios before 4b as Q4a, Q4b, Q4c
+      if (q4radios.length >= 3) {
+        var q4bRadio = q4radios[q4radios.length - 2]; // b is middle of a/b/c
+        if (q4bRadio && !q4bRadio.checked) fireClick(q4bRadio);
+      }
+
+      // 4b.a: "I have personally assessed..."
+      var checkboxes = doc.querySelectorAll('input[type="checkbox"]');
+      for (var c = 0; c < checkboxes.length; c++) {
+        var ct = (checkboxes[c].parentElement ? checkboxes[c].parentElement.textContent : '') || '';
+        if (/personally assessed this resident/i.test(ct) && !checkboxes[c].checked) {
+          fireClick(checkboxes[c]);
+          break;
+        }
+      }
+
+      // 4b1: map indication from psych meds to a-g
+      // Priority: schizophrenia > bipolar > depression > psychotic > anxiety
+      var indications = qualifying.join(' ').toLowerCase();
+      var target41 = null; // 'a' through 'g'
+      if (/schizophrenia|schizoaffective/i.test(indications)) target41 = 'a';
+      else if (/bipolar/i.test(indications)) target41 = 'b';
+      else if (/depress/i.test(indications)) target41 = 'c';
+      else if (/huntington/i.test(indications)) target41 = 'd';
+      else if (/tourette/i.test(indications)) target41 = 'e';
+      else if (/psychotic|psychosis/i.test(indications)) target41 = 'f';
+      else if (/anxiety/i.test(indications)) target41 = 'g';
+
+      if (target41) {
+        // Find 4b1 checkboxes: they're in the "Specify Chronic Enduring Condition" section
+        // Look for the label text matching the option
+        var labels41 = {
+          'a': /schizophrenia/i, 'b': /bipolar disorder/i, 'c': /major depressive disorder/i,
+          'd': /huntington/i, 'e': /tourette/i, 'f': /psychotic disorders.*other than schizophrenia/i,
+          'g': /anxiety disorder/i
+        };
+        var in41 = false;
+        for (var c2 = 0; c2 < checkboxes.length; c2++) {
+          var p2 = checkboxes[c2].parentElement;
+          var pt2 = p2 ? (p2.textContent || '') : '';
+          // Track if we're in 4b1 section
+          if (/specify chronic enduring condition/i.test(pt2)) in41 = true;
+          if (/specify contraindication/i.test(pt2)) in41 = false;
+          if (in41 && labels41[target41].test(pt2) && !checkboxes[c2].checked) {
+            fireClick(checkboxes[c2]);
+            break;
+          }
+        }
+      }
+
+      // 4c.d: "other"
+      var in4c = false;
+      for (var c3 = 0; c3 < checkboxes.length; c3++) {
+        var p3 = checkboxes[c3].parentElement;
+        var pt3 = p3 ? (p3.textContent || '') : '';
+        if (/specify contraindication of dose reduction/i.test(pt3)) in4c = true;
+        if (/specify other/i.test(pt3)) in4c = false;
+        if (in4c && /^\s*d\.\s*other/i.test(pt3.trim()) && !checkboxes[c3].checked) {
+          fireClick(checkboxes[c3]);
+          break;
+        }
+      }
+
+      // 4c1: "see plan"
+      for (var ta = 0; ta < textareas.length; ta++) {
+        var prev = textareas[ta].parentElement ? textareas[ta].parentElement.textContent : '';
+        // Check if this textarea is under "4c1. Specify other:"
+        var section = '';
+        var el = textareas[ta];
+        for (var d = 0; d < 5 && el; d++) {
+          section = (el.textContent || '') + ' ' + section;
+          el = el.parentElement;
+        }
+        if (/4c1|specify other/i.test(section) && !/impression|diagnosis/i.test(section)) {
+          if (!/see plan/i.test(textareas[ta].value)) {
+            textareas[ta].value = 'see plan';
+            textareas[ta].dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          break;
+        }
+      }
+
+      toast('D: GDR filled (' + qualifying.length + ' meds, 4b1=' + (target41 || '?') + ')');
+    } catch(e){ toast('D: error'); }
+  }
+
+  document.addEventListener('keydown', function(e){
+    try {
+      if (!e.isTrusted) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      var t = e.target;
+      var tag = (t && t.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || tag === 'select' || (t && t.isContentEditable)) return;
+      if (e.key !== 'd' && e.key !== 'D') return;
+      e.preventDefault();
+      doGDRFill(document);
     } catch(err){}
   });
 
