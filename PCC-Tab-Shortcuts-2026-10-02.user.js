@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.13
+// @version 1.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1180,6 +1180,10 @@
           if (sslBtn) { sslBtn.click(); return true; }
         }
         if (isCNROrSaints(doc) && isConsultPsychiatryFormPage(doc)) {
+          // Section-list page: F opens the Reason for Consultation view
+          // (review the referral). Only when the view link exists.
+          var reasonView = findReasonViewLink(doc);
+          if (reasonView) { reasonView.click(); return true; }
           var seBtn = findSaveExitButton(doc);
           if (seBtn) { seBtn.click(); return true; }
         }
@@ -1411,6 +1415,53 @@
         e.preventDefault();
         e.stopPropagation();
         var tb = findSaveExitButton(doc);
+        if (tb) tb.click();
+      });
+      if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
+      else target.parentNode.appendChild(btn);
+    } catch (e) {}
+  }
+
+  // Find the "view" link for Section 1 (Reason for Consultation) on the
+  // CNR/Saints consult form section-list page. Only matches the view link
+  // in the row containing "Reason for Consultation".
+  function findReasonViewLink(doc) {
+    try {
+      var links = doc.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        if ((links[i].textContent || '').trim().toLowerCase() !== 'view') continue;
+        // Check if this link is in a row with "Reason for Consultation"
+        var row = links[i].closest('tr');
+        if (row && /reason for consultation/i.test(row.textContent)) {
+          if (visible(links[i])) return links[i];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Clickable red "F" button next to "view" on Section 1 (Reason for
+  // Consultation) — CNR/Saints section-list page only. Lets him review the
+  // referral before writing. Does not touch edit-link F buttons.
+  function applyFButtonReasonView(doc) {
+    try {
+      var olds = doc.querySelectorAll('.pcc-f-btn-reason'), i;
+      for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
+      if (!isCNROrSaints(doc)) return;
+      if (!isConsultPsychiatryFormPage(doc)) return;
+      var target = findReasonViewLink(doc);
+      if (!target || !target.parentNode) return;
+      var btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pcc-f-btn-reason';
+      btn.textContent = 'F';
+      btn.title = 'View Reason for Consultation (same as F key)';
+      btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
+        'font-weight:bold;font-size:14px;padding:2px 8px;margin-left:6px;cursor:pointer;');
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var tb = findReasonViewLink(doc);
         if (tb) tb.click();
       });
       if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
@@ -2190,6 +2241,9 @@
       // Clickable red F button next to Save & Exit on the CNR/Saints
       // Consult-Psychiatry form page.
       applyFButtonCNRForm(document);
+      // Clickable red F button next to "view" on Section 1 (Reason for
+      // Consultation) — CNR/Saints section-list page only.
+      applyFButtonReasonView(document);
       // Form section edit page: focus the main writing field on load
       focusNoteField(document);
       // Admission alert DISABLED (2026-10-02): the standalone PCC-Forms-Readmission-flag
