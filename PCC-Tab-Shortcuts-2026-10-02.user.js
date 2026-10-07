@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.35
+// @version 1.36
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1281,7 +1281,7 @@
       var tn, titleEl = null;
       while (tn = walker.nextNode()) {
         var t = (tn.nodeValue || '').trim();
-        if (t === 'Reasons for Assessment') { titleEl = tn.parentElement; break; }
+        if (t === 'Reasons for Assessment' || t === 'Reasons for Form') { titleEl = tn.parentElement; break; }
       }
       if (!titleEl) return false;
       // Walk up to find the dialog container, then find Save inside it
@@ -1774,6 +1774,54 @@
   // links (view/unlock/copy/print/strike-out), assessments list, any
   // facility. Does exactly what the F key does: edit if the note is open,
   // copy if it's completed. Removed when not applicable.
+  // F button on the "Reasons for Form" popup's Save button (copy-consult workflow).
+  // The popup appears when copying a consult — F here clicks Save even though
+  // there's also an F on the page underneath.
+  function applyFButtonReasonsPopup(doc) {
+    try {
+      if (!isAnyFacility(doc)) return;
+      // Detect the popup by its title or the "Type of Form:" label
+      var nt = (doc.body ? (doc.body.textContent || '') : '').replace(/\s+/g, ' ');
+      if (!/reasons\s+for\s+form/i.test(nt)) return;
+      if (!/type\s+of\s+form/i.test(nt)) return;
+      // Find the Save button in the popup (not the page's Save buttons)
+      // The popup Save is typically in a modal/dialog container
+      var btns = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < btns.length; i++) {
+        var label = ((btns[i].value || '') + ' ' + (btns[i].textContent || '')).replace(/\s+/g, ' ').trim();
+        if (!/^save$/i.test(label)) continue;
+        // Check if this Save is inside the Reasons popup (near "Type of Form")
+        var container = btns[i];
+        for (var d = 0; d < 8 && container; d++) {
+          var ct = (container.textContent || '').replace(/\s+/g, ' ');
+          if (/reasons\s+for\s+form/i.test(ct) && /type\s+of\s+form/i.test(ct)) break;
+          container = container.parentNode;
+        }
+        if (!container) continue;
+        // Skip if it already has our F button
+        var sib = btns[i].nextSibling;
+        if (sib && sib.className && sib.className.indexOf('pcc-f-btn-reasons') !== -1) continue;
+        var btn = doc.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pcc-f-btn-reasons';
+        btn.textContent = 'F';
+        btn.title = 'Save (same as F key)';
+        btn.tabIndex = -1;
+        btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
+          'font-weight:bold;font-size:14px;padding:2px 10px;margin-left:6px;cursor:pointer;');
+        (function(target){
+          btn.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            fireClick(target);
+          });
+        })(btns[i]);
+        if (btns[i].nextSibling) btns[i].parentNode.insertBefore(btn, btns[i].nextSibling);
+        else btns[i].parentNode.appendChild(btn);
+      }
+    } catch (e) {}
+  }
+
   function applyFButton(doc) {
     try {
       var olds = doc.querySelectorAll('.pcc-f-btn'), i;
@@ -2540,6 +2588,7 @@
             applyFButtonReasonView(doc);
             applyFButtonNextSection(doc);
             applyFButtonSectionSign(doc);
+            applyFButtonReasonsPopup(doc);
             return null;
           });
         } catch(e){}
