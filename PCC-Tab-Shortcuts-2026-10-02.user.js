@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.20
+// @version 1.21
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -579,26 +579,39 @@
       // Find Q4 radios: look for "not on any psychotropic medication" (option C)
       var radios = doc.querySelectorAll('input[type="radio"]');
       var q4c = null, q4b = null;
-      // Find by nearby label text
+      // Find by nearby label text — check parent, grandparent, and siblings
+      // (PCC nests radios differently across forms)
       for (var r = 0; r < radios.length; r++) {
         var lbl = '';
-        var parent = radios[r].parentElement;
-        if (parent) lbl = (parent.textContent || '');
-        // Also check following siblings
-        var sib = radios[r].nextSibling;
-        while (sib && lbl.length < 100) {
-          if (sib.nodeType === 3) lbl += sib.nodeValue;
-          else if (sib.nodeType === 1) lbl += (sib.textContent || '');
-          sib = sib.nextSibling;
+        var el = radios[r];
+        // Walk up 3 levels collecting text
+        for (var d = 0; d < 3 && el; d++) {
+          lbl += ' ' + (el.textContent || '');
+          // Also check next siblings at each level
+          var sib = el.nextSibling;
+          var cnt = 0;
+          while (sib && cnt < 5) {
+            if (sib.nodeType === 3) lbl += sib.nodeValue;
+            else if (sib.nodeType === 1 && !/input/i.test(sib.tagName)) lbl += (sib.textContent || '');
+            sib = sib.nextSibling;
+            cnt++;
+          }
+          el = el.parentElement;
         }
         if (/not on any psychotropic/i.test(lbl)) q4c = radios[r];
-        // Q4b is the "No" option — harder to identify; look for 4b section context
       }
 
       if (qualifying.length === 0) {
         // No qualifying meds → Q4 = C (N/A)
-        if (q4c && !q4c.checked) { fireClick(q4c); toast('D: Q4 = N/A (no psychotropics)'); }
-        else toast('D: Q4 already N/A');
+        if (q4c) {
+          if (!q4c.checked) { fireClick(q4c); toast('D: Q4 = C (N/A, no psychotropics)'); }
+          else toast('D: Q4 already C');
+        } else {
+          toast('D: could not find Q4 radio — check manually');
+        }
+        // Always update DOS date even when Q4 = N/A
+        updateDOSDate(doc);
+        checkMedsMatch(doc, meds);
         return;
       }
 
