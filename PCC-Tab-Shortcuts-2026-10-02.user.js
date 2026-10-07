@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.25
+// @version 1.26
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -628,22 +628,30 @@
       }
 
       // Has qualifying meds → Q4 = B (No), fill 4b/4b1/4c/4c1
-      // Find Q4b: the "No" radio in question 4 (before 4b section)
-      // Strategy: find 4b.a checkbox first, then Q4 radios are before it
-      var allInputs = doc.querySelectorAll('input[type="radio"], input[type="checkbox"]');
-      var q4radios = [];
-      var found4b = false;
-      for (var ai = 0; ai < allInputs.length; ai++) {
-        var at = (allInputs[ai].parentElement ? allInputs[ai].parentElement.textContent : '') || '';
-        if (/personally assessed this resident/i.test(at)) { found4b = true; break; }
-        if (allInputs[ai].type === 'radio') q4radios.push(allInputs[ai]);
+      // Find Q4b: locate the Q4 question text, then take the 3 radios after it
+      var q4bRadio = null;
+      var allEls = doc.querySelectorAll('*');
+      var q4q = null;
+      for (var qi = 0; qi < allEls.length; qi++) {
+        var qt = (allEls[qi].textContent || '').trim();
+        if (qt.length < 200 && /was dosage reduction attempted/i.test(qt)) { q4q = allEls[qi]; break; }
       }
-      // Q4b is likely the last radio before 4b section; Q4 has 3 options (a/b/c)
-      // Take the last 3 radios before 4b as Q4a, Q4b, Q4c
-      if (q4radios.length >= 3) {
-        var q4bRadio = q4radios[q4radios.length - 2]; // b is middle of a/b/c
-        if (q4bRadio && !q4bRadio.checked) fireClick(q4bRadio);
+      if (q4q) {
+        // Find next 3 radios in document order after the Q4 question
+        var allRadios = doc.querySelectorAll('input[type="radio"]');
+        var started = false, q4list = [];
+        for (var ri = 0; ri < allRadios.length && q4list.length < 3; ri++) {
+          if (!started) {
+            // Check if this radio comes after q4q in the DOM
+            if (q4q.compareDocumentPosition(allRadios[ri]) & Node.DOCUMENT_POSITION_FOLLOWING) {
+              started = true;
+            } else continue;
+          }
+          q4list.push(allRadios[ri]);
+        }
+        if (q4list.length >= 2) q4bRadio = q4list[1]; // b is middle of a/b/c
       }
+      if (q4bRadio && !q4bRadio.checked) fireClick(q4bRadio);
 
       // 4b.a: "I have personally assessed..."
       var checkboxes = doc.querySelectorAll('input[type="checkbox"]');
