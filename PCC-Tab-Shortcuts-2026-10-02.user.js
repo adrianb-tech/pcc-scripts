@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.14
+// @version 1.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1184,6 +1184,9 @@
           // (review the referral). Only when the view link exists.
           var reasonView = findReasonViewLink(doc);
           if (reasonView) { reasonView.click(); return true; }
+          // Reason view page: F clicks Next Section (go to the note).
+          var nextBtn = findNextSectionButton(doc);
+          if (nextBtn) { nextBtn.click(); return true; }
           var seBtn = findSaveExitButton(doc);
           if (seBtn) { seBtn.click(); return true; }
         }
@@ -1415,6 +1418,46 @@
         e.preventDefault();
         e.stopPropagation();
         var tb = findSaveExitButton(doc);
+        if (tb) tb.click();
+      });
+      if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
+      else target.parentNode.appendChild(btn);
+    } catch (e) {}
+  }
+
+  // Find the "Next Section" button (CNR/Saints form pages).
+  function findNextSectionButton(doc) {
+    try {
+      var els = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim();
+        if (/^next section$/i.test(label) && visible(els[i])) return els[i];
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Clickable red "F" button next to "Next Section" — CNR/Saints only.
+  // After reviewing the referral, F jumps to the note (next section).
+  function applyFButtonNextSection(doc) {
+    try {
+      var olds = doc.querySelectorAll('.pcc-f-btn-next'), i;
+      for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
+      if (!isCNROrSaints(doc)) return;
+      if (!isConsultPsychiatryFormPage(doc)) return;
+      var target = findNextSectionButton(doc);
+      if (!target || !target.parentNode) return;
+      var btn = doc.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pcc-f-btn-next';
+      btn.textContent = 'F';
+      btn.title = 'Next Section (same as F key)';
+      btn.setAttribute('style', 'background:#c0392b;color:#fff;border:none;border-radius:4px;' +
+        'font-weight:bold;font-size:14px;padding:2px 8px;margin-left:6px;cursor:pointer;');
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        var tb = findNextSectionButton(doc);
         if (tb) tb.click();
       });
       if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
@@ -2244,6 +2287,8 @@
       // Clickable red F button next to "view" on Section 1 (Reason for
       // Consultation) — CNR/Saints section-list page only.
       applyFButtonReasonView(document);
+      // Clickable red F button next to "Next Section" — CNR/Saints only.
+      applyFButtonNextSection(document);
       // Form section edit page: focus the main writing field on load
       focusNoteField(document);
       // Admission alert DISABLED (2026-10-02): the standalone PCC-Forms-Readmission-flag
