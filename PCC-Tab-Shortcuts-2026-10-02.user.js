@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.39
+// @version 1.40
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -52,20 +52,6 @@
 
   // Letters on the keyboard's bottom row get green badges (top row = yellow).
   var ROW_BOTTOM = ['V', 'B'];
-
-  // Spacebar cycles through tabs in this order, wrapping around.
-  // Uses the same label matching as TAB_KEYS (E covers FORMS/ASSMNTS).
-  var SPACE_CYCLE = [
-    ['DASH'],
-    ['PROFILE'],
-    ['ORDERS'],
-    ['WTS/VITALS'],
-    ['RESULTS'],
-    ['FORMS', 'ASSMNTS', 'ASSESSMENTS'],
-    ['PROG NOTES'],
-    ['MISC']
-  ];
-  var spaceIdx = -1;  // tracked position; resynced from the active tab when detectable
 
   // Profile page: enlarge the Relationships box (label, names, Copy button)
   // to make it larger and more visible. Set to false to turn this off.
@@ -267,51 +253,6 @@
     if (el.value) return norm(el.value);
     var a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt'));
     return a ? norm(a) : '';
-  }
-
-  // Spacebar: cycle through SPACE_CYCLE tabs in order, wrapping around.
-  // Tries to resync from the currently active tab first; falls back to the
-  // tracked index. Skips tabs not present on the page. Never fires while
-  // typing (handled by the keydown guard).
-  function spaceNextTab() {
-    try {
-      var found = findInFrames(window.top, function (doc) {
-        var strip = findTabStrip(doc);
-        if (!strip) return null;
-        // Try to find the active tab to resync the index
-        var activeText = null;
-        try {
-          var cands = strip.querySelectorAll('*');
-          for (var i = 0; i < cands.length; i++) {
-            var cls = ((cands[i].className || '').toString() || '').toLowerCase();
-            var aria = cands[i].getAttribute && cands[i].getAttribute('aria-selected');
-            if ((/active|selected|current/.test(cls) || aria === 'true') && visible(cands[i])) {
-              var t = elText(cands[i]);
-              if (t) { activeText = t; break; }
-            }
-          }
-        } catch (e) {}
-        if (activeText) {
-          for (var si = 0; si < SPACE_CYCLE.length; si++) {
-            for (var sj = 0; sj < SPACE_CYCLE[si].length; sj++) {
-              if (activeText.indexOf(SPACE_CYCLE[si][sj]) !== -1) { spaceIdx = si; break; }
-            }
-            if (spaceIdx === si) break;
-          }
-        }
-        // Try each tab in cycle order until one is found and clicked
-        for (var attempt = 0; attempt < SPACE_CYCLE.length; attempt++) {
-          spaceIdx = (spaceIdx + 1) % SPACE_CYCLE.length;
-          var labels = SPACE_CYCLE[spaceIdx];
-          for (var k = 0; k < labels.length; k++) {
-            var tab = findInScope(strip, doc, labels[k]);
-            if (tab) { tab.click(); return true; }
-          }
-        }
-        return null;
-      });
-      return !!found;
-    } catch (e) { return false; }
   }
 
   // All visible elements whose full text is exactly `text`, deepest first.
@@ -2762,29 +2703,6 @@
       return;
     }
     if (!enabled) return;
-    // Spacebar: switch Dia split-view panel via Shift+Ctrl+[ (previous panel).
-    // Only in Dia (checked via user agent) — in other browsers spacebar does nothing
-    // (but still never scrolls). Never fires while typing (guarded above).
-    // Note: synthetic key events may not trigger browser-chrome shortcuts.
-    if (e.key === ' ') {
-      e.preventDefault();
-      try {
-        var ua = (navigator.userAgent || '').toLowerCase();
-        var isDia = ua.indexOf('dia') !== -1;
-        if (isDia){
-          var mkEv = function(type) {
-            return new KeyboardEvent(type, {
-              key: '[', code: 'BracketLeft',
-              shiftKey: true, ctrlKey: true,
-              bubbles: true, cancelable: true
-            });
-          };
-          document.dispatchEvent(mkEv('keydown'));
-          document.dispatchEvent(mkEv('keyup'));
-        }
-      } catch (e2) {}
-      return;
-    }
     if (k === 'A') {
       if (focusResidentSearch()) e.preventDefault();
       return;
