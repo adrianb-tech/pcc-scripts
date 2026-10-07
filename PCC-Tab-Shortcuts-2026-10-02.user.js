@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.29
+// @version 1.30
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -659,16 +659,16 @@
       }
       if (q4bRadio && !q4bRadio.checked) fireClick(q4bRadio);
 
-      // 4b1 target from indications (computed now, used in step 2)
+      // 4b1 targets from indications — MULTIPLE can apply (e.g. bipolar + depression)
       var indications = qualifying.join(' ').toLowerCase();
-      var target41 = null;
-      if (/schizophrenia|schizoaffective/i.test(indications)) target41 = 'a';
-      else if (/bipolar/i.test(indications)) target41 = 'b';
-      else if (/depress/i.test(indications)) target41 = 'c';
-      else if (/huntington/i.test(indications)) target41 = 'd';
-      else if (/tourette/i.test(indications)) target41 = 'e';
-      else if (/psychotic|psychosis/i.test(indications)) target41 = 'f';
-      else if (/anxiety/i.test(indications)) target41 = 'g';
+      var targets41 = [];
+      if (/schizophrenia|schizoaffective/i.test(indications)) targets41.push('a');
+      if (/bipolar/i.test(indications)) targets41.push('b');
+      if (/depress/i.test(indications)) targets41.push('c');
+      if (/huntington/i.test(indications)) targets41.push('d');
+      if (/tourette/i.test(indications)) targets41.push('e');
+      if (/psychotic|psychosis/i.test(indications)) targets41.push('f');
+      if (/anxiety/i.test(indications)) targets41.push('g');
       var labels41 = {
         'a': /schizophrenia/i, 'b': /bipolar disorder/i, 'c': /major depressive disorder/i,
         'd': /huntington/i, 'e': /tourette/i, 'f': /psychotic disorders.*other than schizophrenia/i,
@@ -685,16 +685,16 @@
             break;
           }
         }
-        if (target41) {
+        if (targets41.length) {
           var in41 = false;
           for (var c2 = 0; c2 < cbs.length; c2++) {
             var p2 = cbs[c2].parentElement;
             var pt2 = p2 ? (p2.textContent || '') : '';
             if (/specify chronic enduring condition/i.test(pt2)) in41 = true;
             if (/specify contraindication/i.test(pt2)) in41 = false;
-            if (in41 && labels41[target41].test(pt2) && !cbs[c2].checked) {
-              fireClick(cbs[c2]);
-              break;
+            if (!in41 || cbs[c2].checked) continue;
+            for (var t41 = 0; t41 < targets41.length; t41++) {
+              if (labels41[targets41[t41]].test(pt2)) { fireClick(cbs[c2]); break; }
             }
           }
         }
@@ -730,7 +730,7 @@
                 break;
               }
             }
-            toast('D: GDR filled (' + qualifying.length + ' meds, 4b1=' + (target41 || '?') + ')');
+            toast('D: GDR filled (' + qualifying.length + ' meds, 4b1=' + (targets41.join(',') || '?') + ')');
             updateDOSDate(doc);
             checkMedsMatch(doc, meds);
           }, 600);
