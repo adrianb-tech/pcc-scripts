@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 1.9
+// @version 2.0
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1346,14 +1346,15 @@
     var entries = collectEntries(flagged);
     var highCount = entries.filter(function(e) { return e.sev === 'HIGH'; }).length;
 
-    // psychToggle: big obvious count badge, placed right above the psych med list
-    var psychToggleHtml = 'Psych meds first: ' + (on ? 'ON' : 'OFF') +
-      ' <span style="font-size:20px;font-weight:bold;background:#2563eb;color:#fff;' +
-      'border-radius:6px;padding:2px 10px;margin-left:6px;">' + psychCount + ' psych</span>' +
-      '<span style="font-size:12px;color:#555;"> of ' + groups.length + ' meds' +
-      (tier2u ? ', +' + tier2u + ' addiction uncounted' : '') +
-      (painCount ? ', ' + painCount + ' pain at bottom' : '') + '</span>' +
-      (noExp ? ' | could not open ' + noExp : '');
+    // psychToggle: clean two-line layout — toggle + count on first line, details below
+    var psychToggleHtml =
+      '<span style="font-weight:bold;">Psych meds first: ' + (on ? 'ON' : 'OFF') + '</span>' +
+      ' <span style="font-size:15px;font-weight:bold;background:#2563eb;color:#fff;' +
+      'border-radius:10px;padding:2px 10px;margin-left:8px;white-space:nowrap;">' + psychCount + ' psych</span>' +
+      '<div style="font-size:11px;color:#666;margin-top:2px;">' + groups.length + ' meds' +
+      (tier2u ? ' · +' + tier2u + ' addiction uncounted' : '') +
+      (painCount ? ' · ' + painCount + ' pain at bottom' : '') +
+      (noExp ? ' · could not open ' + noExp : '') + '</div>';
     setButton(doc, 'interactionInfo',
       '⚠ ' + entries.length + (entries.length === 1 ? ' flag' : ' flags') + ' (' + highCount + ' high) — click to hide/show · screening only',
       function() { togglePanel(doc, 'interactionPanel'); });
