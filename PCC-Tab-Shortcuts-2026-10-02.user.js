@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.33
+// @version 1.34
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1559,13 +1559,20 @@
 
   // The "Save & Exit" buttons on the CNR/Saints Consult-Psychiatry form.
   // There are two (top and bottom) — returns all of them.
+  // No visibility check: buttons exist in DOM even when scrolled out of view.
   function findSaveExitButtons(doc) {
     var out = [];
     try {
       var els = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
       for (var i = 0; i < els.length; i++) {
         var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim();
-        if (/^save\s*&\s*exit$/i.test(label) && visible(els[i])) out.push(els[i]);
+        if (/^save\s*&\s*exit$/i.test(label)) {
+          // Skip if it already has our F button
+          var hasF = false;
+          var sib = els[i].nextSibling;
+          if (sib && sib.className && sib.className.indexOf('pcc-f-btn-cnr') !== -1) hasF = true;
+          if (!hasF) out.push(els[i]);
+        }
       }
     } catch (e) {}
     return out;
@@ -1578,10 +1585,9 @@
   // Clickable red "F" buttons next to every "Save & Exit" on the CNR/Saints
   // Consult-Psychiatry form (top and bottom — both do the same thing).
   // CNR/Saints only; other facilities unchanged.
+  // Only adds missing buttons (no remove-all) to avoid flickering.
   function applyFButtonCNRForm(doc) {
     try {
-      var olds = doc.querySelectorAll('.pcc-f-btn-cnr'), i;
-      for (i = olds.length - 1; i >= 0; i--) olds[i].remove();
       if (!isCNROrSaints(doc)) return;
       if (!isConsultPsychiatryFormPage(doc)) return;
       var targets = findSaveExitButtons(doc);
