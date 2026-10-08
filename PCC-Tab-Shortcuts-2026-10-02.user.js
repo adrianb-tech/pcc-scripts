@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.45
+// @version 1.46
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -1862,10 +1862,16 @@
         (document.body || document.documentElement).appendChild(badge);
       }
       // Restyled on every pass so color updates apply to the existing badge too.
-      badge.setAttribute('style', 'position:fixed;z-index:999999;padding:2px 10px;' +
-        'font-size:18px;font-weight:900;color:#fff;background:#ff2020;' +
-        'border:2px solid #8f0000;border-radius:4px;box-shadow:0 0 6px rgba(255,32,32,.9);' +
-        'pointer-events:none;');
+      // Modern pill badge: soft red gradient, clean type, subtle shadow.
+      badge.setAttribute('style', 'position:fixed;z-index:999999;' +
+        'display:flex;align-items:center;justify-content:center;' +
+        'width:28px;height:28px;' +
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
+        'font-size:14px;font-weight:700;color:#fff;' +
+        'background:linear-gradient(135deg,#ef4444,#dc2626);' +
+        'border:none;border-radius:999px;' +
+        'box-shadow:0 2px 8px rgba(220,38,38,.35),0 1px 2px rgba(0,0,0,.1);' +
+        'pointer-events:none;user-select:none;');
       var r = box.getClientRects()[0];
       badge.style.display = 'block';
       badge.style.left = Math.max(0, r.right - 10) + 'px';
