@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.0
+// @version      1.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -103,8 +103,9 @@
       var r = box.getClientRects()[0];
       if (r) {
         badge.style.display = 'flex';
-        badge.style.left = Math.max(0, r.right - 8) + 'px';
-        badge.style.top = Math.max(0, r.top - 10) + 'px';
+        // Centered horizontally on the search bar, a little below vertical center
+        badge.style.left = Math.max(0, r.left + (r.width / 2) - 14) + 'px';
+        badge.style.top = Math.max(0, r.top + (r.height / 2) - 14 + 6) + 'px';
       }
     } catch (e) {}
   }
