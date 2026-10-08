@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.47
+// @version 1.48
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2696,6 +2696,9 @@
   // Any click means the user placed focus themselves — stop auto-managing it.
   document.addEventListener('mousedown', function () { userTookFocus = true; }, true);
   document.addEventListener('keydown', function (e) {
+    // Ignore synthetic key events (e.g. from Snippety snippet expansion).
+    // Only real physical keypresses should trigger shortcuts.
+    if (!e.isTrusted) return;
     // Option+F (Alt+F on Mac): trigger the F action even while typing in a
     // field. Single-key F is dead while typing (never hijack notes); the
     // Option modifier makes this a deliberate shortcut that can't fire
