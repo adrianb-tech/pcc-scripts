@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.43
+// @version 1.44
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -56,6 +56,11 @@
   // Profile page: enlarge the Relationships box (label, names, Copy button)
   // to make it larger and more visible. Set to false to turn this off.
   var ENLARGE_RELATIONSHIPS = true;
+
+  // v1.44 2026-10-08: ALL DOM manipulation disabled for testing.
+  // Only keyboard shortcuts work. If PCC is fast with this, we'll re-enable
+  // features one by one to find the culprit.
+  var DOM_WORK_ENABLED = false;
 
   // Chart Snapshot: collectors cache per-resident data (allergies, contact,
   // psych meds, BIMS, diagnoses) in localStorage as you browse the chart.
@@ -2546,23 +2551,23 @@
       //   } catch(e){}
       // }, 1000);
       // Clickable red F button by the most recent psych row's action links
-      applyFButton(document);
+      // v1.44 DISABLED: applyFButton(document);
       // Clickable red F button next to Lock on the Psych: Consult form page —
       // a shortcut for Lock (his sign-then-lock workflow).
-      applyFButtonFormPage(document);
+      // v1.44 DISABLED: applyFButtonFormPage(document);
       // Clickable red F button next to Save & Sign & Lock & Exit on the
       // Bedford/Crown Heights Consult-Psychiatry form page.
-      applyFButtonBedfordForm(document);
+      // v1.44 DISABLED: applyFButtonBedfordForm(document);
       // applyFButtonCNRForm disabled 2026-10-07 per user: no F button on Save & Exit
       // Clickable red F button next to "view" on Section 1 (Reason for
       // Consultation) — CNR/Saints section-list page only.
-      applyFButtonReasonView(document);
+      // v1.44 DISABLED: applyFButtonReasonView(document);
       // Clickable red F button next to "Next Section" — CNR/Saints only.
-      applyFButtonNextSection(document);
+      // v1.44 DISABLED: applyFButtonNextSection(document);
       // Clickable red F button next to "sign" on Section 2 — CNR/Saints only.
-      applyFButtonSectionSign(document);
+      // v1.44 DISABLED: applyFButtonSectionSign(document);
       // Form section edit page: focus the main writing field on load
-      focusNoteField(document);
+      // v1.44 DISABLED: focusNoteField(document);
       // Admission alert DISABLED (2026-10-02): the standalone PCC-Forms-Readmission-flag
       // script handles this with more detail. Having both active caused a rendering
       // loop (nested boxes, flickering bold). This call is kept as a no-op for
@@ -2581,14 +2586,14 @@
         } catch (e2) {}
       }
       // Profile page: enlarge the Relationships box
-      enlargeRelationships(document);
+      // v1.44 DISABLED: enlargeRelationships(document);
       // Chart snapshot: collect per-resident data (throttled); C copies it
       if (SNAPSHOT_ENABLED && (!document.__snapLast || Date.now() - document.__snapLast > 5000)) {
         document.__snapLast = Date.now();
-        collectSnapshot(document);
+        // v1.44 DISABLED: collectSnapshot(document);
       }
       // A badge pinned to the resident search box
-      placeABadge();
+      // v1.44 DISABLED: placeABadge();
     } catch (e) { /* not ready yet */ }
   }
 
@@ -2673,9 +2678,9 @@
     } catch (e) {}
   }
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initBadges);
+    // v1.44 DISABLED: document.addEventListener('DOMContentLoaded', initBadges);
   } else {
-    initBadges();
+    // v1.44 DISABLED: initBadges();
   }
 
   // ---- Keyboard shortcuts (runs in every frame so it works wherever focus is) ----
