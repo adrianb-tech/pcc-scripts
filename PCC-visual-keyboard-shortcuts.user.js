@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.1
+// @version      1.2
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -96,9 +96,9 @@
         'width:28px;height:28px;' +
         'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
         'font-size:14px;font-weight:700;color:#fff;' +
-        'background:linear-gradient(135deg,#3b82f6,#1d4ed8);' +
+        'background:linear-gradient(135deg,#ef4444,#dc2626);' +
         'border:none;border-radius:999px;' +
-        'box-shadow:0 2px 8px rgba(29,78,216,.35),0 1px 2px rgba(0,0,0,.1);' +
+        'box-shadow:0 2px 8px rgba(220,38,38,.35),0 1px 2px rgba(0,0,0,.1);' +
         'pointer-events:none;user-select:none;');
       var r = box.getClientRects()[0];
       if (r) {
