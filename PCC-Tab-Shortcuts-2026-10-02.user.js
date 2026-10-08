@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Tab Shortcuts (letter keys + bright badges)
-// @version 1.44
+// @version 1.45
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Tab-Shortcuts-2026-10-02.user.js
 // @namespace    pcc-tab-shortcuts
@@ -2593,7 +2593,7 @@
         // v1.44 DISABLED: collectSnapshot(document);
       }
       // A badge pinned to the resident search box
-      // v1.44 DISABLED: placeABadge();
+      placeABadge();  // v1.45: re-enabled (A badge only)
     } catch (e) { /* not ready yet */ }
   }
 
