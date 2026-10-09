@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.32
+// @version 1.33
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Psych-Consult-Auto-Defaults.user.js
 // @name         PCC - Boro Park Psych Consult Auto-Defaults
@@ -352,7 +352,7 @@
                     // Match "Medical Hx" line with nothing (or only whitespace) after it
                     var re3 = /^([ \t]*Medical Hx[ \t]*)$/gim;
                     if (!re3.test(txt)) return txt;
-                    return txt.replace(re3, '$1 ' + dreq.value);
+                    return txt.replace(re3, '$1' + dreq.value);
                 });
             } else if (dreq && dreq.ts) { lastDxTs = Math.max(lastDxTs, dreq.ts); }
         }
