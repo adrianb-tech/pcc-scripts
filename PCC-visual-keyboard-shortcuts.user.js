@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.2
+// @version      1.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -110,10 +110,78 @@
     } catch (e) {}
   }
 
+  // ---- F button on Save & Sign & Lock & Exit (Bedford / Crown Heights only) ----
+  var FBTN_CLASS = 'pcc-f-btn';
+  function isBedfordOrCH() {
+    var f = facilityName();
+    return f === 'bedford' || f === 'crown-heights';
+  }
+  function findSaveSignLockExit() {
+    try {
+      var els = document.querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim();
+        if (/^save\s*&\s*sign\s*&\s*lock\s*&\s*exit$/i.test(label) && visible(els[i])) return els[i];
+      }
+    } catch (e) {}
+    return null;
+  }
+  // PCC ignores synthetic .click() — use mousedown/mouseup/click sequence
+  function fireClick(el) {
+    try {
+      var opts = { bubbles: true, cancelable: true, view: window };
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', opts));
+      el.dispatchEvent(new MouseEvent('click', opts));
+    } catch (e) {
+      try { el.click(); } catch (e2) {}
+    }
+  }
+  function applyFButton() {
+    try {
+      // Remove stale buttons first
+      var olds = document.querySelectorAll('.' + FBTN_CLASS);
+      for (var i = olds.length - 1; i >= 0; i--) olds[i].remove();
+      if (!isBedfordOrCH()) return;
+      var target = findSaveSignLockExit();
+      if (!target || !target.parentNode) return;
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = FBTN_CLASS;
+      btn.textContent = 'F';
+      btn.title = 'Save & Sign & Lock & Exit (same as F key)';
+      btn.setAttribute('style',
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
+        'font-size:14px;font-weight:700;color:#fff;' +
+        'background:linear-gradient(135deg,#ef4444,#dc2626);' +
+        'border:none;border-radius:999px;width:28px;height:28px;' +
+        'box-shadow:0 2px 8px rgba(220,38,38,.35);' +
+        'margin-left:8px;cursor:pointer;vertical-align:middle;');
+      btn.addEventListener('click', function(ev) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        var t = findSaveSignLockExit();
+        if (t) fireClick(t);
+      });
+      if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
+      else target.parentNode.appendChild(btn);
+    } catch (e) {}
+  }
+  function doFAction() {
+    if (!isBedfordOrCH()) return false;
+    var t = findSaveSignLockExit();
+    if (t) { fireClick(t); return true; }
+    return false;
+  }
+
   // Place badge on load + retries (PCC renders search box late)
   placeWBadge();
   setTimeout(placeWBadge, 1500);
   setTimeout(placeWBadge, 4000);
+  // F button: place on load + retries (PCC re-renders the toolbar)
+  applyFButton();
+  setTimeout(applyFButton, 1500);
+  setTimeout(applyFButton, 4000);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeWBadge, true);
@@ -137,6 +205,10 @@
     if (!enabled) return;
     if (k === 'W') {
       if (focusResidentSearch()) e.preventDefault();
+      return;
+    }
+    if (k === 'F') {
+      if (doFAction()) e.preventDefault();
       return;
     }
   }, true);
