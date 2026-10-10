@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.7
+// @version      1.8
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -189,13 +189,21 @@
   }
   function findAdmissionRecord() {
     try {
-      var els = document.querySelectorAll('a, span, div, td');
-      for (var i = 0; i < els.length; i++) {
-        var t = (els[i].textContent || '').trim().toUpperCase();
-        if ((t === 'ADMISSION RECORD' || t === 'FACE SHEET') && visible(els[i])) {
-          // Prefer the clickable ancestor (usually the <a>)
-          var a = els[i].closest ? els[i].closest('a') : null;
-          return a || els[i];
+      // Look for links first (most likely), then any element
+      var links = document.querySelectorAll('a');
+      for (var i = 0; i < links.length; i++) {
+        var t = (links[i].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+        if ((t.indexOf('ADMISSION RECORD') !== -1 || t.indexOf('FACE SHEET') !== -1) && visible(links[i])) {
+          return links[i];
+        }
+      }
+      // Fallback: any element, then find closest clickable ancestor
+      var els = document.querySelectorAll('span, div, td, li');
+      for (var j = 0; j < els.length; j++) {
+        var t2 = (els[j].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+        if ((t2 === 'ADMISSION RECORD' || t2 === 'FACE SHEET') && visible(els[j])) {
+          var a = els[j].closest ? els[j].closest('a') : null;
+          return a || els[j];
         }
       }
     } catch (e) {}
@@ -236,7 +244,15 @@
     try {
       var adm = findAdmissionRecord();
       if (!adm || !adm.parentNode) return;
-      // Don't double-add
+      // Highlight the Admission Record link itself to make it stand out
+      try {
+        adm.style.setProperty('background', 'linear-gradient(135deg,#fef9c3,#fde68a)', 'important');
+        adm.style.setProperty('border', '2px solid #eab308', 'important');
+        adm.style.setProperty('border-radius', '6px', 'important');
+        adm.style.setProperty('padding', '4px 8px', 'important');
+        adm.style.setProperty('box-shadow', '0 2px 8px rgba(234,179,8,.4)', 'important');
+      } catch (e2) {}
+      // Don't double-add the F badge
       if (adm.parentNode.querySelector('.' + FBTN_CLASS + '-adm')) return;
       var badge = makeFBadge('Open Admission Record (same as F key)', function() {
         var a = findAdmissionRecord();
