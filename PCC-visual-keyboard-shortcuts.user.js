@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.3
+// @version      2.4
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -225,6 +225,85 @@
     })(win);
     return found;
   }
+  function findApply(doc) {
+    try {
+      var els = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var t = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toUpperCase();
+        if (t === 'APPLY' && visible(els[i])) return els[i];
+      }
+    } catch (e) {}
+    return null;
+  }
+  function findFilterBar(doc) {
+    try {
+      var apply = findApply(doc);
+      if (!apply) return null;
+      var bar = apply.parentElement;
+      while (bar && bar.querySelectorAll('select').length < 2 && bar.parentElement) bar = bar.parentElement;
+      return (bar && bar.querySelectorAll('select').length >= 2) ? bar : null;
+    } catch (e) { return null; }
+  }
+  function findTypeSelect(doc) {
+    try {
+      var bar = findFilterBar(doc);
+      if (bar) {
+        var sels = bar.querySelectorAll('select');
+        for (var i = 0; i < sels.length; i++) {
+          var node = sels[i].previousSibling, label = '';
+          while (node && !label) {
+            label = (node.textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+            node = node.previousSibling;
+          }
+          if (/^TYPE:?$/i.test(label)) return sels[i];
+        }
+        if (sels.length >= 2) return sels[sels.length - 1];
+      }
+      var all = doc.querySelectorAll('select');
+      for (var j = 0; j < all.length; j++) {
+        if (/consult form/i.test(all[j].textContent || '')) return all[j];
+      }
+    } catch (e) {}
+    return null;
+  }
+  function pickTypeOption(sel, kind) {
+    try {
+      var opts = sel.options, i, t;
+      if (kind === 'psych') {
+        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /^psych\s*:\s*consult/i.test(t)) return opts[i]; }
+        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /consult form/i.test(t) && /psych/i.test(t)) return opts[i]; }
+        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /psych/i.test(t)) return opts[i]; }
+        return null;
+      }
+      if (kind === 'bims') {
+        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /bims/i.test(t)) return opts[i]; }
+        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /social service assessment/i.test(t)) return opts[i]; }
+        return null;
+      }
+    } catch (e) {}
+    return null;
+  }
+  function setTypeFilter(doc, kind) {
+    try {
+      var sel = findTypeSelect(doc);
+      if (!sel) return false;
+      var picked = pickTypeOption(sel, kind);
+      if (!picked) return false;
+      for (var j = 0; j < sel.options.length; j++) sel.options[j].selected = (sel.options[j] === picked);
+      try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e2) {}
+      var apply = findApply(doc);
+      if (apply) { fireClick(apply); return true; }
+    } catch (e) {}
+    return false;
+  }
+  function handleNumberKey(k) {
+    // Forms page only: 1 = psych filter, 2 = BIMS filter
+    var acted = findInFrames(window.top || window, function(doc) {
+      if (!findTypeSelect(doc)) return null;
+      return setTypeFilter(doc, k === '1' ? 'psych' : 'bims') ? true : null;
+    });
+    return !!acted;
+  }
   function findAdmissionRecord() {
     return findInFrames(window.top || window, function(doc) {
       var c = findByExactText(doc, 'ADMISSION RECORD');
@@ -409,6 +488,10 @@
     }
     if (k === 'F') {
       if (doFAction()) e.preventDefault();
+      return;
+    }
+    if (k === '1' || k === '2') {
+      if (handleNumberKey(k)) e.preventDefault();
       return;
     }
   }, true);
