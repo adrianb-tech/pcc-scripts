@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.8
+// @version      2.9
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -448,6 +448,19 @@
     } catch (e) {}
     return null;
   }
+  function findNextSection() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+      var els = docs[d].querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+        if (label === 'next section' && visible(els[i])) return els[i];
+      }
+      }
+    } catch (e) {}
+    return null;
+  }
   function doFAction() {
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
@@ -455,6 +468,9 @@
     // Form sections page: F clicks the view link — all facilities
     var vw = findViewLink();
     if (vw) { fireClick(vw); return true; }
+    // Form section detail: F clicks Next Section — all facilities
+    var ns = findNextSection();
+    if (ns) { fireClick(ns); return true; }
     // Forms list: F opens the most recent In Progress form for editing, else copies the most recent — all facilities
     var edit = findInProgressEditLink();
     if (edit) { fireClick(edit); return true; }
@@ -523,6 +539,19 @@
     } catch (e) {}
   }
 
+  function applyFNextSectionBadge() {
+    try {
+      var target = findNextSection();
+      if (!target || !target.parentNode) return;
+      var badgeCls = FBTN_CLASS + '-nextsection';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('Next Section (same as F key)', function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+
   // Place badge on load + retries (PCC renders search box late)
   placeABadge();
   setTimeout(placeABadge, 1500);
@@ -540,6 +569,9 @@
   applyFViewBadge();
   setTimeout(applyFViewBadge, 1500);
   setTimeout(applyFViewBadge, 4000);
+  applyFNextSectionBadge();
+  setTimeout(applyFNextSectionBadge, 1500);
+  setTimeout(applyFNextSectionBadge, 4000);
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
