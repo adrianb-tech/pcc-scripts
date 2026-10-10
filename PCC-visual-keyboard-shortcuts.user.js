@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.9
+// @version      2.0
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -220,6 +220,35 @@
     } catch (e) {}
     return null;
   }
+  function findMostRecentCopyLink() {
+    try {
+      var rows = document.querySelectorAll('table tr');
+      var best = null, bestDate = null;
+      for (var i = 0; i < rows.length; i++) {
+        var txt = (rows[i].innerText || '');
+        var low = txt.toLowerCase();
+        if (low.indexOf('consult-psychiatry') === -1 && low.indexOf('consult - psychiatry') === -1) continue;
+        // Parse Form Date (M/D/YYYY) from the row
+        var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (!m) continue;
+        var d = new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+        if (isNaN(d.getTime())) continue;
+        if (bestDate && d <= bestDate) continue;
+        // Find the copy link in this row
+        var links = rows[i].querySelectorAll('a');
+        for (var j = 0; j < links.length; j++) {
+          var lt = (links[j].textContent || '').trim().toLowerCase();
+          if (lt === 'copy' && visible(links[j])) {
+            best = links[j];
+            bestDate = d;
+            break;
+          }
+        }
+      }
+      return best;
+    } catch (e) {}
+    return null;
+  }
   function findInProgressEditLink() {
     try {
       var rows = document.querySelectorAll('table tr');
@@ -242,9 +271,11 @@
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
     if (!isBedfordOrCH()) return false;
-    // Forms list: F opens the In Progress form for editing
+    // Forms list: F opens the In Progress form for editing, else copies the most recent
     var edit = findInProgressEditLink();
     if (edit) { fireClick(edit); return true; }
+    var copy = findMostRecentCopyLink();
+    if (copy) { fireClick(copy); return true; }
     // Inside the form: F hits Save & Sign & Lock & Exit
     var t = findSaveSignLockExit();
     if (t) { fireClick(t); return true; }
@@ -277,16 +308,21 @@
   function applyFEditBadge() {
     try {
       if (!isBedfordOrCH()) return;
-      var edit = findInProgressEditLink();
-      if (!edit || !edit.parentNode) return;
-      if (edit.parentNode.querySelector('.' + FBTN_CLASS + '-edit')) return;
-      var badge = makeFBadge('Edit In Progress form (same as F key)', function() {
-        var el = findInProgressEditLink();
-        if (el) fireClick(el);
-      });
-      badge.classList.add(FBTN_CLASS + '-edit');
-      if (edit.nextSibling) edit.parentNode.insertBefore(badge, edit.nextSibling);
-      else edit.parentNode.appendChild(badge);
+      // Prefer In Progress edit; fall back to most recent copy
+      var target = findInProgressEditLink();
+      var label = 'Edit In Progress form (same as F key)';
+      var badgeCls = FBTN_CLASS + '-edit';
+      if (!target) {
+        target = findMostRecentCopyLink();
+        label = 'Copy most recent form (same as F key)';
+        badgeCls = FBTN_CLASS + '-copy';
+      }
+      if (!target || !target.parentNode) return;
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge(label, function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
     } catch (e) {}
   }
 
