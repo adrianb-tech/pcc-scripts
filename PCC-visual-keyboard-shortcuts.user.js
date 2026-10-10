@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.5
+// @version      2.6
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -439,13 +439,13 @@
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
-    if (!isBedfordOrCH()) return false;
-    // Forms list: F opens the In Progress form for editing, else copies the most recent
+    // Forms list: F opens the most recent In Progress form for editing, else copies the most recent — all facilities
     var edit = findInProgressEditLink();
     if (edit) { fireClick(edit); return true; }
     var copy = findMostRecentCopyLink();
     if (copy) { fireClick(copy); return true; }
-    // Inside the form: F hits Save & Sign & Lock & Exit
+    if (!isBedfordOrCH()) return false;
+    // Inside the form: F hits Save & Sign & Lock & Exit (Bedford/Crown Heights only)
     var t = findSaveSignLockExit();
     if (t) { fireClick(t); return true; }
     return false;
@@ -476,8 +476,7 @@
   }
   function applyFEditBadge() {
     try {
-      if (!isBedfordOrCH()) return;
-      // Prefer In Progress edit; fall back to most recent copy
+      // Prefer In Progress edit; fall back to most recent copy — all facilities
       var target = findInProgressEditLink();
       var label = 'Edit In Progress form (same as F key)';
       var badgeCls = FBTN_CLASS + '-edit';
