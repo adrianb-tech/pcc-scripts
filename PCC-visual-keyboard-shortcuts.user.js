@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.7
+// @version      2.8
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -435,10 +435,26 @@
     } catch (e) {}
     return null;
   }
+  function findViewLink() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+      var links = docs[d].querySelectorAll('a');
+      for (var j = 0; j < links.length; j++) {
+        var lt = (links[j].textContent || '').trim().toLowerCase();
+        if (lt === 'view' && visible(links[j])) return links[j];
+      }
+      }
+    } catch (e) {}
+    return null;
+  }
   function doFAction() {
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
+    // Form sections page: F clicks the view link — all facilities
+    var vw = findViewLink();
+    if (vw) { fireClick(vw); return true; }
     // Forms list: F opens the most recent In Progress form for editing, else copies the most recent — all facilities
     var edit = findInProgressEditLink();
     if (edit) { fireClick(edit); return true; }
@@ -494,6 +510,19 @@
     } catch (e) {}
   }
 
+  function applyFViewBadge() {
+    try {
+      var target = findViewLink();
+      if (!target || !target.parentNode) return;
+      var badgeCls = FBTN_CLASS + '-view';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('View section (same as F key)', function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+
   // Place badge on load + retries (PCC renders search box late)
   placeABadge();
   setTimeout(placeABadge, 1500);
@@ -508,6 +537,9 @@
   applyFEditBadge();
   setTimeout(applyFEditBadge, 1500);
   setTimeout(applyFEditBadge, 4000);
+  applyFViewBadge();
+  setTimeout(applyFViewBadge, 1500);
+  setTimeout(applyFViewBadge, 4000);
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
