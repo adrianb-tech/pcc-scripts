@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.6
+// @version      2.7
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -392,7 +392,7 @@
       for (var i = 0; i < rows.length; i++) {
         var txt = (rows[i].innerText || '');
         var low = txt.toLowerCase();
-        if (low.indexOf('consult-psychiatry') === -1 && low.indexOf('consult - psychiatry') === -1) continue;
+        if (low.indexOf('consult') === -1 || low.indexOf('psychiatry') === -1) continue;
         // Parse Form Date (M/D/YYYY) from the row
         var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
         if (!m) continue;
@@ -422,9 +422,9 @@
       var rows = docs[d].querySelectorAll('table tr');
       for (var i = 0; i < rows.length; i++) {
         var txt = (rows[i].innerText || '').toLowerCase();
-        // Row must be an In Progress Consult-Psychiatry form
+        // Row must be an In Progress Consult-Psychiatry form (any variant: "Consult Form - Psychiatry", "Consult-Psychiatry", etc.)
         if (txt.indexOf('in progress') === -1) continue;
-        if (txt.indexOf('consult-psychiatry') === -1 && txt.indexOf('consult - psychiatry') === -1) continue;
+        if (txt.indexOf('consult') === -1 || txt.indexOf('psychiatry') === -1) continue;
         var links = rows[i].querySelectorAll('a');
         for (var j = 0; j < links.length; j++) {
           var lt = (links[j].textContent || '').trim().toLowerCase();
