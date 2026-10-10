@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.1
+// @version      2.2
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -212,16 +212,27 @@
     return null;
   }
   function allDocs() {
-    var docs = [document];
+    var docs = [];
     try {
-      var frames = document.querySelectorAll('iframe');
-      for (var fi = 0; fi < frames.length; fi++) {
+      var top = window.top || window;
+      (function collect(win) {
         try {
-          if (frames[fi].contentDocument) docs.push(frames[fi].contentDocument);
-        } catch (e2) {}
-      }
-    } catch (e3) {}
-    return docs;
+          if (win.document) docs.push(win.document);
+          var frames = win.frames;
+          for (var i = 0; i < frames.length; i++) {
+            try { collect(frames[i]); } catch (e2) {}
+          }
+        } catch (e3) {}
+      })(top);
+    } catch (e4) {
+      docs = [document];
+    }
+    // Dedupe
+    var seen = [], out = [];
+    for (var d = 0; d < docs.length; d++) {
+      if (seen.indexOf(docs[d]) === -1) { seen.push(docs[d]); out.push(docs[d]); }
+    }
+    return out.length ? out : [document];
   }
   function findMostRecentCopyLink() {
     try {
