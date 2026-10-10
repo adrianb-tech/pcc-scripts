@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.4
+// @version      1.6
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -167,8 +167,46 @@
       else target.parentNode.appendChild(btn);
     } catch (e) {}
   }
+  function findAdmissionRecord() {
+    try {
+      var els = document.querySelectorAll('a, span, div, td');
+      for (var i = 0; i < els.length; i++) {
+        var t = (els[i].textContent || '').trim().toUpperCase();
+        if ((t === 'ADMISSION RECORD' || t === 'FACE SHEET') && visible(els[i])) {
+          // Prefer the clickable ancestor (usually the <a>)
+          var a = els[i].closest ? els[i].closest('a') : null;
+          return a || els[i];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+  function findInProgressEditLink() {
+    try {
+      var rows = document.querySelectorAll('table tr');
+      for (var i = 0; i < rows.length; i++) {
+        var txt = (rows[i].innerText || '').toLowerCase();
+        // Row must be an In Progress Consult-Psychiatry form
+        if (txt.indexOf('in progress') === -1) continue;
+        if (txt.indexOf('consult-psychiatry') === -1 && txt.indexOf('consult - psychiatry') === -1) continue;
+        var links = rows[i].querySelectorAll('a');
+        for (var j = 0; j < links.length; j++) {
+          var lt = (links[j].textContent || '').trim().toLowerCase();
+          if (lt === 'edit' && visible(links[j])) return links[j];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
   function doFAction() {
+    // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
+    var adm = findAdmissionRecord();
+    if (adm) { fireClick(adm); return true; }
     if (!isBedfordOrCH()) return false;
+    // Forms list: F opens the In Progress form for editing
+    var edit = findInProgressEditLink();
+    if (edit) { fireClick(edit); return true; }
+    // Inside the form: F hits Save & Sign & Lock & Exit
     var t = findSaveSignLockExit();
     if (t) { fireClick(t); return true; }
     return false;
