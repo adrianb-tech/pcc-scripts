@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.3
+// @version      1.4
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -77,8 +77,8 @@
   }
 
   // ---- Modern pill badge for W ----
-  var BADGE_ID = 'pcc-w-badge';
-  function placeWBadge() {
+  var BADGE_ID = 'pcc-a-badge';
+  function placeABadge() {
     try {
       var box = findResidentSearchBox();
       var badge = document.getElementById(BADGE_ID);
@@ -86,8 +86,8 @@
       if (!badge) {
         badge = document.createElement('div');
         badge.id = BADGE_ID;
-        badge.textContent = 'W';
-        badge.title = 'Shortcut: press W to jump here';
+        badge.textContent = 'A';
+        badge.title = 'Shortcut: press A to jump here';
         (document.body || document.documentElement).appendChild(badge);
       }
       badge.setAttribute('style',
@@ -175,17 +175,17 @@
   }
 
   // Place badge on load + retries (PCC renders search box late)
-  placeWBadge();
-  setTimeout(placeWBadge, 1500);
-  setTimeout(placeWBadge, 4000);
+  placeABadge();
+  setTimeout(placeABadge, 1500);
+  setTimeout(placeABadge, 4000);
   // F button: place on load + retries (PCC re-renders the toolbar)
   applyFButton();
   setTimeout(applyFButton, 1500);
   setTimeout(applyFButton, 4000);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
-    window.addEventListener('scroll', placeWBadge, true);
-    window.addEventListener('resize', placeWBadge);
+    window.addEventListener('scroll', placeABadge, true);
+    window.addEventListener('resize', placeABadge);
   } catch (e) {}
 
   // ---- Keyboard shortcuts ----
@@ -203,7 +203,7 @@
       return;
     }
     if (!enabled) return;
-    if (k === 'W') {
+    if (k === 'A') {
       if (focusResidentSearch()) e.preventDefault();
       return;
     }
