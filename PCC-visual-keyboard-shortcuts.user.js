@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.4
+// @version      2.5
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -296,6 +296,54 @@
     } catch (e) {}
     return false;
   }
+  function applyNumberBadges() {
+    try {
+      var acted = findInFrames(window.top || window, function(doc) {
+        var sel = findTypeSelect(doc);
+        if (!sel || !sel.parentNode) return null;
+        // Don't double-add
+        if (sel.parentNode.querySelector('.pcc-num-badge-1')) return true;
+        var mk = function(txt, title, kind) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'pcc-num-badge-1';
+          b.textContent = txt;
+          b.title = title;
+          b.setAttribute('style',
+            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
+            'font-size:11px;font-weight:700;color:#fff;' +
+            'background:linear-gradient(135deg,#f59e0b,#d97706);' +
+            'border:none;border-radius:999px;width:20px;height:20px;' +
+            'box-shadow:0 2px 8px rgba(217,119,6,.35);' +
+            'margin-left:4px;cursor:pointer;vertical-align:middle;');
+          b.addEventListener('click', function(ev) {
+            ev.preventDefault();
+            ev.stopPropagation();
+            findInFrames(window.top || window, function(d2) {
+              return setTypeFilter(d2, kind) ? true : null;
+            });
+          });
+          return b;
+        };
+        var b1 = mk('1', 'Filter to psych forms (same as 1 key)', 'psych');
+        b1.classList.add('pcc-num-badge-1');
+        var b2 = mk('2', 'Filter to BIMS forms (same as 2 key)', 'bims');
+        b2.classList.add('pcc-num-badge-1');
+        // Both share the marker class so we don't double-add; distinguish via data attr
+        b1.setAttribute('data-kind', 'psych');
+        b2.setAttribute('data-kind', 'bims');
+        if (sel.nextSibling) {
+          sel.parentNode.insertBefore(b2, sel.nextSibling);
+          sel.parentNode.insertBefore(b1, b2);
+        } else {
+          sel.parentNode.appendChild(b1);
+          sel.parentNode.appendChild(b2);
+        }
+        return true;
+      });
+      return !!acted;
+    } catch (e) { return false; }
+  }
   function handleNumberKey(k) {
     // Forms page only: 1 = psych filter, 2 = BIMS filter
     var acted = findInFrames(window.top || window, function(doc) {
@@ -461,6 +509,9 @@
   applyFEditBadge();
   setTimeout(applyFEditBadge, 1500);
   setTimeout(applyFEditBadge, 4000);
+  applyNumberBadges();
+  setTimeout(applyNumberBadges, 1500);
+  setTimeout(applyNumberBadges, 4000);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
