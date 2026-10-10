@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.6
+// @version      1.7
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -137,6 +137,26 @@
       try { el.click(); } catch (e2) {}
     }
   }
+  function makeFBadge(title, onClick) {
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = FBTN_CLASS;
+    btn.textContent = 'F';
+    btn.title = title;
+    btn.setAttribute('style',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
+      'font-size:11px;font-weight:700;color:#fff;' +
+      'background:linear-gradient(135deg,#ef4444,#dc2626);' +
+      'border:none;border-radius:999px;width:20px;height:20px;' +
+      'box-shadow:0 2px 8px rgba(220,38,38,.35);' +
+      'margin-left:6px;cursor:pointer;vertical-align:middle;');
+    btn.addEventListener('click', function(ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      onClick();
+    });
+    return btn;
+  }
   function applyFButton() {
     try {
       // Remove stale buttons first
@@ -212,6 +232,37 @@
     return false;
   }
 
+  function applyFAdmissionBadge() {
+    try {
+      var adm = findAdmissionRecord();
+      if (!adm || !adm.parentNode) return;
+      // Don't double-add
+      if (adm.parentNode.querySelector('.' + FBTN_CLASS + '-adm')) return;
+      var badge = makeFBadge('Open Admission Record (same as F key)', function() {
+        var a = findAdmissionRecord();
+        if (a) fireClick(a);
+      });
+      badge.classList.add(FBTN_CLASS + '-adm');
+      if (adm.nextSibling) adm.parentNode.insertBefore(badge, adm.nextSibling);
+      else adm.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+  function applyFEditBadge() {
+    try {
+      if (!isBedfordOrCH()) return;
+      var edit = findInProgressEditLink();
+      if (!edit || !edit.parentNode) return;
+      if (edit.parentNode.querySelector('.' + FBTN_CLASS + '-edit')) return;
+      var badge = makeFBadge('Edit In Progress form (same as F key)', function() {
+        var el = findInProgressEditLink();
+        if (el) fireClick(el);
+      });
+      badge.classList.add(FBTN_CLASS + '-edit');
+      if (edit.nextSibling) edit.parentNode.insertBefore(badge, edit.nextSibling);
+      else edit.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+
   // Place badge on load + retries (PCC renders search box late)
   placeABadge();
   setTimeout(placeABadge, 1500);
@@ -220,6 +271,12 @@
   applyFButton();
   setTimeout(applyFButton, 1500);
   setTimeout(applyFButton, 4000);
+  applyFAdmissionBadge();
+  setTimeout(applyFAdmissionBadge, 1500);
+  setTimeout(applyFAdmissionBadge, 4000);
+  applyFEditBadge();
+  setTimeout(applyFEditBadge, 1500);
+  setTimeout(applyFEditBadge, 4000);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
