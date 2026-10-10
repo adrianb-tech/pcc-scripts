@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.2
+// @version      2.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -187,29 +187,51 @@
       else target.parentNode.appendChild(btn);
     } catch (e) {}
   }
-  function findAdmissionRecord() {
+  function elText(el) {
     try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var doc = docs[d];
-        var links = doc.querySelectorAll('a');
-        for (var i = 0; i < links.length; i++) {
-          var t = (links[i].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
-          if ((t.indexOf('ADMISSION RECORD') !== -1 || t.indexOf('FACE SHEET') !== -1) && visible(links[i])) {
-            return links[i];
-          }
-        }
-        var els = doc.querySelectorAll('span, div, td, li');
-        for (var j = 0; j < els.length; j++) {
-          var t2 = (els[j].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
-          if ((t2 === 'ADMISSION RECORD' || t2 === 'FACE SHEET') && visible(els[j])) {
-            var a = els[j].closest ? els[j].closest('a') : null;
-            return a || els[j];
-          }
-        }
-      }
+      var t = (el.textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+      if (t) return t;
+      if (el.value) return (el.value || '').replace(/\s+/g, ' ').trim().toUpperCase();
+      var a = el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title') || el.getAttribute('alt'));
+      return a ? (a || '').replace(/\s+/g, ' ').trim().toUpperCase() : '';
+    } catch (e) { return ''; }
+  }
+  function elDepth(el, doc) {
+    var d = 0, p = el;
+    try {
+      while (p && p !== doc.body && d < 60) { d++; p = p.parentNode; }
     } catch (e) {}
-    return null;
+    return d;
+  }
+  function findByExactText(doc, text) {
+    var out = [];
+    try {
+      var els = doc.querySelectorAll('a, button, input[type="button"], input[type="submit"], span, td, div, li');
+      for (var i = 0; i < els.length; i++) {
+        if (elText(els[i]) === text && visible(els[i])) out.push(els[i]);
+      }
+      out.sort(function(a, b) { return elDepth(b, doc) - elDepth(a, doc); });
+    } catch (e) {}
+    return out;
+  }
+  function findInFrames(win, fn) {
+    var found = null;
+    (function search(w) {
+      if (found) return;
+      try {
+        found = fn(w.document) || null;
+        for (var i = 0; i < w.frames.length && !found; i++) search(w.frames[i]);
+      } catch (e) {}
+    })(win);
+    return found;
+  }
+  function findAdmissionRecord() {
+    return findInFrames(window.top || window, function(doc) {
+      var c = findByExactText(doc, 'ADMISSION RECORD');
+      if (c.length) return c[0];
+      var f = findByExactText(doc, 'FACE SHEET');
+      return f[0] || null;
+    });
   }
   function allDocs() {
     var docs = [];
