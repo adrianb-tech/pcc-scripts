@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      2.0
+// @version      2.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -189,16 +189,7 @@
   }
   function findAdmissionRecord() {
     try {
-      var docs = [document];
-      // Also search same-origin iframes (PCC nests content in frames)
-      try {
-        var frames = document.querySelectorAll('iframe');
-        for (var fi = 0; fi < frames.length; fi++) {
-          try {
-            if (frames[fi].contentDocument) docs.push(frames[fi].contentDocument);
-          } catch (e2) {}
-        }
-      } catch (e3) {}
+      var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         var doc = docs[d];
         var links = doc.querySelectorAll('a');
@@ -220,10 +211,24 @@
     } catch (e) {}
     return null;
   }
+  function allDocs() {
+    var docs = [document];
+    try {
+      var frames = document.querySelectorAll('iframe');
+      for (var fi = 0; fi < frames.length; fi++) {
+        try {
+          if (frames[fi].contentDocument) docs.push(frames[fi].contentDocument);
+        } catch (e2) {}
+      }
+    } catch (e3) {}
+    return docs;
+  }
   function findMostRecentCopyLink() {
     try {
-      var rows = document.querySelectorAll('table tr');
+      var docs = allDocs();
       var best = null, bestDate = null;
+      for (var d = 0; d < docs.length; d++) {
+      var rows = docs[d].querySelectorAll('table tr');
       for (var i = 0; i < rows.length; i++) {
         var txt = (rows[i].innerText || '');
         var low = txt.toLowerCase();
@@ -231,19 +236,20 @@
         // Parse Form Date (M/D/YYYY) from the row
         var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
         if (!m) continue;
-        var d = new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
-        if (isNaN(d.getTime())) continue;
-        if (bestDate && d <= bestDate) continue;
+        var dt = new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+        if (isNaN(dt.getTime())) continue;
+        if (bestDate && dt <= bestDate) continue;
         // Find the copy link in this row
         var links = rows[i].querySelectorAll('a');
         for (var j = 0; j < links.length; j++) {
           var lt = (links[j].textContent || '').trim().toLowerCase();
           if (lt === 'copy' && visible(links[j])) {
             best = links[j];
-            bestDate = d;
+            bestDate = dt;
             break;
           }
         }
+      }
       }
       return best;
     } catch (e) {}
@@ -251,7 +257,9 @@
   }
   function findInProgressEditLink() {
     try {
-      var rows = document.querySelectorAll('table tr');
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+      var rows = docs[d].querySelectorAll('table tr');
       for (var i = 0; i < rows.length; i++) {
         var txt = (rows[i].innerText || '').toLowerCase();
         // Row must be an In Progress Consult-Psychiatry form
@@ -262,6 +270,7 @@
           var lt = (links[j].textContent || '').trim().toLowerCase();
           if (lt === 'edit' && visible(links[j])) return links[j];
         }
+      }
       }
     } catch (e) {}
     return null;
