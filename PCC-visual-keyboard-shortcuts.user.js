@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      1.8
+// @version      1.9
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -189,21 +189,32 @@
   }
   function findAdmissionRecord() {
     try {
-      // Look for links first (most likely), then any element
-      var links = document.querySelectorAll('a');
-      for (var i = 0; i < links.length; i++) {
-        var t = (links[i].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
-        if ((t.indexOf('ADMISSION RECORD') !== -1 || t.indexOf('FACE SHEET') !== -1) && visible(links[i])) {
-          return links[i];
+      var docs = [document];
+      // Also search same-origin iframes (PCC nests content in frames)
+      try {
+        var frames = document.querySelectorAll('iframe');
+        for (var fi = 0; fi < frames.length; fi++) {
+          try {
+            if (frames[fi].contentDocument) docs.push(frames[fi].contentDocument);
+          } catch (e2) {}
         }
-      }
-      // Fallback: any element, then find closest clickable ancestor
-      var els = document.querySelectorAll('span, div, td, li');
-      for (var j = 0; j < els.length; j++) {
-        var t2 = (els[j].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
-        if ((t2 === 'ADMISSION RECORD' || t2 === 'FACE SHEET') && visible(els[j])) {
-          var a = els[j].closest ? els[j].closest('a') : null;
-          return a || els[j];
+      } catch (e3) {}
+      for (var d = 0; d < docs.length; d++) {
+        var doc = docs[d];
+        var links = doc.querySelectorAll('a');
+        for (var i = 0; i < links.length; i++) {
+          var t = (links[i].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+          if ((t.indexOf('ADMISSION RECORD') !== -1 || t.indexOf('FACE SHEET') !== -1) && visible(links[i])) {
+            return links[i];
+          }
+        }
+        var els = doc.querySelectorAll('span, div, td, li');
+        for (var j = 0; j < els.length; j++) {
+          var t2 = (els[j].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
+          if ((t2 === 'ADMISSION RECORD' || t2 === 'FACE SHEET') && visible(els[j])) {
+            var a = els[j].closest ? els[j].closest('a') : null;
+            return a || els[j];
+          }
         }
       }
     } catch (e) {}
