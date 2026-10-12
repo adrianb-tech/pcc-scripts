@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.6
+// @version      1.7
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -146,6 +146,21 @@
       for (var i = 0; i < els.length; i++) {
         var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim();
         if (/^save\s*&\s*sign\s*&\s*lock\s*&\s*exit$/i.test(label) && visible(els[i])) return els[i];
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  // Resident Profile link (blue name at top of Progress Notes - View All page)
+  function findResidentProfileLink() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var links = docs[d].querySelectorAll('a');
+        for (var i = 0; i < links.length; i++) {
+          var t = (links[i].textContent || '').toLowerCase().trim();
+          if (t.indexOf('resident profile') !== -1 && visible(links[i])) return links[i];
+        }
       }
     } catch (e) {}
     return null;
@@ -658,10 +673,13 @@
       var lk = findLockButton();
       if (lk) { fireClick(lk); return true; }
     }
-    // Progress Notes: F clicks VIEW ALL
+    // Progress Notes: F clicks VIEW ALL (on tab) or Resident Profile link (on View All page)
     if (isProgressNotesPage()) {
       var va = findViewAllButton();
       if (va) { fireClick(va); return true; }
+      // On the View All page (no VIEW ALL button), F goes to Resident Profile
+      var rp = findResidentProfileLink();
+      if (rp) { fireClick(rp); return true; }
     }
     // Form sections page: F clicks the view link — all facilities (not on resident list or progress notes)
     var vw = null;
@@ -754,6 +772,20 @@
       var badgeCls = FBTN_CLASS + '-viewall';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge('View All (same as F key)', function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+  function applyFResidentProfileBadge() {
+    try {
+      if (!shouldRun()) return;
+      // Only on Progress Notes - View All page (has the resident profile breadcrumb)
+      var target = findResidentProfileLink();
+      if (!target || !target.parentNode) return;
+      var badgeCls = FBTN_CLASS + '-resprofile';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('Resident Profile (same as F key)', function() { doFAction(); });
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -875,6 +907,9 @@
   applyFViewAllBadge();
   setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
+  applyFResidentProfileBadge();
+  setTimeout(applyFResidentProfileBadge, 1500);
+  setTimeout(applyFResidentProfileBadge, 4000);
   // Re-apply VIEW ALL badge when Progress Notes tab is clicked (content loads dynamically)
   document.addEventListener('click', function(e) {
     try {
