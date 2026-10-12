@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.13
+// @version      3.14
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -512,11 +512,12 @@
              (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1);
     } catch (e) { return false; }
   }
-  // Progress Notes tab — no F badges here
+  // Progress Notes tab / View All — no F badges here
   function isProgressNotesPage() {
     try {
       var t = (document.body ? document.body.innerText : '').toLowerCase();
-      return t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1;
+      return (t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1) ||
+             t.indexOf('progress notes - view all') !== -1;
     } catch (e) { return false; }
   }
   // Detect signed section status page: a Psych section row with a signer in Signed By
