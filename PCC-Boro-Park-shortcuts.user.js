@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.5
+// @version      1.6
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -875,6 +875,23 @@
   applyFViewAllBadge();
   setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
+  // Re-apply VIEW ALL badge when Progress Notes tab is clicked (content loads dynamically)
+  document.addEventListener('click', function(e) {
+    try {
+      var el = e.target;
+      // Check if clicked element or parent is the Progress Notes tab
+      for (var i = 0; i < 3 && el; i++) {
+        var txt = (el.textContent || '').toLowerCase().trim();
+        if (txt === 'progress notes' || txt.indexOf('progress notes') === 0) {
+          // Tab clicked — re-apply badge after content loads
+          setTimeout(applyFViewAllBadge, 1000);
+          setTimeout(applyFViewAllBadge, 2500);
+          break;
+        }
+        el = el.parentNode;
+      }
+    } catch (err) {}
+  });
   applyFLockBadge();
   setTimeout(applyFLockBadge, 1500);
   setTimeout(applyFLockBadge, 4000);
