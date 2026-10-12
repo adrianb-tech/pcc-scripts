@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.3
+// @version      3.4
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -487,6 +487,28 @@
     } catch (e) {}
     return null;
   }
+  // Section status page (signed section): the Lock button at top (Back/Sign All/Lock/Print)
+  function findLockButton() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+      var els = docs[d].querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+        if (label === 'lock' && visible(els[i])) return els[i];
+      }
+      }
+    } catch (e) {}
+    return null;
+  }
+  // Detect signed section status page (has Signed By/Signed Date with a signer)
+  function isSignedSectionPage() {
+    try {
+      var t = (document.body ? document.body.innerText : '').toLowerCase();
+      return t.indexOf('signed by') !== -1 && t.indexOf('signed date') !== -1 &&
+             (t.indexOf('adrian balestra') !== -1 || t.indexOf('abalestra') !== -1);
+    } catch (e) { return false; }
+  }
   function findSaveExit() {
     try {
       var docs = allDocs();
@@ -531,6 +553,11 @@
     // Section list page (Boro Park): F clicks the section edit link
     var se2 = findSectionEditLink();
     if (se2) { fireClick(se2); return true; }
+    // Signed section status page (Boro Park): F clicks Lock, not view
+    if (isBoroPark() && isSignedSectionPage()) {
+      var lk = findLockButton();
+      if (lk) { fireClick(lk); return true; }
+    }
     // Form section detail: F clicks Next Section — all facilities
     var ns = findNextSection();
     if (ns) { fireClick(ns); return true; }
@@ -599,11 +626,31 @@
         for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
         return;
       }
+      // Signed section page (Boro Park): F goes on Lock, not view — remove stale view badge
+      if (isBoroPark() && isSignedSectionPage()) {
+        var stale2 = document.querySelectorAll('.' + FBTN_CLASS + '-view');
+        for (var s2 = 0; s2 < stale2.length; s2++) { try { stale2[s2].remove(); } catch (e3) {} }
+        return;
+      }
       var target = findViewLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-view';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge('View section (same as F key)', function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+  function applyFLockBadge() {
+    try {
+      // Only on signed section page at Boro Park
+      if (!isBoroPark() || !isSignedSectionPage()) return;
+      var target = findLockButton();
+      if (!target || !target.parentNode) return;
+      var badgeCls = FBTN_CLASS + '-lock';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('Lock section (same as F key)', function() { doFAction(); });
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -672,6 +719,9 @@
   applyFViewBadge();
   setTimeout(applyFViewBadge, 1500);
   setTimeout(applyFViewBadge, 4000);
+  applyFLockBadge();
+  setTimeout(applyFLockBadge, 1500);
+  setTimeout(applyFLockBadge, 4000);
   applyFSectionEditBadge();
   setTimeout(applyFSectionEditBadge, 1500);
   setTimeout(applyFSectionEditBadge, 4000);
