@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.17
+// @version      3.18
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -447,8 +447,32 @@
       var links = docs[d].querySelectorAll('a');
       for (var j = 0; j < links.length; j++) {
         var lt = (links[j].textContent || '').trim().toLowerCase();
-        if (lt === 'view' && visible(links[j])) return links[j];
+        if (lt === 'view' && visible(links[j])) {
+          // Skip if inside a Progress Notes table (has Effective Date column)
+          try {
+            var tbl = links[j].closest('table');
+            if (tbl) {
+              var th = (tbl.innerText || '').toLowerCase();
+              if (th.indexOf('effective date') !== -1) continue;
+            }
+          } catch (e2) {}
+          return links[j];
+        }
       }
+      }
+    } catch (e) {}
+    return null;
+  }
+  // Progress Notes: VIEW ALL button
+  function findViewAllButton() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var els = docs[d].querySelectorAll('a, button, input[type="button"], input[type="submit"]');
+        for (var i = 0; i < els.length; i++) {
+          var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+          if (label === 'view all' && visible(els[i])) return els[i];
+        }
       }
     } catch (e) {}
     return null;
@@ -593,6 +617,11 @@
       var lk = findLockButton();
       if (lk) { fireClick(lk); return true; }
     }
+    // Progress Notes: F clicks VIEW ALL
+    if (isProgressNotesPage()) {
+      var va = findViewAllButton();
+      if (va) { fireClick(va); return true; }
+    }
     // Form sections page: F clicks the view link — all facilities (not on resident list or progress notes)
     var vw = null;
     if (!isResidentListPage() && !isProgressNotesPage()) vw = findViewLink();
@@ -672,9 +701,24 @@
       }
     } catch (e) {}
   }
+  // Progress Notes: F badge on VIEW ALL button
+  function applyFViewAllBadge() {
+    try {
+      if (!isProgressNotesPage()) return;
+      var target = findViewAllButton();
+      if (!target || !target.parentNode) return;
+      var badgeCls = FBTN_CLASS + '-viewall';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('View All (same as F key)', function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
   function applyFViewBadge() {
     try {
-      // Resident list and Progress Notes: no F at all — remove any stale badges
+      // Resident list and Progress Notes: no F on view — remove any stale badges
+      // (Progress Notes gets F on VIEW ALL instead, via applyFViewAllBadge)
       if (isResidentListPage() || isProgressNotesPage()) {
         removeStaleViewBadges();
         return;
@@ -779,6 +823,9 @@
   applyFViewBadge();
   setTimeout(applyFViewBadge, 1500);
   setTimeout(applyFViewBadge, 4000);
+  applyFViewAllBadge();
+  setTimeout(applyFViewAllBadge, 1500);
+  setTimeout(applyFViewAllBadge, 4000);
   applyFLockBadge();
   setTimeout(applyFLockBadge, 1500);
   setTimeout(applyFLockBadge, 4000);
