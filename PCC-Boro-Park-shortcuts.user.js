@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.4
+// @version      1.5
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -15,10 +15,20 @@
   // Returns true if at Boro Park, false if at another known facility, null if unknown (still loading)
   function checkBoroParkFacility() {
     try {
-      var ft = (document.body ? document.body.innerText : '').toLowerCase();
-      if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) return true;
-      if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) return false;
-      if (ft.indexOf('saint joachim') !== -1 || ft.indexOf('saints') !== -1) return false;
+      // Check all frames — facility name may be in footer of any frame
+      var docs = allDocs();
+      var foundBoro = false;
+      var foundOther = false;
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var ft = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) foundBoro = true;
+          if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) foundOther = true;
+          if (ft.indexOf('saint joachim') !== -1) foundOther = true;
+        } catch (e2) {}
+      }
+      if (foundBoro) return true;
+      if (foundOther) return false;
     } catch (e) {}
     return null; // unknown
   }
