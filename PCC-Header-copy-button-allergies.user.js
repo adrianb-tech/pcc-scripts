@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Header copy button (allergies)
-// @version 1.16
+// @version 1.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Header-copy-button-allergies.user.js
 // @match        https://*.pointclickcare.com/*
@@ -314,6 +314,8 @@
     });
   }
 
+  // Run at staggered delays to catch PCC's late-loading header (not a permanent interval)
   setTimeout(runAll, 800);
-  // setInterval REMOVED 2026-10-12: was slowing PCC (ran every 1.5s forever)
+  setTimeout(runAll, 2000);
+  setTimeout(runAll, 5000);
 })();
