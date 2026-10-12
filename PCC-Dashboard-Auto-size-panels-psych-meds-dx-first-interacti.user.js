@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 2.4
+// @version 2.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1303,9 +1303,12 @@
     var noExp = 0;
     if (on) {
       groups.forEach(function(g) {
-        if ((g.tier > 1 && !g.listed) || !isCollapsed(doc, g)) return;
+        // Always expand psych meds (tier 0) — user wants full view of meds and timing
+        var isPsychTier = (g.tier === 0);
+        if (!isPsychTier && ((g.tier > 1 && !g.listed) || !isCollapsed(doc, g))) return;
+        if (isPsychTier && !isCollapsed(doc, g)) return; // already open
         var key = medKey(g.rows[0]);
-        if (!shouldOpen(doc, key)) return;
+        if (!isPsychTier && !shouldOpen(doc, key)) return;
         var x = findExpander(doc, g.rows[0]);
         if (x) { noteOpened(doc, key); x.click(); }
         else noExp++;
