@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.2
+// @version      1.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
