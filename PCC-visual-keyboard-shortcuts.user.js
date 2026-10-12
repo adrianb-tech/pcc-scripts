@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.5
+// @version      3.6
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -543,10 +543,7 @@
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
-    // Forms list: F opens the most recent In Progress form for editing, else copies the most recent — all facilities
-    // (takes priority over view: no F on view when a newer edit exists)
-    var edit = findInProgressEditLink();
-    if (edit) { fireClick(edit); return true; }
+    // Forms list (assessments): F copies the most recent — In Progress edit is for the section page, not here
     var copy = findMostRecentCopyLink();
     if (copy) { fireClick(copy); return true; }
     // Form sections page: F clicks the view link — all facilities
@@ -602,15 +599,11 @@
   }
   function applyFEditBadge() {
     try {
-      // Prefer In Progress edit; fall back to most recent copy — all facilities
-      var target = findInProgressEditLink();
-      var label = 'Edit In Progress form (same as F key)';
-      var badgeCls = FBTN_CLASS + '-edit';
-      if (!target) {
-        target = findMostRecentCopyLink();
-        label = 'Copy most recent form (same as F key)';
-        badgeCls = FBTN_CLASS + '-copy';
-      }
+      // Assessments list: F is always on copy, not edit (edit is for the section page)
+      // So this badge only applies the copy fallback here
+      var target = findMostRecentCopyLink();
+      var label = 'Copy most recent form (same as F key)';
+      var badgeCls = FBTN_CLASS + '-copy';
       if (!target || !target.parentNode) return;
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge(label, function() { doFAction(); });
@@ -622,12 +615,6 @@
 
   function applyFViewBadge() {
     try {
-      // No F on view when a newer edit exists (edit takes priority) — remove any stale badge
-      if (findInProgressEditLink()) {
-        var stale = document.querySelectorAll('.' + FBTN_CLASS + '-view');
-        for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
-        return;
-      }
       // Signed section page (Boro Park): F goes on Lock, not view — remove stale view badge
       if (isBoroPark() && isSignedSectionPage()) {
         var stale2 = document.querySelectorAll('.' + FBTN_CLASS + '-view');
