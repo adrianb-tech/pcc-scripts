@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Dashboard - Auto-size panels + psych meds/dx first + interaction flags
-// @version 2.3
+// @version 2.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Dashboard-Auto-size-panels-psych-meds-dx-first-interacti.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1567,6 +1567,9 @@
     });
   }
 
+  // Run at staggered delays to catch PCC's late-loading iframes (not a permanent interval)
   setTimeout(fit, 1500);
-  // setInterval REMOVED 2026-10-12: was slowing PCC (ran every 2s forever)
+  setTimeout(fit, 3000);
+  setTimeout(fit, 6000);
+  setTimeout(fit, 10000);
 })();
