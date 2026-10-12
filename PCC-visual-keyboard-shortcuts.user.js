@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.1
+// @version      3.2
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -422,9 +422,11 @@
       var rows = docs[d].querySelectorAll('table tr');
       for (var i = 0; i < rows.length; i++) {
         var txt = (rows[i].innerText || '').toLowerCase();
-        // Row must be an In Progress Consult-Psychiatry form (any variant: "Consult Form - Psychiatry", "Consult-Psychiatry", etc.)
+        // Row must be an In Progress psych consult form (any variant: "Psych: Consult",
+        // "Consult Form - Psychiatry", "Consult-Psychiatry", etc.)
         if (txt.indexOf('in progress') === -1) continue;
-        if (txt.indexOf('consult') === -1 || txt.indexOf('psychiatry') === -1) continue;
+        if (txt.indexOf('psych') === -1) continue;
+        if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
         var links = rows[i].querySelectorAll('a');
         for (var j = 0; j < links.length; j++) {
           var lt = (links[j].textContent || '').trim().toLowerCase();
@@ -444,6 +446,30 @@
         var lt = (links[j].textContent || '').trim().toLowerCase();
         if (lt === 'view' && visible(links[j])) return links[j];
       }
+      }
+    } catch (e) {}
+    return null;
+  }
+  // Section list page (e.g. Boro Park Psych: Consult sections): F on the section edit link
+  function findSectionEditLink() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var txt = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+        // Must be a section list page (has Section/Description headers, not the assessments table)
+        if (txt.indexOf('in progress') !== -1 && txt.indexOf('assessment date') !== -1) continue;
+        var links = docs[d].querySelectorAll('a');
+        for (var j = 0; j < links.length; j++) {
+          var lt = (links[j].textContent || '').trim().toLowerCase();
+          if (lt === 'edit' && visible(links[j])) {
+            // Check it's on a section row (near "Psych: Consult" or section headers)
+            var row = links[j].closest('tr');
+            if (row) {
+              var rt = (row.innerText || '').toLowerCase();
+              if (rt.indexOf('psych') !== -1) return links[j];
+            }
+          }
+        }
       }
     } catch (e) {}
     return null;
@@ -487,6 +513,9 @@
     // Form sections page: F clicks the view link — all facilities
     var vw = findViewLink();
     if (vw) { fireClick(vw); return true; }
+    // Section list page (Boro Park): F clicks the section edit link
+    var se2 = findSectionEditLink();
+    if (se2) { fireClick(se2); return true; }
     // Form section detail: F clicks Next Section — all facilities
     var ns = findNextSection();
     if (ns) { fireClick(ns); return true; }
@@ -561,6 +590,18 @@
       else target.parentNode.appendChild(badge);
     } catch (e) {}
   }
+  function applyFSectionEditBadge() {
+    try {
+      var target = findSectionEditLink();
+      if (!target || !target.parentNode) return;
+      var badgeCls = FBTN_CLASS + '-sectedit';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('Edit section (same as F key)', function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
 
   function applyFNextSectionBadge() {
     try {
@@ -605,6 +646,9 @@
   applyFViewBadge();
   setTimeout(applyFViewBadge, 1500);
   setTimeout(applyFViewBadge, 4000);
+  applyFSectionEditBadge();
+  setTimeout(applyFSectionEditBadge, 1500);
+  setTimeout(applyFSectionEditBadge, 4000);
   applyFNextSectionBadge();
   setTimeout(applyFNextSectionBadge, 1500);
   setTimeout(applyFNextSectionBadge, 4000);
