@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.12
+// @version      3.13
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -648,8 +648,12 @@
 
   function applyFViewBadge() {
     try {
-      // Resident list and Progress Notes: no F at all
-      if (isResidentListPage() || isProgressNotesPage()) return;
+      // Resident list and Progress Notes: no F at all — remove any stale badges
+      if (isResidentListPage() || isProgressNotesPage()) {
+        var stale0 = document.querySelectorAll('.' + FBTN_CLASS + '-view');
+        for (var s0 = 0; s0 < stale0.length; s0++) { try { stale0[s0].remove(); } catch (e0) {} }
+        return;
+      }
       // Signed section page (Boro Park): F goes on Lock, not view — remove stale view badge
       if (isBoroPark() && isSignedSectionPage()) {
         var stale2 = document.querySelectorAll('.' + FBTN_CLASS + '-view');
