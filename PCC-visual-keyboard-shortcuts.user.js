@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.16
+// @version      3.17
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -660,24 +660,37 @@
     } catch (e) {}
   }
 
+  // Remove stale F view badges from all docs (including iframes)
+  function removeStaleViewBadges() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var stale = docs[d].querySelectorAll('.' + FBTN_CLASS + '-view');
+          for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
+        } catch (e3) {}
+      }
+    } catch (e) {}
+  }
   function applyFViewBadge() {
     try {
       // Resident list and Progress Notes: no F at all — remove any stale badges
       if (isResidentListPage() || isProgressNotesPage()) {
-        var stale0 = document.querySelectorAll('.' + FBTN_CLASS + '-view');
-        for (var s0 = 0; s0 < stale0.length; s0++) { try { stale0[s0].remove(); } catch (e0) {} }
+        removeStaleViewBadges();
         return;
       }
       // Signed section page (Boro Park): F goes on Lock, not view — remove stale view badge
       if (isBoroPark() && isSignedSectionPage()) {
-        var stale2 = document.querySelectorAll('.' + FBTN_CLASS + '-view');
-        for (var s2 = 0; s2 < stale2.length; s2++) { try { stale2[s2].remove(); } catch (e3) {} }
+        removeStaleViewBadges();
         return;
       }
-      // Assessments list: F goes on copy, not view — skip here
+      // Assessments list: F goes on copy, not view — skip here (also clean stale)
       try {
         var bt = (document.body ? document.body.innerText : '').toLowerCase();
-        if (bt.indexOf('assessment date') !== -1 && bt.indexOf('created by') !== -1) return;
+        if (bt.indexOf('assessment date') !== -1 && bt.indexOf('created by') !== -1) {
+          removeStaleViewBadges();
+          return;
+        }
       } catch (e4) {}
       var target = findViewLink();
       if (!target || !target.parentNode) return;
