@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.19
+// @version      3.20
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -468,13 +468,13 @@
     try {
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
-        // First try standard clickable elements
+        // First try standard clickable elements (lenient match)
         var els = docs[d].querySelectorAll('a, button, input[type="button"], input[type="submit"]');
         for (var i = 0; i < els.length; i++) {
           var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
-          if (label === 'view all' && visible(els[i])) return els[i];
+          if (label.indexOf('view all') !== -1 && visible(els[i])) return els[i];
         }
-        // Fallback: any element with exact "VIEW ALL" text that looks clickable
+        // Fallback: any element with "view all" text that looks clickable
         var all = docs[d].querySelectorAll('div, span');
         for (var k = 0; k < all.length; k++) {
           var t = (all[k].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
