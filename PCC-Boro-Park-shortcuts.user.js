@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.8
+// @version      1.9
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -176,8 +176,10 @@
       try { el.click(); } catch (e2) {}
     }
   }
-  function makeFBadge(title, onClick) {
-    var btn = document.createElement('button');
+  function makeFBadge(title, onClick, targetDoc) {
+    // Create badge in the target's document (may be an iframe) — not the top document
+    var doc = targetDoc || document;
+    var btn = doc.createElement('button');
     btn.type = 'button';
     btn.className = FBTN_CLASS;
     btn.textContent = 'F';
@@ -723,7 +725,7 @@
       var badge = makeFBadge('Open Admission Record (same as F key)', function() {
         var a = findAdmissionRecord();
         if (a) fireClick(a);
-      });
+      }, adm.ownerDocument);
       badge.classList.add(FBTN_CLASS + '-adm');
       if (adm.nextSibling) adm.parentNode.insertBefore(badge, adm.nextSibling);
       else adm.parentNode.appendChild(badge);
@@ -743,7 +745,7 @@
       }
       if (!target || !target.parentNode) return;
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge(label, function() { doFAction(); });
+      var badge = makeFBadge(label, function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -771,7 +773,7 @@
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-viewall';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('View All (same as F key)', function() { doFAction(); });
+      var badge = makeFBadge('View All (same as F key)', function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -785,7 +787,7 @@
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-resprofile';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('Resident Profile (same as F key)', function() { doFAction(); });
+      var badge = makeFBadge('Resident Profile (same as F key)', function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -817,7 +819,7 @@
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-view';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('View section (same as F key)', function() { doFAction(); });
+      var badge = makeFBadge('View section (same as F key)', function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -832,7 +834,7 @@
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-lock';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('Lock section (same as F key)', function() { doFAction(); });
+      var badge = makeFBadge('Lock section (same as F key)', function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -845,7 +847,7 @@
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-sectedit';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('Edit section (same as F key)', function() { doFAction(); });
+      var badge = makeFBadge('Edit section (same as F key)', function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -859,7 +861,7 @@
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-nextsection';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('Next Section (same as F key)', function() { doFAction(); });
+      var badge = makeFBadge('Next Section (same as F key)', function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -880,7 +882,7 @@
       var badgeCls = FBTN_CLASS + '-saveexit';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var label = isBoroPark() ? 'Save & Sign & Exit (same as F key)' : 'Save & Exit (same as F key)';
-      var badge = makeFBadge(label, function() { doFAction(); });
+      var badge = makeFBadge(label, function() { doFAction(); }, target.ownerDocument);
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
