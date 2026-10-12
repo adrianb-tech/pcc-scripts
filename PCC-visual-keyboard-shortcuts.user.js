@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.10
+// @version      3.11
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -512,6 +512,13 @@
              (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1);
     } catch (e) { return false; }
   }
+  // Progress Notes tab — no F badges here
+  function isProgressNotesPage() {
+    try {
+      var t = (document.body ? document.body.innerText : '').toLowerCase();
+      return t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1;
+    } catch (e) { return false; }
+  }
   // Detect signed section status page: a Psych section row with a signer in Signed By
   function isSignedSectionPage() {
     try {
@@ -570,9 +577,9 @@
       var lk = findLockButton();
       if (lk) { fireClick(lk); return true; }
     }
-    // Form sections page: F clicks the view link — all facilities (not on resident list)
+    // Form sections page: F clicks the view link — all facilities (not on resident list or progress notes)
     var vw = null;
-    if (!isResidentListPage()) vw = findViewLink();
+    if (!isResidentListPage() && !isProgressNotesPage()) vw = findViewLink();
     if (vw) { fireClick(vw); return true; }
     // Section list page (Boro Park): F clicks the section edit link
     var se2 = findSectionEditLink();
@@ -635,8 +642,8 @@
 
   function applyFViewBadge() {
     try {
-      // Resident list: no F at all
-      if (isResidentListPage()) return;
+      // Resident list and Progress Notes: no F at all
+      if (isResidentListPage() || isProgressNotesPage()) return;
       // Signed section page (Boro Park): F goes on Lock, not view — remove stale view badge
       if (isBoroPark() && isSignedSectionPage()) {
         var stale2 = document.querySelectorAll('.' + FBTN_CLASS + '-view');
