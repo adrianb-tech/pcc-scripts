@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.4
+// @version      3.5
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -427,6 +427,8 @@
         if (txt.indexOf('in progress') === -1) continue;
         if (txt.indexOf('psych') === -1) continue;
         if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
+        // Only Adrian's own In Progress rows (created by abalestra) — skip other users'
+        if (txt.indexOf('abalestra') === -1) continue;
         var links = rows[i].querySelectorAll('a');
         for (var j = 0; j < links.length; j++) {
           var lt = (links[j].textContent || '').trim().toLowerCase();
@@ -632,6 +634,11 @@
         for (var s2 = 0; s2 < stale2.length; s2++) { try { stale2[s2].remove(); } catch (e3) {} }
         return;
       }
+      // Assessments list: F goes on copy, not view — skip here
+      try {
+        var bt = (document.body ? document.body.innerText : '').toLowerCase();
+        if (bt.indexOf('assessment date') !== -1 && bt.indexOf('created by') !== -1) return;
+      } catch (e4) {}
       var target = findViewLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-view';
