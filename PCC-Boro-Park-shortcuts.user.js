@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.3
+// @version      1.4
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -575,8 +575,12 @@
       for (var d = 0; d < docs.length; d++) {
         try {
           var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
-          if (t.indexOf('view all') !== -1 && t.indexOf('effective date') !== -1) return true;
-          if (t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1) return true;
+          // VIEW ALL button is the key indicator — be lenient
+          if (t.indexOf('view all') !== -1) {
+            // Confirm it's the progress notes context (not just any "view all")
+            if (t.indexOf('progress note') !== -1 || t.indexOf('effective date') !== -1) return true;
+          }
+          if (t.indexOf('add progress note') !== -1) return true;
           if (t.indexOf('progress notes - view all') !== -1) return true;
         } catch (e2) {}
       }
