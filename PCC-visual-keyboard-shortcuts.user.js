@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.6
+// @version      3.7
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -503,13 +503,23 @@
     } catch (e) {}
     return null;
   }
-  // Detect signed section status page (has Signed By/Signed Date with a signer)
+  // Detect signed section status page: a Psych section row with a signer in Signed By
   function isSignedSectionPage() {
     try {
-      var t = (document.body ? document.body.innerText : '').toLowerCase();
-      return t.indexOf('signed by') !== -1 && t.indexOf('signed date') !== -1 &&
-             (t.indexOf('adrian balestra') !== -1 || t.indexOf('abalestra') !== -1);
-    } catch (e) { return false; }
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var rows = docs[d].querySelectorAll('table tr');
+        for (var i = 0; i < rows.length; i++) {
+          var txt = (rows[i].innerText || '').toLowerCase();
+          // Must be a psych section row (not header)
+          if (txt.indexOf('psych') === -1) continue;
+          if (txt.indexOf('section') !== -1 && txt.indexOf('description') !== -1) continue; // header row
+          // Signed = row contains a signer name
+          if (txt.indexOf('balestra') !== -1 || txt.indexOf('adrian') !== -1) return true;
+        }
+      }
+    } catch (e) {}
+    return false;
   }
   function findSaveExit() {
     try {
