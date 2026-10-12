@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.7
+// @version      3.8
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -556,17 +556,17 @@
     // Forms list (assessments): F copies the most recent — In Progress edit is for the section page, not here
     var copy = findMostRecentCopyLink();
     if (copy) { fireClick(copy); return true; }
+    // Signed section status page (Boro Park): F clicks Lock, not view — check before view
+    if (isBoroPark() && isSignedSectionPage()) {
+      var lk = findLockButton();
+      if (lk) { fireClick(lk); return true; }
+    }
     // Form sections page: F clicks the view link — all facilities
     var vw = findViewLink();
     if (vw) { fireClick(vw); return true; }
     // Section list page (Boro Park): F clicks the section edit link
     var se2 = findSectionEditLink();
     if (se2) { fireClick(se2); return true; }
-    // Signed section status page (Boro Park): F clicks Lock, not view
-    if (isBoroPark() && isSignedSectionPage()) {
-      var lk = findLockButton();
-      if (lk) { fireClick(lk); return true; }
-    }
     // Form section detail: F clicks Next Section — all facilities
     var ns = findNextSection();
     if (ns) { fireClick(ns); return true; }
