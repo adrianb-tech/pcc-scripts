@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Bedford/Crown Heights shortcuts
-// @version      1.0
+// @version      1.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -642,17 +642,12 @@
     // Form section detail: F clicks Next Section — all facilities
     var ns = findNextSection();
     if (ns) { fireClick(ns); return true; }
-    // Form edit page: F clicks Save & Sign & Exit at Boro Park, Save & Exit elsewhere
-    if (isBoroPark()) {
-      var sse = findSaveSignExit();
-      if (sse) { fireClick(sse); return true; }
-    }
-    var se = findSaveExit();
-    if (se) { fireClick(se); return true; }
-    if (!isBedfordOrCH()) return false;
-    // Inside the form: F hits Save & Sign & Lock & Exit (Bedford/Crown Heights only)
+    // Form edit page (Bedford/CH): F clicks Save & Sign & Lock & Exit (not Save & Exit)
     var t = findSaveSignLockExit();
     if (t) { fireClick(t); return true; }
+    // Fallback: Save & Exit (shouldn't happen at Bedford/CH, but just in case)
+    var se = findSaveExit();
+    if (se) { fireClick(se); return true; }
     return false;
   }
 
@@ -798,7 +793,8 @@
 
   function applyFSaveExitBadge() {
     try {
-      // Boro Park: F goes on Save & Sign & Exit; elsewhere: Save & Exit
+      // Bedford/CH: F is on Save & Sign & Lock & Exit (via applyFButton), NOT here — skip
+      return;
       var target = isBoroPark() ? findSaveSignExit() : findSaveExit();
       // At Boro Park, remove any stale F badge on Save & Exit
       if (isBoroPark()) {
