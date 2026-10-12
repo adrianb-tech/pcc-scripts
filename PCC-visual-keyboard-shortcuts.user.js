@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.11
+// @version      3.12
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -569,7 +569,9 @@
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
-    // Forms list (assessments): F copies the most recent — In Progress edit is for the section page, not here
+    // Forms list (assessments): F opens Adrian's own In Progress form, else copies the most recent
+    var edit = findInProgressEditLink();
+    if (edit) { fireClick(edit); return true; }
     var copy = findMostRecentCopyLink();
     if (copy) { fireClick(copy); return true; }
     // Signed section status page (Boro Park): F clicks Lock, not view — check before view
@@ -626,11 +628,15 @@
   }
   function applyFEditBadge() {
     try {
-      // Assessments list: F is always on copy, not edit (edit is for the section page)
-      // So this badge only applies the copy fallback here
-      var target = findMostRecentCopyLink();
-      var label = 'Copy most recent form (same as F key)';
-      var badgeCls = FBTN_CLASS + '-copy';
+      // Assessments list: F on Adrian's own In Progress edit, else on copy
+      var target = findInProgressEditLink();
+      var label = 'Edit In Progress form (same as F key)';
+      var badgeCls = FBTN_CLASS + '-edit';
+      if (!target) {
+        target = findMostRecentCopyLink();
+        label = 'Copy most recent form (same as F key)';
+        badgeCls = FBTN_CLASS + '-copy';
+      }
       if (!target || !target.parentNode) return;
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge(label, function() { doFAction(); });
