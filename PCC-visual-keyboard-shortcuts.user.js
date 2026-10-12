@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.14
+// @version      3.15
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -516,6 +516,8 @@
   function isProgressNotesPage() {
     try {
       var t = (document.body ? document.body.innerText : '').toLowerCase();
+      // VIEW ALL button is unique to Progress Notes pages
+      if (t.indexOf('view all') !== -1 && t.indexOf('effective date') !== -1) return true;
       return (t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1) ||
              t.indexOf('progress notes - view all') !== -1;
     } catch (e) { return false; }
