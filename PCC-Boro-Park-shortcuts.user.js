@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.7
+// @version      1.8
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -911,22 +911,34 @@
   setTimeout(applyFResidentProfileBadge, 1500);
   setTimeout(applyFResidentProfileBadge, 4000);
   // Re-apply VIEW ALL badge when Progress Notes tab is clicked (content loads dynamically)
-  document.addEventListener('click', function(e) {
+  // Attach to all frames — the tab may be inside an iframe
+  function attachTabClickListener() {
     try {
-      var el = e.target;
-      // Check if clicked element or parent is the Progress Notes tab
-      for (var i = 0; i < 3 && el; i++) {
-        var txt = (el.textContent || '').toLowerCase().trim();
-        if (txt === 'progress notes' || txt.indexOf('progress notes') === 0) {
-          // Tab clicked — re-apply badge after content loads
-          setTimeout(applyFViewAllBadge, 1000);
-          setTimeout(applyFViewAllBadge, 2500);
-          break;
-        }
-        el = el.parentNode;
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        (function(doc) {
+          if (doc.__tabClickAttached) return;
+          doc.__tabClickAttached = true;
+          doc.addEventListener('click', function(e) {
+            try {
+              var el = e.target;
+              for (var i = 0; i < 3 && el; i++) {
+                var txt = (el.textContent || '').toLowerCase().trim();
+                if (txt === 'progress notes' || txt.indexOf('progress notes') === 0) {
+                  setTimeout(applyFViewAllBadge, 1000);
+                  setTimeout(applyFViewAllBadge, 2500);
+                  break;
+                }
+                el = el.parentNode;
+              }
+            } catch (err) {}
+          });
+        })(docs[d]);
       }
-    } catch (err) {}
-  });
+    } catch (e) {}
+  }
+  attachTabClickListener();
+  setTimeout(attachTabClickListener, 2000); // re-attach in case iframes load late
   applyFLockBadge();
   setTimeout(applyFLockBadge, 1500);
   setTimeout(applyFLockBadge, 4000);
