@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.2
+// @version      3.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -500,6 +500,21 @@
     } catch (e) {}
     return null;
   }
+  // Boro Park form edit page: "Save & Sign & Exit" (no Lock)
+  function findSaveSignExit() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+      var els = docs[d].querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+        if (label === 'save & sign & exit' && visible(els[i])) return els[i];
+      }
+      }
+    } catch (e) {}
+    return null;
+  }
+  function isBoroPark() { return facilityName() === 'boro-park'; }
   function doFAction() {
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
@@ -519,7 +534,11 @@
     // Form section detail: F clicks Next Section — all facilities
     var ns = findNextSection();
     if (ns) { fireClick(ns); return true; }
-    // Form edit page: F clicks Save & Exit — all facilities
+    // Form edit page: F clicks Save & Sign & Exit at Boro Park, Save & Exit elsewhere
+    if (isBoroPark()) {
+      var sse = findSaveSignExit();
+      if (sse) { fireClick(sse); return true; }
+    }
     var se = findSaveExit();
     if (se) { fireClick(se); return true; }
     if (!isBedfordOrCH()) return false;
@@ -618,11 +637,18 @@
 
   function applyFSaveExitBadge() {
     try {
-      var target = findSaveExit();
+      // Boro Park: F goes on Save & Sign & Exit; elsewhere: Save & Exit
+      var target = isBoroPark() ? findSaveSignExit() : findSaveExit();
+      // At Boro Park, remove any stale F badge on Save & Exit
+      if (isBoroPark()) {
+        var stale = document.querySelectorAll('.' + FBTN_CLASS + '-saveexit');
+        for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
+      }
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-saveexit';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('Save & Exit (same as F key)', function() { doFAction(); });
+      var label = isBoroPark() ? 'Save & Sign & Exit (same as F key)' : 'Save & Exit (same as F key)';
+      var badge = makeFBadge(label, function() { doFAction(); });
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
