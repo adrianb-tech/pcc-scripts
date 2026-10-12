@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.20
+// @version      3.21
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -493,8 +493,8 @@
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         var txt = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
-        // Must be a section list page (has Section/Description headers, not the assessments table)
-        if (txt.indexOf('in progress') !== -1 && txt.indexOf('assessment date') !== -1) continue;
+        // Must be a section list page (has Section/Description headers, not the assessments/forms table)
+        if (txt.indexOf('in progress') !== -1 && (txt.indexOf('assessment date') !== -1 || txt.indexOf('form date') !== -1)) continue;
         var links = docs[d].querySelectorAll('a');
         for (var j = 0; j < links.length; j++) {
           var lt = (links[j].textContent || '').trim().toLowerCase();
@@ -738,10 +738,10 @@
         removeStaleViewBadges();
         return;
       }
-      // Assessments list: F goes on copy, not view — skip here (also clean stale)
+      // Assessments/Forms list: F goes on copy/edit, not view — skip here (also clean stale)
       try {
         var bt = (document.body ? document.body.innerText : '').toLowerCase();
-        if (bt.indexOf('assessment date') !== -1 && bt.indexOf('created by') !== -1) {
+        if ((bt.indexOf('assessment date') !== -1 || bt.indexOf('form date') !== -1) && bt.indexOf('created by') !== -1) {
           removeStaleViewBadges();
           return;
         }
