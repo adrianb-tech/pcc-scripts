@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC Boro Park shortcuts
-// @version      1.0
+// @version      1.2
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -11,10 +11,23 @@
 (function() {
   'use strict';
 
+  // Facility guard: only run at Boro Park
+  // Returns true if at Boro Park, false if at another known facility, null if unknown (still loading)
+  function checkBoroParkFacility() {
+    try {
+      var ft = (document.body ? document.body.innerText : '').toLowerCase();
+      if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) return true;
+      if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) return false;
+      if (ft.indexOf('saint joachim') !== -1 || ft.indexOf('saints') !== -1) return false;
+    } catch (e) {}
+    return null; // unknown
+  }
+  function shouldRun() { return checkBoroParkFacility() !== false; }
+
   // ---- Facility detection (for future facility-specific behavior) ----
   function facilityName() {
     try {
-      var t = (document.body ? document.body.innerText : '').substring(0, 2000).toLowerCase();
+      var t = (document.body ? document.body.innerText : '').toLowerCase();
       if (/boro\s*park/.test(t)) return 'boro-park';
       if (/crown\s*heights/.test(t)) return 'crown-heights';
       if (/bedford/.test(t)) return 'bedford';
@@ -160,6 +173,7 @@
   }
   function applyFButton() {
     try {
+      if (!shouldRun()) return;
       // Remove stale buttons first
       var olds = document.querySelectorAll('.' + FBTN_CLASS);
       for (var i = olds.length - 1; i >= 0; i--) olds[i].remove();
@@ -299,6 +313,7 @@
   }
   function applyNumberBadges() {
     try {
+      if (!shouldRun()) return;
       var acted = findInFrames(window.top || window, function(doc) {
         var sel = findTypeSelect(doc);
         if (!sel || !sel.parentNode) return null;
@@ -615,6 +630,7 @@
   }
   function isBoroPark() { return true; } // Boro Park only script
   function doFAction() {
+    if (!shouldRun()) return false;
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
@@ -659,6 +675,7 @@
 
   function applyFAdmissionBadge() {
     try {
+      if (!shouldRun()) return;
       var adm = findAdmissionRecord();
       if (!adm || !adm.parentNode) return;
       // Highlight the Admission Record link itself to make it stand out
@@ -682,6 +699,7 @@
   }
   function applyFEditBadge() {
     try {
+      if (!shouldRun()) return;
       // Assessments list: F on Adrian's own In Progress edit, else on copy
       var target = findInProgressEditLink();
       var label = 'Edit In Progress form (same as F key)';
@@ -715,6 +733,7 @@
   // Progress Notes: F badge on VIEW ALL button
   function applyFViewAllBadge() {
     try {
+      if (!shouldRun()) return;
       if (!isProgressNotesPage()) return;
       var target = findViewAllButton();
       if (!target || !target.parentNode) return;
@@ -728,6 +747,7 @@
   }
   function applyFViewBadge() {
     try {
+      if (!shouldRun()) return;
       // Resident list and Progress Notes: no F on view — remove any stale badges
       // (Progress Notes gets F on VIEW ALL instead, via applyFViewAllBadge)
       if (isResidentListPage() || isProgressNotesPage()) {
@@ -759,6 +779,7 @@
   }
   function applyFLockBadge() {
     try {
+      if (!shouldRun()) return;
       // Only on signed section page at Boro Park
       if (!isBoroPark() || !isSignedSectionPage()) return;
       var target = findLockButton();
@@ -773,6 +794,7 @@
   }
   function applyFSectionEditBadge() {
     try {
+      if (!shouldRun()) return;
       var target = findSectionEditLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-sectedit';
@@ -786,6 +808,7 @@
 
   function applyFNextSectionBadge() {
     try {
+      if (!shouldRun()) return;
       var target = findNextSection();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-nextsection';
@@ -799,6 +822,7 @@
 
   function applyFSaveExitBadge() {
     try {
+      if (!shouldRun()) return;
       // Boro Park: F goes on Save & Sign & Exit; elsewhere: Save & Exit
       var target = isBoroPark() ? findSaveSignExit() : findSaveExit();
       // At Boro Park, remove any stale F badge on Save & Exit
@@ -860,7 +884,7 @@
 
   // ---- Keyboard shortcuts ----
   var enabled = true;
-  document.addEventListener('keydown', function(e) {
+  if (shouldRun()) document.addEventListener('keydown', function(e) {
     // Ignore synthetic events (Snippety, etc.) — only real keypresses
     if (!e.isTrusted) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
