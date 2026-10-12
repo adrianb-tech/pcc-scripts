@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.9
+// @version      3.10
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -392,7 +392,8 @@
       for (var i = 0; i < rows.length; i++) {
         var txt = (rows[i].innerText || '');
         var low = txt.toLowerCase();
-        if (low.indexOf('consult') === -1 || low.indexOf('psychiatry') === -1) continue;
+        if (low.indexOf('psych') === -1) continue;
+        if (low.indexOf('consult') === -1 && low.indexOf('psychiatry') === -1) continue;
         // Parse Form Date (M/D/YYYY) from the row
         var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
         if (!m) continue;
