@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.18
+// @version      3.19
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -463,15 +463,25 @@
     } catch (e) {}
     return null;
   }
-  // Progress Notes: VIEW ALL button
+  // Progress Notes: VIEW ALL button (may be div/span styled as button, not a real <button>)
   function findViewAllButton() {
     try {
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
+        // First try standard clickable elements
         var els = docs[d].querySelectorAll('a, button, input[type="button"], input[type="submit"]');
         for (var i = 0; i < els.length; i++) {
           var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
           if (label === 'view all' && visible(els[i])) return els[i];
+        }
+        // Fallback: any element with exact "VIEW ALL" text that looks clickable
+        var all = docs[d].querySelectorAll('div, span');
+        for (var k = 0; k < all.length; k++) {
+          var t = (all[k].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+          if (t === 'view all' && visible(all[k])) {
+            // Must not be a container with lots of other text
+            if ((all[k].innerHTML || '').length < 200) return all[k];
+          }
         }
       }
     } catch (e) {}
