@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC visual/keyboard shortcuts
-// @version      3.15
+// @version      3.16
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-visual-keyboard-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -507,20 +507,31 @@
   // Resident census/search list — no F badges here at all
   function isResidentListPage() {
     try {
-      var t = (document.body ? document.body.innerText : '').toLowerCase();
-      return t.indexOf('search current residents') !== -1 ||
-             (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1);
-    } catch (e) { return false; }
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          if (t.indexOf('search current residents') !== -1) return true;
+          if (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1) return true;
+        } catch (e2) {}
+      }
+    } catch (e) {}
+    return false;
   }
-  // Progress Notes tab / View All — no F badges here
+  // Progress Notes tab / View All — no F badges here (checks all iframes, PCC loads content in frames)
   function isProgressNotesPage() {
     try {
-      var t = (document.body ? document.body.innerText : '').toLowerCase();
-      // VIEW ALL button is unique to Progress Notes pages
-      if (t.indexOf('view all') !== -1 && t.indexOf('effective date') !== -1) return true;
-      return (t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1) ||
-             t.indexOf('progress notes - view all') !== -1;
-    } catch (e) { return false; }
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          if (t.indexOf('view all') !== -1 && t.indexOf('effective date') !== -1) return true;
+          if (t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1) return true;
+          if (t.indexOf('progress notes - view all') !== -1) return true;
+        } catch (e2) {}
+      }
+    } catch (e) {}
+    return false;
   }
   // Detect signed section status page: a Psych section row with a signer in Signed By
   function isSignedSectionPage() {
