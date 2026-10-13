@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.0
+// @version 1.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -55,7 +55,7 @@
     for (i = 0; i < lines.length; i++) { if (/\bBIMS\b/.test(lines[i])) { bi = i; break; } }
     if (bi === -1) return txt;
     var scoreRe = /^\s*\d{1,2}\s+on\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/;
-    var xxRe = /^\s*\d{1,2}\s+on\s+xx\s*$/i;
+    var xxRe = /^\s*(?:\d{1,2}|xx)\s+on\s+xx\s*$/i;   // "15 on xx" or "xx on xx"
     var lastScore = -1, xxLine = -1;
     for (i = bi + 1; i < lines.length; i++) {
       if (xxRe.test(lines[i])) { xxLine = i; continue; }
