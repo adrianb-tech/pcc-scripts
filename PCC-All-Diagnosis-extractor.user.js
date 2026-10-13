@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.10
+// @version 1.11
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -97,6 +97,7 @@
     // Verbatim lines: "S/P mechanical fall" is the same thing as "Status postfall"
     // (his call, 2026-10-13) — if a line has both, drop the S/P segment.
     verbatim = verbatim.map(function (s) {
+      s = s.split(/\s*,\s*/).filter(function (p) { return !isProcedureItem(p); }).join(', ');
       var parts = s.split(/\s*,\s*/);
       var hasPost = parts.some(function (p) { return /\bpostfall\b/i.test(p) || /\bstatus\s*post\s*fall/i.test(p); });
       if (!hasPost) return s;
@@ -106,6 +107,10 @@
     // Filters for non-serious symptoms, functional items, and admission fluff
     var EXCLUDE_EXACT = /^(?:constipation|insomnia|advance careplanning|moderate protein-calorie malnutrition|muscle weakness|difficulty in walking|falling|need for assistance with personal care|gw|generalized weakness|history of|hx of|hx|past surgical history|surgical history|psh|reviewed in electronic medical record|reviewed in emr|reviewed in chart|reviewed in the chart)$/i;
     var ADMIN_JUNK = /^(?:CPT Codes|ICD Codes|Admission|Minimal Depression|Moderate Depression|Severe Depression|Score|Attestation|Time spent|Date of Service|Transition of Care)/i;
+    // A test/procedure is not a diagnosis — "H/O chest x-ray" (his rule, 2026-10-13)
+    function isProcedureItem(s) {
+      return /^(?:(?:h\/o|hx|history)\s+(?:of\s+)?)?[\w\s-]*?\b(x-?ray|ct\s+scan|pet\s+scan|mri|mra|ecg|ekg|echocardiogram|ultrasound|sonogram|mammogram|colonoscopy|endoscopy|bronchoscopy|angiogram)\b[\w\s-]*$/i.test((s || '').trim());
+    }
     var PROSE = /^(?:the |res\b|resident|patient\b|pt\b|he |she )|\b(?:arrived|accompanied|presents?|presented|reports?|reported|denies|stretcher|ambulance|admitted to|was admitted|hospitalized|was hospitalized|seen (?:at|by))\b/i;
     // Fragments: start with preposition/conjunction/verb, or are narrative leftovers
     var FRAGMENT = /^(?:of|with|and|or|is|are|was|were|has|have|had|for|in|on|at|by|to|presence of)\b/i;
@@ -140,10 +145,10 @@
       str.split(/\s*(?:,(?![^()]*\))|;|\u2022|\/\s+)\s*|\s+and\s+/i).forEach(function(it){
         it = (it || '').replace(/\s+/g, ' ')
                .replace(/^[-–—:\s.;()]+|[-–—:\s.;()]+$/g, '')
-               .replace(/^(?:hx|history|recent|adm with dx|admitted for)\s+of\s+/i, '')
+               .replace(/^(?:hx|h\/o|history|recent|adm with dx|admitted for)\s+of\s+/i, '')
                .replace(/^\/PSH\s*/i, '');
 
-        if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it)) return;
+        if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it)) return;
         if (/\d+\.\d+/.test(it)) return;
         // Reject fragments and narrative leftovers
         if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
@@ -156,7 +161,7 @@
         }
         it = it.replace(/\s+/g, ' ').trim();
 
-        if (!it || ADMIN_JUNK.test(it) || EXCLUDE_EXACT.test(it)) return;
+        if (!it || ADMIN_JUNK.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it)) return;
         if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
         if (it.split(/\s+/).length > 6 || it.length > 50) return;
 
