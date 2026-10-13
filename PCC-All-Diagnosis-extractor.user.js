@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.15
+// @version 1.16
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -92,6 +92,8 @@
     // Read PMH sections
     grab(text, /(?:past\s+)?(?:medical|psychiatric)\s+history\s*(?:of|significant\s+for|includes?|notable\s+for|:|\/psh)\s*([^\n]+?)(?=\.\s+[A-Z]|\n|$)/gi).forEach(push);
     grab(text, /\bPMHx?\b\s*:?\s*(?:significant for\s*)?([^\n]+?)(?=\.\s+[A-Z]|\n|$)/gi).forEach(push);
+    // "The patient with h/o CHF, Asthma, ... was seen" carries the whole list (CNR note, 2026-10-13)
+    grab(text, /\b(?:patient|pt)\s+with\s+(?:h\/o|history\s+of)\s+(.+?)\s+was\s+seen\b/gi).forEach(push);
 
     // "Additional Diagnosis:" / "Secondary diagnosis:" — capture verbatim
     // (explicit clinician statements, bypass condensing filters)
