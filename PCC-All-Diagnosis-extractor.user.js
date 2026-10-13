@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.9
+// @version 1.10
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -67,6 +67,9 @@
     text = text.replace(/[\u2018\u2019]/g, "'").replace(/[\u2010-\u2015]/g, '-')
                .replace(/\u00A0/g, ' ').replace(/\r/g, '');
     text = text.replace(/[ \t]+/g, ' ');
+    // "Primary admitting diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
+    text = text.replace(/\b(?:primary\s+)?admitting diagnosis\s*:\s*/gi, '');
+    text = text.replace(/\badmission diagnosis\s*:\s*/gi, '');
 
     var raw = [];
     function push(s){ if (s) raw.push(s); }
@@ -91,6 +94,15 @@
       if (!dup) verbatim.push(s.trim());
     });
 
+    // Verbatim lines: "S/P mechanical fall" is the same thing as "Status postfall"
+    // (his call, 2026-10-13) — if a line has both, drop the S/P segment.
+    verbatim = verbatim.map(function (s) {
+      var parts = s.split(/\s*,\s*/);
+      var hasPost = parts.some(function (p) { return /\bpostfall\b/i.test(p) || /\bstatus\s*post\s*fall/i.test(p); });
+      if (!hasPost) return s;
+      return parts.filter(function (p) { return !(/^\s*s\/?p\s+/i.test(p) && /\bfall\b/i.test(p)); }).join(', ');
+    });
+
     // Filters for non-serious symptoms, functional items, and admission fluff
     var EXCLUDE_EXACT = /^(?:constipation|insomnia|advance careplanning|moderate protein-calorie malnutrition|muscle weakness|difficulty in walking|falling|need for assistance with personal care|gw|generalized weakness|history of|hx of|hx|past surgical history|surgical history|psh|reviewed in electronic medical record|reviewed in emr|reviewed in chart|reviewed in the chart)$/i;
     var ADMIN_JUNK = /^(?:CPT Codes|ICD Codes|Admission|Minimal Depression|Moderate Depression|Severe Depression|Score|Attestation|Time spent|Date of Service|Transition of Care)/i;
@@ -101,6 +113,8 @@
 
     // Normalize for dedup: lowercase, strip qualifiers, keep the core concept
     function normDx(s){
+      // "S/P mechanical fall" / "status postfall" / "s/p fall" = one concept (his call, 2026-10-13)
+      if (/\bpostfall\b/i.test(s) || (/\b(?:s\/?p|status\s*post)\b/i.test(s) && /\bfall\b/i.test(s))) return 'fallstatus';
       return s.toLowerCase()
         .replace(/\b(?:chronic|acute|bilateral|unilateral|recurrent|severe|mild|moderate)\b/g, '')
         .replace(/\s*(?:with|s\/p|\/)\s*.*$/, '')  // strip "with X", "s/p X", "/ X" tails
