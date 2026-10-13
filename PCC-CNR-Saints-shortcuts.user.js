@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC CNR/Saints shortcuts
-// @version      1.1
+// @version      1.2
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNR-Saints-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNR-Saints-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -492,6 +492,20 @@
     } catch (e) {}
     return null;
   }
+  // CNR/Saints section list page: "Sign All" toolbar + section table with Signed By.
+  // At CNR/Saints (only facility like this) F goes on VIEW here, not edit.
+  function isSectionListPage() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          if (t.indexOf('sign all') !== -1 && t.indexOf('signed by') !== -1) return true;
+        } catch (e2) {}
+      }
+    } catch (e) {}
+    return false;
+  }
   // A forms grid (in-chart FORMS tab): "Form Date"/"Assessment Date" + "Created By"
   function isFormsGridPage() {
     try {
@@ -725,6 +739,11 @@
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
+    // CNR/Saints section list: F clicks VIEW (signed Reason for Consultation) — only facility with this rule
+    if (isSectionListPage()) {
+      var svw = findViewLink();
+      if (svw) { fireClick(svw); return true; }
+    }
     // CNR/Saints FORMS tab / lists: F opens the most recent editable psych consult
     var edit = findMostRecentEditLink();
     if (edit) { fireClick(edit); return true; }
@@ -789,7 +808,8 @@
   function applyFEditBadge() {
     try {
       if (!shouldRun()) return;
-      // CNR/Saints: F badge ONLY on the most recent edit button
+      // CNR/Saints: F badge ONLY on the most recent edit button (not on section list — view rules there)
+      if (isSectionListPage()) return;
       var target = findMostRecentEditLink();
       var label = 'Edit most recent form (same as F key)';
       var badgeCls = FBTN_CLASS + '-edit';
@@ -890,6 +910,7 @@
   function applyFSectionEditBadge() {
     try {
       if (!shouldRun()) return;
+      if (isSectionListPage()) return; // CNR/Saints: view only on section list
       var target = findSectionEditLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-sectedit';
