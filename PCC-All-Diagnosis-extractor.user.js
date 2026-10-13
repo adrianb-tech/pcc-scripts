@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.14
+// @version 1.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -173,6 +173,8 @@
       str = str.replace(/\bPMHx?\s*:\s*/gi, '');
       str = str.replace(/\bpast\s+(?:medical|psychiatric)\s+history\s*:\s*/gi, '');
       str = str.replace(/\.\s+/g, ', ');
+      // Diagnosis codes aren't needed in the list (his rule, 2026-10-13)
+      str = str.replace(/\((?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?)(?:\s*\/\s*(?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?))*\)\s*/g, '');
       // "who was hospitalized on 08/19/2026 for X" -> split into separate items
       // ("daily alcohol use" and "X" become separate diagnoses)
       str = str.replace(/\bwho\s+was\s+hospitalized\s+on\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s+for\s+/gi, ', ');
@@ -221,6 +223,8 @@
     // lines on ", " so a concept mentioned twice — once inside a line, once on
     // its own (Seizure disorder / Seizures, hypertension / HTN) — appears once.
     out = out.map(function (s) {
+      s = s.replace(/\((?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?)(?:\s*\/\s*(?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?))*\)\s*/g, '');
+      s = s.replace(/^(?:[A-Z]\d{2}\.\d+|\d{3}\.\d+)\s+/, '');
       return s.replace(/\s*,\s*/g, ', ').replace(/\.\s+/g, ', ').replace(/[\s.,]+$/, '').replace(/\s+/g, ' ').trim();
     });
     var seenAll = {}, finalOut = [];
