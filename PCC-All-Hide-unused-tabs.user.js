@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.9
+// @version 1.10
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -44,8 +44,13 @@
     // labels stay readable on the pale background.
     'ORDERS': { b: '#fecaca', f: '#7f1d1d' },
     'WTS/VITALS': { b: '#fecaca', f: '#7f1d1d' },
-    'RESULTS': { b: '#fecaca', f: '#7f1d1d' }
+    'RESULTS': { b: '#fecaca', f: '#7f1d1d' },
+    'MED DIAG': { b: '#fecaca', f: '#7f1d1d' },
+    'MISC': { b: '#fecaca', f: '#7f1d1d' }
   };
+  // When MORE is open, these overflow tabs come FIRST (his order,
+  // 2026-10-13) — the rest follow in PCC's original relative order.
+  var EXPAND_FIRST = ['MED DIAG', 'MISC'];
 
   var tabsHidden = true;   // his default: hidden
   var origOrder = [];      // PCC's own tab order, captured on first sight
@@ -194,9 +199,10 @@
     if (tabsHidden) {
       origOrder.forEach(function (name) { if (tabs[name]) placeRight(tabs[name]); });
     } else {
-      origOrder.forEach(function (name) {
-        if (HIDE.indexOf(name) !== -1 && tabs[name]) placeRight(tabs[name]);
-      });
+      var expandList = EXPAND_FIRST.concat(origOrder.filter(function (name) {
+        return HIDE.indexOf(name) !== -1 && EXPAND_FIRST.indexOf(name) === -1;
+      }));
+      expandList.forEach(function (name) { if (tabs[name]) placeRight(tabs[name]); });
     }
 
     // MORE / LESS button at the end of the bar.
