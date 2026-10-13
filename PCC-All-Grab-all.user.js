@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Grab all (G)
-// @version      1.1
+// @version      1.2
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @match        https://*.pointclickcare.com/*
@@ -49,8 +49,7 @@
     setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 2450);
   }
 
-  function grabAll() {
-    var btns = document.querySelectorAll('.pcc-fill-copy');
+  function grabAll() {    var btns = document.querySelectorAll('.pcc-fill-copy');
     var queued = [];
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
@@ -88,17 +87,38 @@
       g.addEventListener('click', function (e) {
         e.preventDefault();
         e.stopPropagation();
-        grabAll();
+        requestGrab();
       });
       if (b.parentNode) b.parentNode.insertBefore(g, b.nextSibling);
     }
   }
 
+  // PCC pages are several frames in one tab (header frame, content frame),
+  // and a keypress reaches only the focused one. So a grab is broadcast:
+  // the frame that got the key writes a signal, and every VISIBLE frame in
+  // the tab clicks its own Copy buttons. (His live report, 2026-10-13: on
+  // the Dashboard only the header frame heard G, so meds never queued.)
+  var lastSignal = 0;
+  function requestGrab() {
+    var ts = Date.now();
+    lastSignal = ts;
+    grabAll();
+    try { localStorage.setItem('pccGrabSignal', String(ts)); } catch (e) {}
+  }
+  window.addEventListener('storage', function (e) {
+    if (e.key !== 'pccGrabSignal' || !e.newValue) return;
+    var ts = parseInt(e.newValue, 10);
+    if (!ts || ts <= lastSignal || Date.now() - ts > 5000) return;
+    if (document.visibilityState === 'hidden') return;   // background tabs stay out
+    lastSignal = ts;
+    grabAll();
+  });
+
   document.addEventListener('keydown', function (e) {
     if (!e.isTrusted || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key !== 'g' && e.key !== 'G') return;
     if (isTyping()) return;
-    grabAll();
+    requestGrab();
   }, true);
 
   // Badges render on bounded staggered runs + after his clicks (no timers).
