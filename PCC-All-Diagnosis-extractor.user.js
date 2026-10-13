@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.13
+// @version 1.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -51,7 +51,13 @@
     [/\bhypo-?osmolality(?:\s*,\s*hyponatremia)?\b/gi, 'Hyponatremia'],
     [/\bhyponatremia\b/gi, 'Hyponatremia'],
     [/\bovarian\s+cyst\b/gi, 'Ovarian Cyst'],
-    [/\b(?:localized\s+)?visual\s+field\s+defect(?:\s+of\s+the\s+right\s+eye)?\b/gi, 'Visual Field Defect']
+    [/\b(?:localized\s+)?visual\s+field\s+defect(?:\s+of\s+the\s+right\s+eye)?\b/gi, 'Visual Field Defect'],
+
+    // Misspellings / mangled forms seen in charts — corrected (his standing OK, 2026-10-13)
+    [/\bT2DM\b/gi, 'DM'],
+    [/\bT@DM\b/gi, 'DM'],
+    [/\bdiabeties\b/gi, 'Diabetes'],
+    [/\bhypertention\b/gi, 'Hypertension']
   ];
 
   function grab(text, re){
@@ -105,8 +111,12 @@
     // Verbatim lines: "S/P mechanical fall" is the same thing as "Status postfall"
     // (his call, 2026-10-13) — if a line has both, drop the S/P segment.
     verbatim = verbatim.map(function (s) {
+      // Generalized history labels are not diagnoses — the whole list is a history
+      // (his rule, 2026-10-13). Specific "hx of falls"-type mentions are untouched.
       // "Secondary Dx;" / "Secondary diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
       s = s.replace(/\b(?:secondary|additional)\s+(?:diagnosis|dx)\s*[:;]\s*/gi, '');
+      s = s.replace(/\bPMHx?\s*:\s*/gi, '').replace(/\bpast\s+(?:medical|psychiatric)\s+history\s*:\s*/gi, '');
+      s = s.replace(/\.\s+/g, ', ');
       s = s.replace(/^\s*weakness\s*\.\s*/i, '');
       s = applyAbbr(s);   // abbreviations apply everywhere, verbatim included (his "always" rule, 2026-10-13)
       s = s.split(/\s*,\s*/).filter(function (p) {
@@ -158,6 +168,11 @@
     raw.forEach(function(str){
       // Clean out tailing narrative phrases like "seen today for PA admission"
       str = str.replace(/\bseen\s+today\s+for\s+[^\n,]*/gi, '');
+      // Generalized history labels are not diagnoses — the whole list is a history
+      // (his rule, 2026-10-13). Specific "hx of falls"-type mentions are untouched.
+      str = str.replace(/\bPMHx?\s*:\s*/gi, '');
+      str = str.replace(/\bpast\s+(?:medical|psychiatric)\s+history\s*:\s*/gi, '');
+      str = str.replace(/\.\s+/g, ', ');
       // "who was hospitalized on 08/19/2026 for X" -> split into separate items
       // ("daily alcohol use" and "X" become separate diagnoses)
       str = str.replace(/\bwho\s+was\s+hospitalized\s+on\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s+for\s+/gi, ', ');
@@ -205,6 +220,9 @@
     // Final dedupe across everything (verbatim lines included): split combined
     // lines on ", " so a concept mentioned twice — once inside a line, once on
     // its own (Seizure disorder / Seizures, hypertension / HTN) — appears once.
+    out = out.map(function (s) {
+      return s.replace(/\s*,\s*/g, ', ').replace(/\.\s+/g, ', ').replace(/[\s.,]+$/, '').replace(/\s+/g, ' ').trim();
+    });
     var seenAll = {}, finalOut = [];
     out.forEach(function (item) {
       var kept = [];
