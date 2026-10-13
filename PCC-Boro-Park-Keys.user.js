@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version 2.2
+// @version 2.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -507,6 +507,7 @@
             if (tbl) {
               var th = (tbl.innerText || '').toLowerCase();
               if (th.indexOf('effective date') !== -1) continue;
+              if (th.indexOf('external facilities') !== -1) continue;
             }
           } catch (e2) {}
           return links[j];
@@ -814,6 +815,12 @@
       }
       // Signed section page (Boro Park): F goes on Lock, not view — remove stale view badge
       if (isBoroPark() && isSignedSectionPage()) {
+        removeStaleViewBadges();
+        return;
+      }
+      // Profile page: the ONLY F here is the Face Sheet (his rule, 2026-10-13).
+      // The generic view badge landed on the External Facilities "view" link — suppress it.
+      if (findAdmissionRecord()) {
         removeStaleViewBadges();
         return;
       }
