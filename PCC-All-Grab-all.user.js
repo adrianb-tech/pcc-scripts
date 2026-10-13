@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Grab all (G)
-// @version      1.0
+// @version      1.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @match        https://*.pointclickcare.com/*
@@ -67,10 +67,48 @@
     showBadge(queued);
   }
 
+  // A small keyboard-key "G" badge sits next to every Copy button (his
+  // request, 2026-10-13) — a reminder that G grabs it, and clicking the
+  // badge is the same as pressing G.
+  function addBadges() {
+    var btns = document.querySelectorAll('.pcc-fill-copy');
+    for (var i = 0; i < btns.length; i++) {
+      var b = btns[i];
+      if (b.getAttribute('data-g-badge')) continue;
+      if (!b.getClientRects().length) continue;                 // not on screen yet
+      if (b.getAttribute('data-fill-value') === 'N/A') continue;
+      b.setAttribute('data-g-badge', '1');
+      var g = document.createElement('span');
+      g.className = 'pcc-g-badge';
+      g.textContent = 'G';
+      g.title = 'Press G to grab everything on this page';
+      g.style.cssText = 'display:inline-block;vertical-align:middle;margin-left:6px;padding:1px 7px;' +
+        'background:#fff;border:2px solid #1d4ed8;border-radius:6px;color:#1d4ed8;' +
+        'font:bold 13px -apple-system,Helvetica,Arial,sans-serif;cursor:pointer;user-select:none;';
+      g.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        grabAll();
+      });
+      if (b.parentNode) b.parentNode.insertBefore(g, b.nextSibling);
+    }
+  }
+
   document.addEventListener('keydown', function (e) {
     if (!e.isTrusted || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key !== 'g' && e.key !== 'G') return;
     if (isTyping()) return;
     grabAll();
+  }, true);
+
+  // Badges render on bounded staggered runs + after his clicks (no timers).
+  [400, 1200, 2500, 4500, 7000, 10000].forEach(function (ms) { setTimeout(addBadges, ms); });
+  var lastBadgeRun = 0;
+  document.addEventListener('click', function (e) {
+    if (!e.isTrusted) return;
+    var now = Date.now();
+    if (now - lastBadgeRun < 1000) return;
+    lastBadgeRun = now;
+    setTimeout(addBadges, 350);
   }, true);
 })();
