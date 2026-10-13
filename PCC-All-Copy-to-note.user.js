@@ -205,6 +205,85 @@
     return out.join('\n');
   }
 
+  // ---- Mismatch check (his request, 2026-10-13) ----
+  // Compares the note AS OPENED against the grabbed chart values and returns
+  // the topics that differ, for the "note vs chart" panel ("age - update",
+  // "allergies - update", ...). Placeholder values in a NEW form are not
+  // mismatches and are skipped; a topic with no grabbed value is not checked.
+
+  function normSpec(s) { return (s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+
+  function medSectionLines(txt) {
+    var lines = txt.split('\n'), hi = -1, ei = -1, i;
+    for (i = 0; i < lines.length; i++) { if (/^\s*Psych meds\s*$/.test(lines[i])) { hi = i; break; } }
+    if (hi === -1) return null;
+    for (i = hi + 1; i < lines.length; i++) { if (/^\s*PLAN\b/.test(lines[i])) { ei = i; break; } }
+    if (ei === -1) ei = lines.length;
+    return lines.slice(hi + 1, ei);
+  }
+
+  function diffLabels(txt, q) {
+    var out = [];
+    if (q.ageSex) {
+      var hm = txt.match(/^[ \t]*HPI[ \t]+(\d{1,3})[MF]\b/m);
+      var qa = String(q.ageSex).match(/\d{1,3}/);
+      if (hm && qa && hm[1] !== qa[0]) out.push('age');
+    }
+    if (q.allergies) {
+      var am = txt.match(/^[ \t]*Allergies[ \t]*:?[ \t]*(.+)$/m);
+      if (am) {
+        var cur = am[1].trim();
+        if (!/^(NKA|NKDA|No[ \t]+known)/i.test(cur) && allergySet(cur) !== allergySet(String(q.allergies))) out.push('allergies');
+      }
+    }
+    if (q.meds) {
+      var sec = medSectionLines(txt);
+      if (sec) {
+        var content = sec.filter(function (l) { return l.trim() !== ''; });
+        var isNone = content.length === 1 && /^-\s*none\s*$/i.test(content[0].trim());
+        if (!isNone && content.length) {
+          var noteMap = {}, chartMap = {}, diff = false, k;
+          content.forEach(function (l) { var p = parseMedLine(l); if (p) noteMap[p.canon] = normSpec(p.spec); });
+          String(q.meds).split('\n').forEach(function (l) { var p = parseMedLine(l); if (p) chartMap[p.canon] = normSpec(p.spec); });
+          for (k in chartMap) { if (noteMap[k] !== chartMap[k]) { diff = true; break; } }
+          if (!diff) { for (k in noteMap) { if (!(k in chartMap)) { diff = true; break; } } }
+          if (diff) out.push('medications');
+        }
+      }
+    }
+    if (q.diagnoses) {
+      var lines = txt.split('\n'), mi = -1, fi = -1, i2;
+      for (i2 = 0; i2 < lines.length; i2++) {
+        if (mi === -1 && /^\s*Medical Hx\b/.test(lines[i2])) mi = i2;
+        else if (mi !== -1 && /^\s*Family\/Social Hx\b/.test(lines[i2])) { fi = i2; break; }
+      }
+      if (mi !== -1 && fi !== -1) {
+        var block = lines.slice(mi, fi).join('\n').replace(/^\s*Medical Hx\b/, '').trim();
+        if (block) {
+          var setOf = function (s) {
+            return s.split(',').map(function (x) { return x.toLowerCase().replace(/\s+/g, ' ').replace(/\.+$/, '').trim(); })
+              .filter(Boolean).sort().join('|');
+          };
+          if (setOf(block) !== setOf(String(q.diagnoses))) out.push('diagnoses');
+        }
+      }
+    }
+    if (q.bims) {
+      var bv = String(q.bims).replace(/^BIMS\s+/i, '');
+      if (/^\d{1,2} on \d/.test(bv) && !/^\s*(?:\d{1,2}|xx)\s+on\s+xx\s*$/im.test(txt)) {
+        var scoreLines = txt.match(/^\s*\d{1,2}\s+on\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/gm) || [];
+        var has = scoreLines.some(function (l) { return l.trim() === bv; });
+        if (!has && scoreLines.length) out.push('bims');
+      }
+    }
+    if (q.relationships) {
+      var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/m);
+      if (cm && !/^xx\b/i.test(cm[1].trim()) &&
+          cm[1].trim().toLowerCase() !== String(q.relationships).trim().toLowerCase()) out.push('contact');
+    }
+    return out;
+  }
+
   // ==PURE-END==
 
   var TOPICS = [
@@ -269,15 +348,76 @@
     try { localStorage.setItem(topic.seen, String(ts)); } catch (e) {}
   }
 
+  var dismissedSig = '';
+
+  function renderDiff(labels, sig) {
+    var old = document.getElementById('pccDiffPanel');
+    if (!labels.length) { if (old && old.parentNode) old.parentNode.removeChild(old); return; }
+    if (sig === dismissedSig) return;
+    if (old && old.getAttribute('data-sig') === sig) return;
+    if (old && old.parentNode) old.parentNode.removeChild(old);
+    var p = document.createElement('div');
+    p.id = 'pccDiffPanel';
+    p.setAttribute('data-sig', sig);
+    p.style.cssText = 'position:fixed;top:14px;right:14px;z-index:2147483647;background:#fff;' +
+      'border:1px solid #cbd5e1;border-left:5px solid #b45309;border-radius:10px;' +
+      'box-shadow:0 6px 24px rgba(0,0,0,.25);padding:10px 14px 10px 12px;' +
+      'font:14px -apple-system,Helvetica,Arial,sans-serif;color:#111;min-width:170px;';
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:5px;';
+    var cap = document.createElement('span');
+    cap.textContent = 'note vs chart';
+    cap.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#64748b;';
+    var x = document.createElement('button');
+    x.type = 'button';
+    x.textContent = '✕';
+    x.style.cssText = 'border:none;background:none;cursor:pointer;color:#64748b;font-size:13px;padding:0 0 0 10px;line-height:1;';
+    x.addEventListener('click', function () {
+      dismissedSig = sig;
+      if (p.parentNode) p.parentNode.removeChild(p);
+    });
+    head.appendChild(cap);
+    head.appendChild(x);
+    p.appendChild(head);
+    labels.forEach(function (l) {
+      var d = document.createElement('div');
+      d.textContent = l + ' - update';
+      d.style.cssText = 'padding:1.5px 0;font-weight:600;';
+      p.appendChild(d);
+    });
+    document.body.appendChild(p);
+  }
+
   function checkAndApply() {
     if (userTouched) return;
     var field = findNoteField();
     if (!field) return;
     var txt = field.value || '';
     if (!looksLikeHisNote(txt)) return;
+
+    var reqs = {};
+    TOPICS.forEach(function (topic) {
+      var r = readQueue(topic);
+      if (r) reqs[topic.key] = r;
+    });
+
+    // Mismatch check against the note as opened, before any fill lands.
+    var q = {
+      ageSex: reqs.pccFillAgeSex ? String(reqs.pccFillAgeSex.value) : null,
+      allergies: reqs.pccFillAllergies ? String(reqs.pccFillAllergies.value) : null,
+      meds: reqs.pccFillPsychMeds ? String(reqs.pccFillPsychMeds.value) : null,
+      diagnoses: reqs.pccFillDiagnoses ? String(reqs.pccFillDiagnoses.value) : null,
+      bims: reqs.pccFillBims ? String(reqs.pccFillBims.value) : null,
+      relationships: reqs.pccFillRelationships ? String(reqs.pccFillRelationships.value) : null
+    };
+    var labels = diffLabels(txt, q);
+    var sig = labels.join(',') + '#' + TOPICS.map(function (t) {
+      return reqs[t.key] ? reqs[t.key].ts : 0;
+    }).join('.');
+
     var changed = false;
     TOPICS.forEach(function (topic) {
-      var req = readQueue(topic);
+      var req = reqs[topic.key];
       if (!req) return;
       var next = topic.apply(txt, String(req.value));
       if (next !== txt) {
@@ -293,6 +433,7 @@
         field.dispatchEvent(new Event('change', { bubbles: true }));
       } catch (e) {}
     }
+    renderDiff(labels, sig);
   }
 
   window.addEventListener('storage', function () { setTimeout(checkAndApply, 60); });
