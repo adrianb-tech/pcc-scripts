@@ -1,13 +1,13 @@
 // ==UserScript==
-// @name         RVL Drive Buttons
+// @name         RVL — Drive buttons
 // @namespace    https://muse.ai/
-// @version      1.7
+// @version 1.8
 // @description  Adds "Build RVLs" and "Build Invoice" buttons to the Google Drive folder page. Opens the RVL web app.
 // @match        https://drive.google.com/drive/*
 // @grant        none
 // @run-at       document-idle
-// @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/RVL-Drive-Buttons.user.js
-// @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/RVL-Drive-Buttons.user.js
+// @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/RVL-Drive-Buttons.user.js
+// @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/RVL-Drive-Buttons.user.js
 // ==/UserScript==
 
 (function () {
