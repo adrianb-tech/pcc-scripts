@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.12
+// @version 1.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -21,6 +21,7 @@
     [/\bcongestive\s+heart\s+failure\b/gi, 'CHF'],
     [/\bhypertension\b/gi, 'HTN'],
     [/\bhyperlipidemia\b/gi, 'HLD'],
+    [/\bosteoarthritis\b/gi, 'OA'],
     [/\batrial\s+fibrillation\b/gi, 'AFib'],
     [/\bcoronary\s+artery\s+disease\b/gi, 'CAD'],
 
@@ -67,6 +68,8 @@
     text = text.replace(/[\u2018\u2019]/g, "'").replace(/[\u2010-\u2015]/g, '-')
                .replace(/\u00A0/g, ' ').replace(/\r/g, '');
     text = text.replace(/[ \t]+/g, ' ');
+    // Template brackets are markup, not text; "Dementia(FTLD)" needs its space (2026-10-13)
+    text = text.replace(/[\[\]]/g, '').replace(/([A-Za-z])\(/g, '$1 (');
     // "Primary admitting diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
     text = text.replace(/\b(?:primary\s+)?admitting diagnosis\s*:\s*/gi, '');
     text = text.replace(/\badmission diagnosis\s*:\s*/gi, '');
@@ -94,13 +97,23 @@
       if (!dup) verbatim.push(s.trim());
     });
 
+    function applyAbbr(s) {
+      for (var i = 0; i < ABBR.length; i++) s = s.replace(ABBR[i][0], ABBR[i][1]);
+      return s;
+    }
+
     // Verbatim lines: "S/P mechanical fall" is the same thing as "Status postfall"
     // (his call, 2026-10-13) — if a line has both, drop the S/P segment.
     verbatim = verbatim.map(function (s) {
       // "Secondary Dx;" / "Secondary diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
       s = s.replace(/\b(?:secondary|additional)\s+(?:diagnosis|dx)\s*[:;]\s*/gi, '');
       s = s.replace(/^\s*weakness\s*\.\s*/i, '');
-      s = s.split(/\s*,\s*/).filter(function (p) { return !isProcedureItem(p) && !isWeaknessItem(p); }).join(', ');
+      s = applyAbbr(s);   // abbreviations apply everywhere, verbatim included (his "always" rule, 2026-10-13)
+      s = s.split(/\s*,\s*/).filter(function (p) {
+        if (isProcedureItem(p) || isWeaknessItem(p)) return false;
+        if (/^(?:unspecified|not intractable|intractable|with status epilepticus|without status epilepticus)$/i.test(p.trim())) return false;
+        return true;
+      }).join(', ');
       var parts = s.split(/\s*,\s*/);
       var hasPost = parts.some(function (p) { return /\bpostfall\b/i.test(p) || /\bstatus\s*post\s*fall/i.test(p); });
       if (!hasPost) return s;
@@ -108,7 +121,7 @@
     });
 
     // Filters for non-serious symptoms, functional items, and admission fluff
-    var EXCLUDE_EXACT = /^(?:constipation|insomnia|advance careplanning|moderate protein-calorie malnutrition|muscle weakness|difficulty in walking|falling|need for assistance with personal care|gw|generalized weakness|history of|hx of|hx|past surgical history|surgical history|psh|reviewed in electronic medical record|reviewed in emr|reviewed in chart|reviewed in the chart)$/i;
+    var EXCLUDE_EXACT = /^(?:constipation|insomnia|advance careplanning|moderate protein-calorie malnutrition|muscle weakness|difficulty in walking|falling|need for assistance with personal care|gw|generalized weakness|history of|hx of|hx|past surgical history|surgical history|psh|reviewed in electronic medical record|reviewed in emr|reviewed in chart|reviewed in the chart|unspecified|not intractable|intractable|with status epilepticus|without status epilepticus)$/i;
     var ADMIN_JUNK = /^(?:CPT Codes|ICD Codes|Admission|Minimal Depression|Moderate Depression|Severe Depression|Score|Attestation|Time spent|Date of Service|Transition of Care)/i;
     // A test/procedure is not a diagnosis — "H/O chest x-ray" (his rule, 2026-10-13)
     // Weakness and difficulty walking are functional notes, not diagnoses (his rule, 2026-10-13)
@@ -129,6 +142,8 @@
     function normDx(s){
       // "S/P mechanical fall" / "status postfall" / "s/p fall" = one concept (his call, 2026-10-13)
       if (/\bpostfall\b/i.test(s) || (/\b(?:s\/?p|status\s*post)\b/i.test(s) && /\bfall\b/i.test(s))) return 'fallstatus';
+      // "Seizures" and "Seizure disorder" are the same thing (his call, 2026-10-13)
+      if (/\bseizures?\b/i.test(s) || /\bseizure disorder\b/i.test(s)) return 'seizurekey';
       return s.toLowerCase()
         .replace(/\b(?:chronic|acute|bilateral|unilateral|recurrent|severe|mild|moderate)\b/g, '')
         .replace(/\s*(?:with|s\/p|\/)\s*.*$/, '')  // strip "with X", "s/p X", "/ X" tails
@@ -167,9 +182,7 @@
         if (it.split(/\s+/).length > 6 || it.length > 50) return;
 
         // Apply Abbreviation Mappings
-        for (var i = 0; i < ABBR.length; i++) {
-          it = it.replace(ABBR[i][0], ABBR[i][1]);
-        }
+        it = applyAbbr(it);
         it = it.replace(/\s+/g, ' ').trim();
 
         if (!it || ADMIN_JUNK.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it) || isWeaknessItem(it)) return;
@@ -189,6 +202,21 @@
         out.push(it);
       });
     });
+    // Final dedupe across everything (verbatim lines included): split combined
+    // lines on ", " so a concept mentioned twice — once inside a line, once on
+    // its own (Seizure disorder / Seizures, hypertension / HTN) — appears once.
+    var seenAll = {}, finalOut = [];
+    out.forEach(function (item) {
+      var kept = [];
+      item.split(', ').forEach(function (seg) {
+        var k = normDx(seg);
+        if (!k || seenAll[k]) return;
+        seenAll[k] = 1;
+        kept.push(seg);
+      });
+      if (kept.length) finalOut.push(kept.join(', '));
+    });
+    out = finalOut;
     // Cap at 12 most important (ICD lines come first, so they're prioritized)
     return out.slice(0, 12);
   }
