@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.34
+// @version 1.35
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @name         Boro Park — Consult form defaults
@@ -282,119 +282,9 @@
         }
     }
 
-    // Fill-request listener: when the chart panel's Allergies Copy button is
-    // clicked, it drops {value, ts} in localStorage. Replace "Allergies NKA"
-    // (or NKDA / No known allergies / none) in the note with the real value.
-    var lastFillTs = 0;
-    try { lastFillTs = parseInt(localStorage.getItem('pccFillAllergiesSeen') || '0', 10); } catch(e){}
-    var lastRelTs = 0;
-    try { lastRelTs = parseInt(localStorage.getItem('pccFillRelationshipsSeen') || '0', 10); } catch(e){}
-    var lastDxTs = 0;
-    try { lastDxTs = parseInt(localStorage.getItem('pccFillDiagnosesSeen') || '0', 10); } catch(e){}
-    var lastAgeTs = 0;
-    try { lastAgeTs = parseInt(localStorage.getItem('pccFillAgeSexSeen') || '0', 10); } catch(e){}
-    var lastMedsTs = 0;
-    try { lastMedsTs = parseInt(localStorage.getItem('pccFillPsychMedsSeen') || '0', 10); } catch(e){}
-    function doFillNote(replacer){
-        var noteField = findNoteField();
-        if (!noteField) return;
-        var txt = noteField.value;
-        var updated = replacer(txt);
-        if (updated && updated !== txt) {
-            noteField.value = updated;
-            noteField.dispatchEvent(new Event('input', { bubbles: true }));
-            noteField.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-    }
-    function checkFillRequest(){
-        // Allergies
-        var raw = null;
-        try { raw = localStorage.getItem('pccFillAllergies'); } catch(e){}
-        if (raw) {
-            var req = null;
-            try { req = JSON.parse(raw); } catch(e){}
-            if (req && req.value && req.ts && req.ts > lastFillTs && Date.now() - req.ts <= 60000) {
-                lastFillTs = req.ts;
-                try { localStorage.setItem('pccFillAllergiesSeen', String(req.ts)); } catch(e){}
-                doFillNote(function(txt){
-                    var re = /^([ \t]*Allergies[ \t]*:?\s*)(NKA|NKDA|No[ \t]+known[ \t]+(?:drug[ \t]+)?allergies|none)[ \t]*$/gim;
-                    if (!re.test(txt)) return txt;
-                    return txt.replace(re, function(m, prefix){ return prefix + req.value; });
-                });
-            } else if (req && req.ts) { lastFillTs = Math.max(lastFillTs, req.ts); }
-        }
-        // Relationships -> "Primary contact xx"
-        var rraw = null;
-        try { rraw = localStorage.getItem('pccFillRelationships'); } catch(e){}
-        if (rraw) {
-            var rreq = null;
-            try { rreq = JSON.parse(rraw); } catch(e){}
-            if (rreq && rreq.value && rreq.ts && rreq.ts > lastRelTs && Date.now() - rreq.ts <= 60000) {
-                lastRelTs = rreq.ts;
-                try { localStorage.setItem('pccFillRelationshipsSeen', String(rreq.ts)); } catch(e){}
-                doFillNote(function(txt){
-                    var re2 = /^([ \t]*Primary contact[ \t]+)xx\b/gim;
-                    if (!re2.test(txt)) return txt;
-                    return txt.replace(re2, '$1' + rreq.value);
-                });
-            } else if (rreq && rreq.ts) { lastRelTs = Math.max(lastRelTs, rreq.ts); }
-        }
-        // Diagnoses -> append after "Medical Hx" line (only if that line is empty)
-        var draw = null;
-        try { draw = localStorage.getItem('pccFillDiagnoses'); } catch(e){}
-        if (draw) {
-            var dreq = null;
-            try { dreq = JSON.parse(draw); } catch(e){}
-            if (dreq && dreq.value && dreq.ts && dreq.ts > lastDxTs && Date.now() - dreq.ts <= 60000) {
-                lastDxTs = dreq.ts;
-                try { localStorage.setItem('pccFillDiagnosesSeen', String(dreq.ts)); } catch(e){}
-                doFillNote(function(txt){
-                    // Match "Medical Hx" line with nothing (or only whitespace) after it
-                    var re3 = /^([ \t]*Medical Hx[ \t]*)$/gim;
-                    if (!re3.test(txt)) return txt;
-                    return txt.replace(re3, '$1' + dreq.value);
-                });
-            } else if (dreq && dreq.ts) { lastDxTs = Math.max(lastDxTs, dreq.ts); }
-        }
-        // Age/Sex -> "HPI xx" becomes "HPI 86F"
-        var araw = null;
-        try { araw = localStorage.getItem('pccFillAgeSex'); } catch(e){}
-        if (araw) {
-            var areq = null;
-            try { areq = JSON.parse(araw); } catch(e){}
-            if (areq && areq.value && areq.ts && areq.ts > lastAgeTs && Date.now() - areq.ts <= 60000) {
-                lastAgeTs = areq.ts;
-                try { localStorage.setItem('pccFillAgeSexSeen', String(areq.ts)); } catch(e){}
-                doFillNote(function(txt){
-                    // Replace "HPI xx" OR any existing "HPI 81M" with the correct value
-                    var re4 = /^([ \t]*HPI[ \t]+)(xx|\d+[MF])\b/gim;
-                    return txt.replace(re4, '$1' + areq.value);
-                });
-            } else if (areq && areq.ts) { lastAgeTs = Math.max(lastAgeTs, areq.ts); }
-        }
-        // Psych meds -> "Psych meds\n- none" becomes "Psych meds\n- <meds>"
-        var mraw = null;
-        try { mraw = localStorage.getItem('pccFillPsychMeds'); } catch(e){}
-        if (mraw) {
-            var mreq = null;
-            try { mreq = JSON.parse(mraw); } catch(e){}
-            if (mreq && mreq.value && mreq.ts && mreq.ts > lastMedsTs && Date.now() - mreq.ts <= 60000) {
-                lastMedsTs = mreq.ts;
-                try { localStorage.setItem('pccFillPsychMedsSeen', String(mreq.ts)); } catch(e){}
-                doFillNote(function(txt){
-                    // Replace the whole "- none" line; med list already has its own "- " prefixes
-                    var re5 = /^([ \t]*Psych meds[ \t]*)\n[ \t]*-[ \t]*none[ \t]*$/gim;
-                    return txt.replace(re5, '$1\n' + mreq.value);
-                });
-            } else if (mreq && mreq.ts) { lastMedsTs = Math.max(lastMedsTs, mreq.ts); }
-        }
-    }
-    // Fill requests arrive via localStorage (written by the Header table's
-    // copy keys). v1.34: the permanent 500ms poll is gone — a storage event
-    // fires in this document the moment another frame writes, and a few
-    // bounded checks after load catch anything written just before.
-    window.addEventListener('storage', function () { checkFillRequest(); });
-    [800, 2000, 4000].forEach(function (ms) { setTimeout(checkFillRequest, ms); });
+    // Fill requests are received by the shared Copy-to-note engine
+    // (PCC-All-Copy-to-note) since 2026-10-13 — the receiver moved out of
+    // this script so it serves every facility and both form types.
 
     applyDefaultsOnce();
     applyPopupDefaults();
