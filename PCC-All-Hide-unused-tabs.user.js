@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.8
+// @version 1.9
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -35,11 +35,16 @@
   // His four working tabs, each its own color so they're identifiable at a
   // glance (his request, 2026-10-13). ASSMNTS is Boro Park's FORMS.
   var COLORS = {
-    'DASH': '#2563eb',
-    'PROFILE': '#7c3aed',
-    'FORMS': '#d97706',
-    'ASSMNTS': '#d97706',
-    'PROG NOTES': '#059669'
+    'DASH': { b: '#2563eb', f: '#ffffff' },
+    'PROFILE': { b: '#7c3aed', f: '#ffffff' },
+    'FORMS': { b: '#d97706', f: '#ffffff' },
+    'ASSMNTS': { b: '#d97706', f: '#ffffff' },
+    'PROG NOTES': { b: '#059669', f: '#ffffff' },
+    // Light red shade (his request, 2026-10-13) — dark red text so the
+    // labels stay readable on the pale background.
+    'ORDERS': { b: '#fecaca', f: '#7f1d1d' },
+    'WTS/VITALS': { b: '#fecaca', f: '#7f1d1d' },
+    'RESULTS': { b: '#fecaca', f: '#7f1d1d' }
   };
 
   var tabsHidden = true;   // his default: hidden
@@ -158,15 +163,15 @@
     Object.keys(COLORS).forEach(function (name) {
       var el = tabs[name];
       if (!el) return;
-      el.style.backgroundColor = COLORS[name];
-      el.style.color = '#fff';
+      el.style.backgroundColor = COLORS[name].b;
+      el.style.color = COLORS[name].f;
       var kids = el.querySelectorAll('*');
       for (var i = 0; i < kids.length; i++) {
-        kids[i].style.color = '#fff';
+        kids[i].style.color = COLORS[name].f;
         kids[i].style.fontWeight = '700';
       }
       for (var j = 0; j < el.children.length; j++) {
-        el.children[j].style.backgroundColor = COLORS[name];
+        el.children[j].style.backgroundColor = COLORS[name].b;
       }
     });
 
