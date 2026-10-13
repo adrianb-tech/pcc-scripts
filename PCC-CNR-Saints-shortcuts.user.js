@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC CNR/Saints shortcuts
-// @version      1.0
+// @version      1.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNR-Saints-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNR-Saints-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -459,6 +459,52 @@
     } catch (e) {}
     return null;
   }
+  // CNR/Saints: F goes on the MOST RECENT edit button of a psych consult row.
+  // The In Progress form is usually created by someone else (e.g. ksirikumnnerd),
+  // so there is NO creator restriction here. In Progress rows beat completed ones;
+  // within a group, latest Form Date wins. No copy fallback (rows have no copy link).
+  function findMostRecentEditLink() {
+    try {
+      var docs = allDocs();
+      var best = null, bestKey = null;
+      for (var d = 0; d < docs.length; d++) {
+        var rows = docs[d].querySelectorAll('table tr');
+        for (var i = 0; i < rows.length; i++) {
+          var txt = (rows[i].innerText || '');
+          var low = txt.toLowerCase();
+          if (low.indexOf('psych') === -1) continue;
+          if (low.indexOf('consult') === -1 && low.indexOf('psychiatry') === -1) continue;
+          var editLink = null;
+          var links = rows[i].querySelectorAll('a');
+          for (var j = 0; j < links.length; j++) {
+            var lt = (links[j].textContent || '').trim().toLowerCase();
+            if (lt === 'edit' && visible(links[j])) { editLink = links[j]; break; }
+          }
+          if (!editLink) continue;
+          var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          var dt = m ? new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10)) : new Date(0);
+          if (isNaN(dt.getTime())) dt = new Date(0);
+          var key = (low.indexOf('in progress') !== -1 ? 1e13 : 0) + dt.getTime();
+          if (bestKey === null || key > bestKey) { best = editLink; bestKey = key; }
+        }
+      }
+      return best;
+    } catch (e) {}
+    return null;
+  }
+  // A forms grid (in-chart FORMS tab): "Form Date"/"Assessment Date" + "Created By"
+  function isFormsGridPage() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          if ((t.indexOf('assessment date') !== -1 || t.indexOf('form date') !== -1) && t.indexOf('created by') !== -1) return true;
+        } catch (e2) {}
+      }
+    } catch (e) {}
+    return false;
+  }
   function findInProgressEditLink() {
     try {
       var docs = allDocs();
@@ -679,11 +725,9 @@
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
-    // Forms list (assessments): F opens Adrian's own In Progress form, else copies the most recent
-    var edit = findInProgressEditLink();
+    // CNR/Saints FORMS tab / lists: F opens the most recent editable psych consult
+    var edit = findMostRecentEditLink();
     if (edit) { fireClick(edit); return true; }
-    var copy = findMostRecentCopyLink();
-    if (copy) { fireClick(copy); return true; }
     // Signed section status page (Boro Park): F clicks Lock, not view — check before view
     if (isBoroPark() && isSignedSectionPage()) {
       var lk = findLockButton();
@@ -699,7 +743,7 @@
     }
     // Form sections page: F clicks the view link — all facilities (not on resident list or progress notes)
     var vw = null;
-    if (!isResidentListPage() && !isProgressNotesPage() && !isFormsListPage()) vw = findViewLink();
+    if (!isResidentListPage() && !isProgressNotesPage() && !isFormsListPage() && !isFormsGridPage()) vw = findViewLink();
     if (vw) { fireClick(vw); return true; }
     // Section list page (Boro Park): F clicks the section edit link
     var se2 = findSectionEditLink();
@@ -745,15 +789,10 @@
   function applyFEditBadge() {
     try {
       if (!shouldRun()) return;
-      // Assessments list: F on Adrian's own In Progress edit, else on copy
-      var target = findInProgressEditLink();
-      var label = 'Edit In Progress form (same as F key)';
+      // CNR/Saints: F badge ONLY on the most recent edit button
+      var target = findMostRecentEditLink();
+      var label = 'Edit most recent form (same as F key)';
       var badgeCls = FBTN_CLASS + '-edit';
-      if (!target) {
-        target = findMostRecentCopyLink();
-        label = 'Copy most recent form (same as F key)';
-        badgeCls = FBTN_CLASS + '-copy';
-      }
       if (!target || !target.parentNode) return;
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge(label, function() { doFAction(); }, target.ownerDocument);
@@ -819,13 +858,10 @@
         return;
       }
       // Assessments/Forms list: F goes on copy/edit, not view — skip here (also clean stale)
-      try {
-        var bt = (document.body ? document.body.innerText : '').toLowerCase();
-        if ((bt.indexOf('assessment date') !== -1 || bt.indexOf('form date') !== -1) && bt.indexOf('created by') !== -1) {
-          removeStaleViewBadges();
-          return;
-        }
-      } catch (e4) {}
+      if (isFormsGridPage()) {
+        removeStaleViewBadges();
+        return;
+      }
       var target = findViewLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-view';
