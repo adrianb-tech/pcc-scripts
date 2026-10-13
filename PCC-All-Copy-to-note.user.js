@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version 1.1
+// @version 1.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -297,14 +297,23 @@
 
   var userTouched = false;
   ['mousedown', 'keydown'].forEach(function (ev) {
-    document.addEventListener(ev, function (e) { if (e.isTrusted) userTouched = true; }, true);
+    document.addEventListener(ev, function (e) {
+      if (!e.isTrusted) return;
+      // Only real form interaction counts as taking over. Clicking the panel
+      // background to focus this half, or scrolling, must not cancel a fill
+      // (his split-view report, 2026-10-13).
+      var tg = e.target;
+      if (tg && tg.closest && tg.closest('textarea, input, select, button, a, label, [contenteditable]')) {
+        userTouched = true;
+      }
+    }, true);
   });
 
   function findNoteField() {
     var labels = document.querySelectorAll('td, th, div, span, label, b');
     for (var i = 0; i < labels.length; i++) {
       var t = (labels[i].textContent || '').replace(/\s+/g, ' ').trim();
-      if (/^1\.\s*Psychiatry\s+Consult:?$/i.test(t) || /^Psychiatry\s+Consult:?$/i.test(t)) {
+      if (/^1\.\s*Psychiatry\s+Consult:?$/i.test(t) || /^Psychiatry\s+Consult:?$/i.test(t) || /^\d\.\s*HPI\s*\//i.test(t) || /^HPI\s*\//i.test(t)) {
         var all = document.querySelectorAll('textarea');
         for (var j = 0; j < all.length; j++) {
           if (labels[i].compareDocumentPosition(all[j]) & Node.DOCUMENT_POSITION_FOLLOWING) return all[j];
