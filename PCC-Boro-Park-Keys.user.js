@@ -1,6 +1,6 @@
 // ==UserScript==
-// @name         Boro Park — Navigation keys (A + F + 1 + 2)
-// @version 2.1
+// @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
+// @version 2.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -317,6 +317,11 @@
         for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /psych/i.test(t)) return opts[i]; }
         return null;
       }
+      if (kind === 'md') {
+        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /^md\s*:\s*psychiatry consult ack/i.test(t)) return opts[i]; }
+        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /psychiatry consult ack/i.test(t)) return opts[i]; }
+        return null;
+      }
       if (kind === 'bims') {
         for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /bims/i.test(t)) return opts[i]; }
         for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /social service assessment/i.test(t)) return opts[i]; }
@@ -372,15 +377,20 @@
         b1.classList.add('pcc-num-badge-1');
         var b2 = mk('2', 'Filter to BIMS forms (same as 2 key)', 'bims');
         b2.classList.add('pcc-num-badge-1');
-        // Both share the marker class so we don't double-add; distinguish via data attr
+        var b3 = mk('3', 'Filter to MD psychiatry consult acknowledgement (same as 3 key)', 'md');
+        b3.classList.add('pcc-num-badge-1');
+        // All share the marker class so we don't double-add; distinguish via data attr
         b1.setAttribute('data-kind', 'psych');
         b2.setAttribute('data-kind', 'bims');
+        b3.setAttribute('data-kind', 'md');
         if (sel.nextSibling) {
-          sel.parentNode.insertBefore(b2, sel.nextSibling);
+          sel.parentNode.insertBefore(b3, sel.nextSibling);
+          sel.parentNode.insertBefore(b2, b3);
           sel.parentNode.insertBefore(b1, b2);
         } else {
           sel.parentNode.appendChild(b1);
           sel.parentNode.appendChild(b2);
+          sel.parentNode.appendChild(b3);
         }
         return true;
       });
@@ -388,10 +398,10 @@
     } catch (e) { return false; }
   }
   function handleNumberKey(k) {
-    // Forms page only: 1 = psych filter, 2 = BIMS filter
+    // Forms page only: 1 = psych filter, 2 = BIMS filter, 3 = MD ack filter (BORO PARK ONLY key)
     var acted = findInFrames(window.top || window, function(doc) {
       if (!findTypeSelect(doc)) return null;
-      return setTypeFilter(doc, k === '1' ? 'psych' : 'bims') ? true : null;
+      return setTypeFilter(doc, k === '1' ? 'psych' : (k === '3' ? 'md' : 'bims')) ? true : null;
     });
     return !!acted;
   }
@@ -985,7 +995,7 @@
       if (doFAction()) e.preventDefault();
       return;
     }
-    if (k === '1' || k === '2') {
+    if (k === '1' || k === '2' || k === '3') {
       if (handleNumberKey(k)) e.preventDefault();
       return;
     }
