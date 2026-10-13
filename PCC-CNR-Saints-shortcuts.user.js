@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC CNR/Saints shortcuts
-// @version      1.2
+// @version      1.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNR-Saints-shortcuts.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNR-Saints-shortcuts.user.js
 // @match        https://*.pointclickcare.com/*
@@ -500,7 +500,16 @@
       for (var d = 0; d < docs.length; d++) {
         try {
           var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
-          if (t.indexOf('sign all') !== -1 && t.indexOf('signed by') !== -1) return true;
+          // Section table headers are real text: "Signed By" + "Signed Date"
+          if (t.indexOf('signed by') !== -1 && t.indexOf('signed date') !== -1) return true;
+          // Fallback: a "Sign All" control (its label is an input value, not page text)
+          if (t.indexOf('signed by') !== -1) {
+            var els = docs[d].querySelectorAll('input[type="button"], input[type="submit"], button');
+            for (var i = 0; i < els.length; i++) {
+              var v = (((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase());
+              if (v === 'sign all') return true;
+            }
+          }
         } catch (e2) {}
       }
     } catch (e) {}
@@ -866,6 +875,16 @@
   function applyFViewBadge() {
     try {
       if (!shouldRun()) return;
+      // Section list (CNR/Saints): view is the ONLY F — sweep stray edit badges
+      if (isSectionListPage()) {
+        try {
+          var docs2 = allDocs();
+          for (var dd = 0; dd < docs2.length; dd++) {
+            var stray = docs2[dd].querySelectorAll('.' + FBTN_CLASS + '-edit, .' + FBTN_CLASS + '-sectedit, .' + FBTN_CLASS + '-copy');
+            for (var ss = 0; ss < stray.length; ss++) { try { stray[ss].remove(); } catch (e5) {} }
+          }
+        } catch (e6) {}
+      }
       // Resident list and Progress Notes: no F on view — remove any stale badges
       // (Progress Notes gets F on VIEW ALL instead, via applyFViewAllBadge)
       if (isResidentListPage() || isProgressNotesPage() || isFormsListPage()) {
