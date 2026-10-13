@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.5
+// @version 1.6
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -39,23 +39,7 @@
     'PROFILE': '#7c3aed',
     'FORMS': '#d97706',
     'ASSMNTS': '#d97706',
-    'PROG NOTES': '#059669',
-    // The normally-hidden tabs have colors too (his request, 2026-10-13) —
-    // they're what you see when MORE is open. Allergies is red on purpose:
-    // the medical-charts convention.
-    'CENSUS': '#64748b',
-    'MED DIAG': '#0891b2',
-    'PROBLEMS': '#c026d2',
-    'ALLERGIES': '#dc2626',
-    'IMMUN': '#65a30d',
-    'ORDERS': '#0369a1',
-    'WTS/VITALS': '#0f766e',
-    'RESULTS': '#7c2d12',
-    'MDS': '#0d9488',
-    'THERAPY': '#be185d',
-    'CARE PLAN': '#a16207',
-    'TASKS': '#57534e',
-    'MISC': '#1f2937'
+    'PROG NOTES': '#059669'
   };
 
   var tabsHidden = true;   // his default: hidden
