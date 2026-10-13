@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.6
+// @version 1.7
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -119,8 +119,39 @@
       if (ALL_TABS.indexOf(norm(s.textContent)) !== -1 && s.children.length <= 2) s.style.display = '';
     }
 
+    // Current-tab memory (v1.7, his report): MORE -> click a hidden tab ->
+    // the page loads but the bar re-collapses without that tab, so he can't
+    // see where he is. Remember his tab clicks for the session; if he is ON
+    // a normally-hidden tab, keep THAT tab visible in the collapsed bar and
+    // mark it as current. Bonus signal: PCC's own selected-tab class.
+    var cur = '';
+    try { cur = sessionStorage.getItem('pccCurTab') || ''; } catch (e) {}
+    order.forEach(function (name) {
+      var el = tabs[name];
+      var a = el.querySelector('a');
+      var cls = String(el.className || '') + ' ' + (a ? String(a.className || '') : '');
+      if (/(selected|active|current)/i.test(cls)) cur = name;
+      if (!el.dataset.pccTrack) {
+        el.dataset.pccTrack = '1';
+        el.addEventListener('click', function () {
+          try {
+            if (HIDE.indexOf(name) !== -1) sessionStorage.setItem('pccCurTab', name);
+            else sessionStorage.removeItem('pccCurTab');
+          } catch (e2) {}
+        });
+      }
+    });
+
     HIDE.forEach(function (name) {
-      if (tabs[name]) tabs[name].style.display = tabsHidden ? 'none' : '';
+      if (!tabs[name]) return;
+      var keep = tabsHidden && name === cur;   // the tab he is ON stays visible
+      tabs[name].style.display = (tabsHidden && !keep) ? 'none' : '';
+      if (name === cur) {
+        tabs[name].style.boxShadow = 'inset 0 -4px 0 #3f4a2a';
+        if (!COLORS[name]) tabs[name].style.backgroundColor = '#eef1e4';
+      } else {
+        tabs[name].style.boxShadow = '';
+      }
     });
 
     Object.keys(COLORS).forEach(function (name) {
