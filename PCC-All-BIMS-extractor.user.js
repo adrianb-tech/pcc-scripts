@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — BIMS extractor
-// @version 1.3
+// @version 1.4
 // @description  On the Forms/Assessments list: finds the newest BIMS row, shows its score in a badge with a Copy button; also groups + highlights BIMS / Psych / MD-ack rows. v1.2: permanent 1s interval replaced with bounded staggered runs + re-run on your clicks (no-timers rule).
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-BIMS-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-BIMS-extractor.user.js
@@ -136,6 +136,8 @@
 
         var btn = document.createElement('button');
         btn.type = 'button';
+        btn.className = 'pcc-fill-copy';
+        btn.setAttribute('data-fill-label', 'BIMS');
         btn.textContent = 'Copy';
         btn.style.cssText = 'cursor:pointer;border:2px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:10px;padding:4px 24px;font:bold 24px sans-serif;';
         btn.addEventListener('click', function (e) {
@@ -200,6 +202,8 @@
         }
         box.querySelector('.bims-value').textContent = out;
         box.dataset.copy = out;
+        var cb = box.querySelector('button');
+        if (cb) cb.setAttribute('data-fill-value', out);   // for the G sweep
         box.title = (!best && !filtersAreAll()) ? 'List is filtered, so a BIMS may exist under other types' : '';
     }
 
