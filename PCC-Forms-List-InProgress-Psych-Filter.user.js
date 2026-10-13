@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         PCC Forms List - In Progress Psych Filter
 // @namespace    pcc-forms-list-psych
-// @version      2.2
-// @description  Forms List: auto-switch to In Progress tab, filter to psychiatry consult form. (Sort/highlight v2.2 — single run, no watcher.)
+// @version      2.3
+// @description  Forms List: auto-switch to In Progress tab, filter to psychiatry consult form. (v2.3: CNR/Saints = one pass only — tab + exact form filter, no sort, no highlight, no retries. Other facilities unchanged.)
 // @match        *://*.pointclickcare.com/*
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Forms-List-InProgress-Psych-Filter.user.js
@@ -24,6 +24,20 @@
   }
 
   if (!isFormsPage()) return;
+
+  // CNR/Saints detection (header shows facility name, e.g. "Downtown Brooklyn
+  // Nursing & Rehabilitation Center" for CNR; "Saints Joachim & Anne" for Saints)
+  function isCNRSaints(){
+    try {
+      var t = document.body ? document.body.innerText.slice(0, 4000) : '';
+      if (/Downtown Brooklyn/i.test(t)) return true;
+      if (/Saints Joachim/i.test(t)) return true;
+      if (/Joachim\s*&\s*Anne/i.test(t)) return true;
+    } catch(e){}
+    return false;
+  }
+  var CNR_SAINTS = isCNRSaints();
+  var EXACT_FORM = 'Consult Form - Psychiatry 4 - V 1';
 
   // Full mouse event click — PCC ignores plain .click()
   function fireClick(el){
@@ -78,7 +92,8 @@
       var inputs = document.querySelectorAll('input, select');
       for (var i = 0; i < inputs.length; i++) {
         var v = inputs[i].value || '';
-        if (/Consult Form - Psychiatry/i.test(v)) { filterDone = true; return; }
+        if (CNR_SAINTS ? (norm(v).toLowerCase() === EXACT_FORM.toLowerCase())
+                       : /Consult Form - Psychiatry/i.test(v)) { filterDone = true; return; }
       }
       // Find "Set Filter" under Form Type
       var els = document.querySelectorAll('a, span, div, button');
@@ -93,7 +108,10 @@
               var target = null;
               for (var k = 0; k < boxes.length; k++) {
                 var lbl = boxes[k].parentElement ? norm(boxes[k].parentElement.textContent) : '';
-                if (/Consult Form - Psychiatry/i.test(lbl) && !/retired/i.test(lbl)) {
+                if (CNR_SAINTS) {
+                  // Exact form name only
+                  if (lbl.toLowerCase() === EXACT_FORM.toLowerCase()) { target = boxes[k]; break; }
+                } else if (/Consult Form - Psychiatry/i.test(lbl) && !/retired/i.test(lbl)) {
                   if (/Psychiatry 4/i.test(lbl)) { target = boxes[k]; break; }
                   if (!target) target = boxes[k];
                 }
@@ -208,6 +226,8 @@
     ensureInProgressTab();
     // Step 2: filter (after tab loads)
     setTimeout(setPsychFormFilter, 2500);
+    // CNR/Saints: STOP HERE — no sort, no 1.0 highlight, no retries (v2.3)
+    if (CNR_SAINTS) return;
     // Step 3: sort by Score ascending (v2.2: single attempt + one retry max)
     setTimeout(function(){
       sortScoreAscending();
