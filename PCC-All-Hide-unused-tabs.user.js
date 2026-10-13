@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.7
+// @version 1.8
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -43,6 +43,7 @@
   };
 
   var tabsHidden = true;   // his default: hidden
+  var origOrder = [];      // PCC's own tab order, captured on first sight
 
   function norm(s) { return (s || '').replace(/\s+/g, ' ').trim().toUpperCase(); }
 
@@ -168,6 +169,30 @@
         el.children[j].style.backgroundColor = COLORS[name];
       }
     });
+
+    // Layout (v1.8, his request): MORE appends the hidden tabs TO THE
+    // RIGHT — the tabs from the collapsed bar never move or reshuffle.
+    // LESS restores PCC's original order. Moves are idempotent and run on
+    // every pass, so late PCC re-renders settle into the same layout.
+    if (!origOrder.length) origOrder = order.slice();
+    function placeRight(el) {
+      var p = el.parentElement;
+      if (!p) return;
+      var b = document.getElementById('pccMoreTabsBtn');
+      var hold = null;
+      if (b) {
+        if (b.parentElement && b.parentElement.parentElement === p) hold = b.parentElement;
+        else if (b.parentElement === p) hold = b;
+      }
+      if (hold) p.insertBefore(el, hold); else p.appendChild(el);
+    }
+    if (tabsHidden) {
+      origOrder.forEach(function (name) { if (tabs[name]) placeRight(tabs[name]); });
+    } else {
+      origOrder.forEach(function (name) {
+        if (HIDE.indexOf(name) !== -1 && tabs[name]) placeRight(tabs[name]);
+      });
+    }
 
     // MORE / LESS button at the end of the bar.
     var btn = document.getElementById('pccMoreTabsBtn');
