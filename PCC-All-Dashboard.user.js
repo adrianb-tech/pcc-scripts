@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version 2.6
+// @version 2.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -469,7 +469,7 @@
     ['amantadine|symmetrel|gocovri|osmolex','Amantadine']
   ]);
   addMeds('dementia', 0, [
-    ['donepezil|aricept','Aricept'], ['rivastigmine|exelon','Exelon'], ['galantamine|razadyne','Razadyne'],
+    ['donepezil|aricept','Aricept'], ['rivastigmine|exelon','Rivastigmine'], ['galantamine|razadyne','Razadyne'],
     ['memantine|namenda','Namenda'], ['tacrine|cognex','Cognex']
   ]);
   addMeds('tardive dyskinesia', 1, [
