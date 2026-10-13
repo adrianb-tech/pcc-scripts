@@ -1,6 +1,6 @@
 // ==UserScript==
-// @name         Boro Park — Keys (A + F)
-// @version 2.0
+// @name         Boro Park — Navigation keys (A + F + 1 + 2)
+// @version 2.1
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
