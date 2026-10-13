@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version      1.0
+// @version      1.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -13,11 +13,12 @@
 
   // Hides the resident-chart tabs Adrian never uses (his list, 2026-10-13):
   // CENSUS, PROBLEMS, ALLERGIES, IMMUN, MDS, THERAPY, CARE PLAN, TASKS.
-  // Tabs are matched by their exact label (the same mechanism the split-view
-  // script uses to find tabs) — never by position, so a PCC layout change
-  // can't hide the wrong tab. Safety: a page only gets treated as having the
-  // tab bar when at least 5 known tab labels are present in it. Hiding is
-  // display-only; turning this script off brings every tab back.
+  // A "MORE" button at the end of the tab bar brings them back on demand
+  // (click again — "LESS" — to hide them again). Tabs are matched by exact
+  // label (the split-view tab-finder mechanism), never by position, so a
+  // PCC layout change can't hide the wrong tab. Safety: a page counts as
+  // having the tab bar only when at least 5 known tab labels are present.
+  // Display-only; disabling the script restores everything.
   // Bounded staggered runs + click re-runs (no permanent timers).
 
   var HIDE = ['CENSUS', 'PROBLEMS', 'ALLERGIES', 'IMMUN', 'MDS', 'THERAPY', 'CARE PLAN', 'TASKS'];
@@ -25,9 +26,13 @@
     'ORDERS', 'WTS/VITALS', 'RESULTS', 'MDS', 'FORMS', 'THERAPY', 'PROG NOTES', 'CARE PLAN',
     'TASKS', 'MISC'];
 
+  var tabsHidden = true;   // his default: hidden
+
   function norm(s) { return (s || '').replace(/\s+/g, ' ').trim().toUpperCase(); }
 
-  function run() {
+  // Returns { name -> element to show/hide } for the tabs on this page,
+  // or null when this page doesn't carry the tab bar.
+  function collectTabs() {
     var els = document.querySelectorAll('a,button,[role="tab"],td,li,span,div');
     var byName = {};
     for (var i = 0; i < els.length; i++) {
@@ -36,12 +41,10 @@
       var t = norm(el.textContent);
       if (ALL_TABS.indexOf(t) !== -1 && !byName[t]) byName[t] = el;
     }
-    var present = Object.keys(byName).length;
-    if (present < 5) return;   // not a page with the tab bar — leave it alone
-
-    HIDE.forEach(function (name) {
+    if (Object.keys(byName).length < 5) return null;
+    var out = {};
+    Object.keys(byName).forEach(function (name) {
       var el = byName[name];
-      if (!el) return;
       var target = el;
       for (var up = 0; up < 6 && target; up++) {
         var tag = target.tagName;
@@ -49,11 +52,47 @@
             target.onclick || target.getAttribute('onclick')) break;
         target = target.parentElement;
       }
-      // Hide the wrapper only when it is exactly this one tab; otherwise
-      // hide the matched element itself.
-      var hideEl = (target && norm(target.textContent) === name) ? target : el;
-      hideEl.style.display = 'none';
+      out[name] = (target && norm(target.textContent) === name) ? target : el;
     });
+    return out;
+  }
+
+  function ensureButton(tabs) {
+    var names = Object.keys(tabs);
+    if (!names.length) return;
+    var anchor = tabs[names[0]];
+    var parent = anchor.parentElement;
+    if (!parent) return;
+    var btn = document.getElementById('pccMoreTabsBtn');
+    if (btn) { btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾'; return; }
+    var holder;
+    if (anchor.tagName === 'TD') holder = document.createElement('td');
+    else if (anchor.tagName === 'LI') holder = document.createElement('li');
+    else holder = document.createElement('span');
+    btn = document.createElement('button');
+    btn.id = 'pccMoreTabsBtn';
+    btn.type = 'button';
+    btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾';
+    btn.style.cssText = 'cursor:pointer;padding:4px 14px;border:1px solid #9aa582;border-radius:6px;' +
+      'background:#eef1e4;color:#3f4a2a;font:bold 13px -apple-system,Helvetica,Arial,sans-serif;white-space:nowrap;';
+    btn.addEventListener('click', function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      tabsHidden = !tabsHidden;
+      run();
+    });
+    holder.appendChild(btn);
+    parent.appendChild(holder);
+  }
+
+  function run() {
+    var tabs = collectTabs();
+    if (!tabs) return;
+    HIDE.forEach(function (name) {
+      var el = tabs[name];
+      if (el) el.style.display = tabsHidden ? 'none' : '';
+    });
+    ensureButton(tabs);
   }
 
   [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(run, ms); });
