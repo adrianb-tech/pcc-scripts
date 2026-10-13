@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.3
+// @version 1.4
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
@@ -97,9 +97,9 @@
 
   function run() {
     var cands = candidates();
-    if (!cands.length) return;
+    if (!cands.length) return false;
     var bar = findBar(cands);
-    if (!bar) return;
+    if (!bar) return false;
 
     var tabs = {};    // name -> element to show/hide
     var order = [];   // names in document order
@@ -108,7 +108,7 @@
       tabs[c.name] = tabElement(c.el, c.name);
       order.push(c.name);
     });
-    if (order.length < 5) return;
+    if (order.length < 5) return false;
 
     // Repair: un-hide any exact-label element outside the bar that an
     // earlier version hid by mistake (e.g. the header "Allergies" label).
@@ -140,10 +140,10 @@
 
     // MORE / LESS button at the end of the bar.
     var btn = document.getElementById('pccMoreTabsBtn');
-    if (btn) { btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾'; return; }
+    if (btn) { btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾'; return true; }
     var last = tabs[order[order.length - 1]];
     var parent = last && last.parentElement;
-    if (!parent) return;
+    if (!parent) return true;
     var holder;
     if (last.tagName === 'TD') holder = document.createElement('td');
     else if (last.tagName === 'LI') holder = document.createElement('li');
@@ -162,9 +162,20 @@
     });
     holder.appendChild(btn);
     parent.appendChild(holder);
+    return true;
   }
 
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(run, ms); });
+  // document-start burst (v1.4 pilot, his anti-flicker request): retry every
+  // 50ms until the tab bar exists and has been processed (max ~2s), so the
+  // hiding + colors land before the first paint in practice. Then the usual
+  // staggered passes cover PCC's late re-renders. Bounded — not a poller.
+  var burstLeft = 40;
+  (function burst() {
+    if (run()) return;
+    if (--burstLeft <= 0) return;
+    setTimeout(burst, 50);
+  })();
+  [2500, 4500, 7000].forEach(function (ms) { setTimeout(run, ms); });
   var lastRun = 0;
   document.addEventListener('click', function (e) {
     if (!e.isTrusted) return;
