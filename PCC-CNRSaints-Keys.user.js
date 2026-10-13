@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -566,6 +566,7 @@
             if (tbl) {
               var th = (tbl.innerText || '').toLowerCase();
               if (th.indexOf('effective date') !== -1) continue;
+              if (th.indexOf('external facilities') !== -1) continue;
             }
           } catch (e2) {}
           return links[j];
@@ -898,6 +899,12 @@
       }
       // Assessments/Forms list: F goes on copy/edit, not view — skip here (also clean stale)
       if (isFormsGridPage()) {
+        removeStaleViewBadges();
+        return;
+      }
+      // Profile page: the ONLY F here is the Admission Record (his rule, 2026-10-13).
+      // The generic view badge landed on the External Facilities "view" link — suppress it.
+      if (findAdmissionRecord()) {
         removeStaleViewBadges();
         return;
       }
