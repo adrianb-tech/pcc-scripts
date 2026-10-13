@@ -1,6 +1,6 @@
 // ==UserScript==
-// @name         Bedford + Crown Heights — Keys (A + F)
-// @version 1.3
+// @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
+// @version 1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
