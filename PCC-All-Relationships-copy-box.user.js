@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.4
+// @version 1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Relationships-copy-box.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Relationships-copy-box.user.js
 // @name         Every facility — Profile: relationships copy box
@@ -119,9 +119,10 @@
       });
       if (hit) return tables[i];
     }
-    for (i = 0; i < tables.length; i++) {
-      if (/Contact Type/i.test(tables[i].innerText || '') && !tables[i].querySelector('table')) return tables[i];
-    }
+    // No loose fallback (his rule, 2026-10-13): the box belongs on the Profile
+    // page only. A table whose TEXT merely mentions "Contact Type" (e.g. the
+    // Progress Notes grid, where note bodies contain those words) must NOT
+    // match — only a real contacts table with a Name + Contact Type header row.
     return null;
   }
 
@@ -145,18 +146,12 @@
       counts[lab.c]++;
     }
 
-    if (hdr > -1) {
-      for (var j = hdr + 1; j < rows.length; j++) {
-        var tds = rows[j].cells;
-        if (tds.length <= nameCol) continue;
-        add(labelFor(relCol > -1 && tds[relCol] ? cellText(tds[relCol]) : '', cellText(tds[nameCol])));
-      }
-    } else {                                                     // columns not found: scan whole rows
-      var all = table.querySelectorAll('tr');
-      for (var q = 0; q < all.length; q++) {
-        if (all[q].cells.length < 3) continue;
-        add(labelFor('', cellText(all[q])));
-      }
+    if (hdr === -1) return '';   // no real contacts header row -> not the Profile contacts table; stay silent
+
+    for (var j = hdr + 1; j < rows.length; j++) {
+      var tds = rows[j].cells;
+      if (tds.length <= nameCol) continue;
+      add(labelFor(relCol > -1 && tds[relCol] ? cellText(tds[relCol]) : '', cellText(tds[nameCol])));
     }
 
     return order.map(function (c) {
