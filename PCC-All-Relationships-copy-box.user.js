@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Relationships-copy-box.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Relationships-copy-box.user.js
 // @name         Every facility — Profile: relationships copy box
@@ -203,6 +203,7 @@
     var box = ensureBox(table);
     box.querySelector('#relOut').textContent = out;
     var btn = box.querySelector('#relCopyBtn');
+    btn.setAttribute('data-fill-value', out);   // for the G sweep (skips 'N/A')
     btn.onclick = function (e) {
       e.preventDefault(); e.stopPropagation();
       copyText(out, btn);
