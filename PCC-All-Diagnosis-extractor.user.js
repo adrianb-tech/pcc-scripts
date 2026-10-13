@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.11
+// @version 1.12
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -97,7 +97,10 @@
     // Verbatim lines: "S/P mechanical fall" is the same thing as "Status postfall"
     // (his call, 2026-10-13) — if a line has both, drop the S/P segment.
     verbatim = verbatim.map(function (s) {
-      s = s.split(/\s*,\s*/).filter(function (p) { return !isProcedureItem(p); }).join(', ');
+      // "Secondary Dx;" / "Secondary diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
+      s = s.replace(/\b(?:secondary|additional)\s+(?:diagnosis|dx)\s*[:;]\s*/gi, '');
+      s = s.replace(/^\s*weakness\s*\.\s*/i, '');
+      s = s.split(/\s*,\s*/).filter(function (p) { return !isProcedureItem(p) && !isWeaknessItem(p); }).join(', ');
       var parts = s.split(/\s*,\s*/);
       var hasPost = parts.some(function (p) { return /\bpostfall\b/i.test(p) || /\bstatus\s*post\s*fall/i.test(p); });
       if (!hasPost) return s;
@@ -108,6 +111,12 @@
     var EXCLUDE_EXACT = /^(?:constipation|insomnia|advance careplanning|moderate protein-calorie malnutrition|muscle weakness|difficulty in walking|falling|need for assistance with personal care|gw|generalized weakness|history of|hx of|hx|past surgical history|surgical history|psh|reviewed in electronic medical record|reviewed in emr|reviewed in chart|reviewed in the chart)$/i;
     var ADMIN_JUNK = /^(?:CPT Codes|ICD Codes|Admission|Minimal Depression|Moderate Depression|Severe Depression|Score|Attestation|Time spent|Date of Service|Transition of Care)/i;
     // A test/procedure is not a diagnosis — "H/O chest x-ray" (his rule, 2026-10-13)
+    // Weakness and difficulty walking are functional notes, not diagnoses (his rule, 2026-10-13)
+    function isWeaknessItem(s) {
+      var x = (s || '').trim();
+      if (/\bweakness\b/i.test(x) && x.split(/\s+/).length <= 4) return true;
+      return /\bdifficulty\s+(?:in\s+|with\s+)?walking\b/i.test(x) || /\bwalking\s+difficulty\b/i.test(x);
+    }
     function isProcedureItem(s) {
       return /^(?:(?:h\/o|hx|history)\s+(?:of\s+)?)?[\w\s-]*?\b(x-?ray|ct\s+scan|pet\s+scan|mri|mra|ecg|ekg|echocardiogram|ultrasound|sonogram|mammogram|colonoscopy|endoscopy|bronchoscopy|angiogram)\b[\w\s-]*$/i.test((s || '').trim());
     }
@@ -139,6 +148,8 @@
       str = str.replace(/\bwho\s+was\s+hospitalized\s+on\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s+for\s+/gi, ', ');
       // Trailing "reviewed in electronic medical record" is charting fluff, not a diagnosis
       str = str.replace(/,?\s*reviewed\s+in\s+(?:the\s+)?electronic\s+medical\s+record\.?\s*$/gi, '');
+      // "Secondary Dx;" / "Secondary diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
+      str = str.replace(/\b(?:secondary|additional)\s+(?:diagnosis|dx)\s*[:;]\s*/gi, '');
       // Same for "reviewed in chart" (his rule, 2026-10-13)
       str = str.replace(/,?\s*reviewed\s+in\s+(?:the\s+)?chart\.?\s*$/gi, '');
 
@@ -148,7 +159,7 @@
                .replace(/^(?:hx|h\/o|history|recent|adm with dx|admitted for)\s+of\s+/i, '')
                .replace(/^\/PSH\s*/i, '');
 
-        if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it)) return;
+        if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it) || isWeaknessItem(it)) return;
         if (/\d+\.\d+/.test(it)) return;
         // Reject fragments and narrative leftovers
         if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
@@ -161,7 +172,7 @@
         }
         it = it.replace(/\s+/g, ' ').trim();
 
-        if (!it || ADMIN_JUNK.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it)) return;
+        if (!it || ADMIN_JUNK.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it) || isWeaknessItem(it)) return;
         if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
         if (it.split(/\s+/).length > 6 || it.length > 50) return;
 
