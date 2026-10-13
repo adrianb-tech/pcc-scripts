@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version 1.4
+// @version 1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -468,6 +468,7 @@
             if (tbl) {
               var th = (tbl.innerText || '').toLowerCase();
               if (th.indexOf('effective date') !== -1) continue;
+              if (th.indexOf('external facilities') !== -1) continue;
             }
           } catch (e2) {}
           return links[j];
@@ -760,6 +761,12 @@
           return;
         }
       } catch (e4) {}
+      // Profile page: the ONLY F here is the Admission Record (his rule, 2026-10-13).
+      // The generic view badge landed on the External Facilities "view" link — suppress it.
+      if (findAdmissionRecord()) {
+        removeStaleViewBadges();
+        return;
+      }
       var target = findViewLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-view';
