@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version      1.2
+// @version 1.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -29,8 +29,18 @@
   var HIDE = ['CENSUS', 'PROBLEMS', 'ALLERGIES', 'IMMUN', 'MDS', 'THERAPY', 'CARE PLAN', 'TASKS',
     'MED DIAG', 'MISC'];
   var ALL_TABS = ['DASH', 'PROFILE', 'CENSUS', 'MED DIAG', 'PROBLEMS', 'ALLERGIES', 'IMMUN',
-    'ORDERS', 'WTS/VITALS', 'RESULTS', 'MDS', 'FORMS', 'THERAPY', 'PROG NOTES', 'CARE PLAN',
+    'ORDERS', 'WTS/VITALS', 'RESULTS', 'MDS', 'FORMS', 'ASSMNTS', 'THERAPY', 'PROG NOTES', 'CARE PLAN',
     'TASKS', 'MISC'];
+
+  // His four working tabs, each its own color so they're identifiable at a
+  // glance (his request, 2026-10-13). ASSMNTS is Boro Park's FORMS.
+  var COLORS = {
+    'DASH': '#2563eb',
+    'PROFILE': '#7c3aed',
+    'FORMS': '#d97706',
+    'ASSMNTS': '#d97706',
+    'PROG NOTES': '#059669'
+  };
 
   var tabsHidden = true;   // his default: hidden
 
@@ -111,6 +121,21 @@
 
     HIDE.forEach(function (name) {
       if (tabs[name]) tabs[name].style.display = tabsHidden ? 'none' : '';
+    });
+
+    Object.keys(COLORS).forEach(function (name) {
+      var el = tabs[name];
+      if (!el) return;
+      el.style.backgroundColor = COLORS[name];
+      el.style.color = '#fff';
+      var kids = el.querySelectorAll('*');
+      for (var i = 0; i < kids.length; i++) {
+        kids[i].style.color = '#fff';
+        kids[i].style.fontWeight = '700';
+      }
+      for (var j = 0; j < el.children.length; j++) {
+        el.children[j].style.backgroundColor = COLORS[name];
+      }
     });
 
     // MORE / LESS button at the end of the bar.
