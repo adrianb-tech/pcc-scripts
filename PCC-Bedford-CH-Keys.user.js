@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version 1.8
+// @version 1.9
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -724,6 +724,50 @@
       else adm.parentNode.appendChild(badge);
     } catch (e) {}
   }
+  // TEMP DIAGNOSTIC (v1.9, remove once convicted): on the Forms list,
+  // show exactly why the In Progress finder misses — which check fails
+  // on the real row. Display only; changes no behavior.
+  function renderFDiag() {
+    try {
+      var bt = (document.body ? document.body.innerText : '').toLowerCase();
+      if (!((bt.indexOf('form date') !== -1 || bt.indexOf('assessment date') !== -1) && bt.indexOf('created by') !== -1)) return;
+      var top = window.top || window;
+      var td = top.document;
+      if (!td || !td.body) return;
+      var lines = [];
+      lines.push('gate: ' + checkBedfordCHFacility());
+      var docs = allDocs();
+      var ipRows = 0;
+      for (var d = 0; d < docs.length; d++) {
+        var rows = docs[d].querySelectorAll('table tr');
+        for (var i = 0; i < rows.length; i++) {
+          var txt = (rows[i].innerText || '').toLowerCase();
+          if (txt.indexOf('in progress') === -1) continue;
+          ipRows++;
+          if (ipRows > 3) continue;
+          var edits = 0, editVis = 0;
+          var links = rows[i].querySelectorAll('a');
+          for (var j = 0; j < links.length; j++) {
+            if ((links[j].textContent || '').trim().toLowerCase() === 'edit') { edits++; if (visible(links[j])) editVis++; }
+          }
+          lines.push('IP row: psych=' + (txt.indexOf('psych') !== -1) +
+            ' abalestra=' + (txt.indexOf('abalestra') !== -1) +
+            ' editLinks=' + edits + ' editVisible=' + editVis);
+        }
+      }
+      lines.push('IP rows total: ' + ipRows);
+      lines.push('edit found: ' + !!findInProgressEditLink());
+      lines.push('copy found: ' + !!findMostRecentCopyLink());
+      var chip = td.querySelector('.pcc-f-diag');
+      if (!chip) {
+        chip = td.createElement('div');
+        chip.className = 'pcc-f-diag';
+        chip.style.cssText = 'position:fixed;left:10px;bottom:10px;z-index:2147483647;background:#111827;color:#f9fafb;font:11px/1.5 monospace;padding:8px 10px;border-radius:8px;opacity:.92;pointer-events:none;white-space:pre-line;';
+        td.body.appendChild(chip);
+      }
+      chip.textContent = 'F-diag\n' + lines.join('\n');
+    } catch (e) {}
+  }
   function removeListBadges(cls) {
     try {
       var docs = allDocs();
@@ -736,6 +780,7 @@
   function applyFEditBadge() {
     try {
       if (!shouldRun()) return;
+      renderFDiag();
       // Assessments list: F on Adrian's own In Progress edit, else on copy
       var target = findInProgressEditLink();
       var label = 'Edit In Progress form (same as F key)';
