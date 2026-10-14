@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version 2.0
+// @version 2.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -46,6 +46,13 @@
       return s.display !== 'none' && s.visibility !== 'hidden' && s.opacity !== '0';
     } catch (e) { return false; }
   }
+
+  // A <tr> that CONTAINS other rows is a layout wrapper, not a form
+  // row — PCC nests the list table inside one. Judging a wrapper by
+  // its text borrows every row's identity at once (CH list, 2026-10-14:
+  // the wrapper "was" the psych row, so F landed on the Skilled Care
+  // Summary's copy link). Only leaf rows may be judged.
+  function leafRow(row) { return !row.querySelector('tr'); }
 
   function isEditable(el) {
     try {
@@ -406,6 +413,7 @@
       for (var d = 0; d < docs.length; d++) {
       var rows = docs[d].querySelectorAll('table tr');
       for (var i = 0; i < rows.length; i++) {
+        if (!leafRow(rows[i])) continue;
         var txt = (rows[i].innerText || '');
         var low = txt.toLowerCase();
         if (low.indexOf('psych') === -1) continue;
@@ -438,6 +446,7 @@
       for (var d = 0; d < docs.length; d++) {
       var rows = docs[d].querySelectorAll('table tr');
       for (var i = 0; i < rows.length; i++) {
+        if (!leafRow(rows[i])) continue;
         var txt = (rows[i].innerText || '').toLowerCase();
         // Row must be an In Progress psych consult form (any variant: "Psych: Consult",
         // "Consult Form - Psychiatry", "Consult-Psychiatry", etc.)
@@ -466,6 +475,7 @@
         for (var d2 = 0; d2 < docs2.length; d2++) {
           var rows2 = docs2[d2].querySelectorAll('table tr');
           for (var i2 = 0; i2 < rows2.length; i2++) {
+            if (!leafRow(rows2[i2])) continue;
             var rtxt = (rows2[i2].innerText || '').toLowerCase();
             if (rtxt.indexOf('psych') === -1) continue;
             var cells = rows2[i2].querySelectorAll('td');
@@ -634,6 +644,7 @@
       for (var d = 0; d < docs.length; d++) {
         var rows = docs[d].querySelectorAll('table tr');
         for (var i = 0; i < rows.length; i++) {
+          if (!leafRow(rows[i])) continue;
           var txt = (rows[i].innerText || '').toLowerCase();
           // Must be a psych section row (not header)
           if (txt.indexOf('psych') === -1) continue;
