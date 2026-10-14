@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.15
+// @version      2.16
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1388,6 +1388,20 @@
 
     var entries = collectEntries(flagged);
     var highCount = entries.filter(function(e) { return e.sev === 'HIGH'; }).length;
+    // Publish HIGH flags for the header alert chip (his call,
+    // 2026-10-14: 'have it alert just like the readmission'). The
+    // More/Less script shows a bright-red chip beside the G button
+    // when this resident has HIGH flags. Keyed by the widget URL's
+    // ESOLclientid, which the header side reads off this frame's
+    // src. An empty list clears the alert; the row ping tells the
+    // header to re-check right away.
+    try {
+      var cid = (location.search.match(/ESOLclientid=(\d+)/) || [])[1] || '';
+      var highs = entries.filter(function(e) { return e.sev === 'HIGH'; })
+        .map(function(e) { return e.reason; });
+      localStorage.setItem('tmHighFlags', JSON.stringify({ id: cid, highs: highs, ts: Date.now() }));
+      localStorage.setItem('tmRowPing', String(Date.now()));
+    } catch (e) {}
 
     // psychToggle: clean two-line layout — toggle + count on first line, details below
     var psychToggleHtml =
