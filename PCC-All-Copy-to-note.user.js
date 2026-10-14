@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.4
+// @version      1.5
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -42,8 +42,20 @@
     var hm = lines[mi].match(/^\s*Medical Hx\b/);
     var header = hm ? hm[0] : 'Medical Hx';   // keep only the header words — the rest of
                                               // the line is old diagnoses, which are replaced
+    var headerAlone = lines[mi].slice(header.length).trim() === '';
     var out = lines.slice(0, mi);
-    out.push(header + ' ' + dx);
+    if (headerAlone) {
+      // His templates put "Medical Hx" alone on its line with the
+      // diagnoses on the line UNDER it (his fill map, 2026-10-13) — keep
+      // that shape. The old code merged the list onto the header line and
+      // ate the line beneath it (his Saints report, 2026-10-14).
+      out.push(lines[mi]);
+      out.push(dx);
+    } else {
+      // Follow-up notes carry the diagnoses on the header line itself —
+      // replace them there, same shape as before.
+      out.push(header + ' ' + dx);
+    }
     out = out.concat(lines.slice(fi));
     return out.join('\n');
   }
@@ -402,11 +414,29 @@
     document.body.appendChild(p);
   }
 
+  // CNR/Saints splits the note across two fields: the HPI field (found
+  // above) holds HPI / Medical Hx / Allergies / contact, while the
+  // Impression field holds DX / Psych meds / PLAN. Meds must land in THAT
+  // field — running them against the HPI field found no "Psych meds"
+  // section and silently did nothing (his Saints report, 2026-10-14).
+  // Boro Park's single field holds everything, so no second field exists.
+  function findMedsField(mainField) {
+    var tas = document.querySelectorAll('textarea');
+    for (var i = 0; i < tas.length; i++) {
+      if (tas[i] === mainField) continue;
+      var v = tas[i].value || '';
+      if (/^\s*Psych meds\s*$/m.test(v) && (/^\s*PLAN\b/m.test(v) || /^\s*DX\b/m.test(v))) return tas[i];
+    }
+    return null;
+  }
+
   function checkAndApply() {
     var field = findNoteField();
     if (!field) return;
     var txt = field.value || '';
     if (!looksLikeHisNote(txt)) return;
+    var medsField = findMedsField(field);
+    var medsTxt = medsField ? (medsField.value || '') : null;
 
     var reqs = {};
     TOPICS.forEach(function (topic) {
@@ -424,6 +454,11 @@
       relationships: reqs.pccFillRelationships ? String(reqs.pccFillRelationships.value) : null
     };
     var labels = diffLabels(txt, q);
+    if (medsField && q.meds) {
+      // The meds comparison belongs to the field that holds the meds.
+      labels = labels.filter(function (l) { return l !== 'medications'; });
+      if (diffLabels(medsTxt, { meds: q.meds }).indexOf('medications') !== -1) labels.push('medications');
+    }
     var sig = labels.join(',') + '#' + TOPICS.map(function (t) {
       return reqs[t.key] ? reqs[t.key].ts : 0;
     }).join('.');
@@ -432,6 +467,7 @@
     TOPICS.forEach(function (topic) {
       var req = reqs[topic.key];
       if (!req) return;
+      if (topic.key === 'pccFillPsychMeds' && medsField) return;   // handled below, in its own field
       var next = topic.apply(txt, String(req.value));
       if (next !== txt) {
         txt = next;
@@ -445,6 +481,20 @@
         field.dispatchEvent(new Event('input', { bubbles: true }));
         field.dispatchEvent(new Event('change', { bubbles: true }));
       } catch (e) {}
+    }
+    // Meds land in their own field at CNR/Saints (see findMedsField).
+    if (medsField && reqs.pccFillPsychMeds) {
+      var mNext = applyMeds(medsTxt, String(reqs.pccFillPsychMeds.value));
+      if (mNext !== medsTxt) {
+        medsField.value = mNext;
+        try {
+          medsField.dispatchEvent(new Event('input', { bubbles: true }));
+          medsField.dispatchEvent(new Event('change', { bubbles: true }));
+        } catch (e) {}
+        TOPICS.forEach(function (topic) {
+          if (topic.key === 'pccFillPsychMeds') markUsed(topic, reqs.pccFillPsychMeds.ts);
+        });
+      }
     }
     renderDiff(labels, sig);
   }
