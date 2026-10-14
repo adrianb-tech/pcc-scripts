@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.10
+// @version      1.11
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -66,12 +66,13 @@
   }
 
   // ============ REASONS-FOR-FORM POPUP (newassess.jsp) ============
-  // Markup facts (his captured popup, 2026-10-14): the page serves BOTH
-  // modes. COPY mode carries hidden ESOLsave = "C" and NO Form select —
-  // Type (select name "assessment_type") comes pre-set to Follow Up, and
-  // the Save input runs save(document.formSave). NEW mode adds a Form
-  // select. Labels ("Form:", "Type of Form:") sit in their own row; the
-  // select is in the NEXT row — find the first select AFTER the label.
+  // Markup facts (his captured popups, 2026-10-14): one page, two modes,
+  // told apart by the hidden ESOLsave field — "N" = NEW (has the Form
+  // select, name "std_assessment", 47 forms with numeric ids), "C" =
+  // COPY (no Form select; Type select "assessment_type" pre-set to
+  // Follow Up). Both modes: Save input runs save(document.formSave).
+  // Labels sit in their own row, the select in the NEXT row — the Form
+  // select is aimed by name, with a first-select-after-the-label fallback.
   function selectAfterLabel(labelText) {
     var all = document.querySelectorAll('td, div, span, strong, label');
     var labelEl = null;
@@ -105,9 +106,9 @@
       return txt.indexOf('crown heights') !== -1 || txt.indexOf('bedford') !== -1;
     } catch (e) { return false; }
   }
-  function isCopyPopup() {
+  function popupMode() {
     var h = document.querySelector('input[name="ESOLsave"]');
-    return !!h && h.value === 'C';
+    return h ? h.value : '';
   }
   function saveButton() {
     var ins = document.querySelectorAll('input[type="button"], input[type="submit"]');
@@ -120,25 +121,17 @@
     });
   }
 
-  // NEW mode: autofill Form = Consult-Psychiatry 1.0, Type = Initial.
-  function runNewPopup() {
-    if (!popupFacilityOk()) return;
-    var formSel = selectAfterLabel('Form:');
-    if (!formSel) return; // not the NEW popup
-    if (setSelectOption(formSel, 'Consult-Psychiatry 1.0')) {
-      setTimeout(function() {
-        var typeSel = document.querySelector('select[name="assessment_type"]') || selectAfterLabel('Type of Form:');
-        setSelectOption(typeSel, 'Initial');
-      }, 350);
-    }
-  }
-
-  // COPY mode (his ask, 2026-10-14): a "D" badge on the Save button,
-  // and the D key confirms the follow-up (clicks Save). (Was S for one
-  // version — S is taken by his name/room copy.) Keys stay dead while
-  // he's typing in a field or a select has focus; no repeats.
+  // The D (his asks, 2026-10-14): a "D" badge on the popup's Save
+  // button, and the D key clicks Save — on BOTH popup modes. Dia won't
+  // hand the popup keyboard focus on open, so the working rhythm is
+  // Tab (focus lands) then D. Arming: PCC parks focus in the date
+  // field, which would make D read as "typing" — until he types or
+  // clicks into a field himself, auto-parked text-field focus is
+  // handed back to the page body on each arming tick. D fires from
+  // body/select/checkbox/button focus; dead only inside a text field
+  // he is genuinely editing; no repeats, no modifiers.
   var dPlanted = false;
-  function runCopyPopup() {
+  function plantD() {
     if (dPlanted || !popupFacilityOk()) return;
     var btn = saveButton();
     if (!btn) return;
@@ -149,14 +142,6 @@
       'font:600 12px -apple-system,Helvetica,Arial,sans-serif;';
     btn.parentNode.insertBefore(badge, btn.nextSibling);
     dPlanted = true;
-    // Arm D (his live report on v1.9: "pressing D doesn't register").
-    // PCC parks focus in the date field — sometimes AFTER a first
-    // blur — so D kept reading as "typing". Now: until he actually
-    // types or clicks into a field himself, any auto-parked focus is
-    // handed back to the page body on each arming tick. D is live
-    // whenever focus sits on the body, a select, a checkbox, or a
-    // button (no D-options exist in this popup's selects); it stays
-    // dead only inside a text field he is genuinely editing.
     var heTookFocus = false;
     document.addEventListener('input', function() { heTookFocus = true; }, true);
     document.addEventListener('mousedown', function() { heTookFocus = true; }, true);
@@ -180,6 +165,21 @@
     });
   }
 
+  // NEW mode: plant the D, and autofill Form = Consult-Psychiatry 1.0,
+  // Type = Initial. (Live-confirmed 2026-10-14: the popup opens with
+  // both already set.)
+  function runNewPopup() {
+    if (!popupFacilityOk()) return;
+    plantD();
+    var formSel = document.querySelector('select[name="std_assessment"]') || selectAfterLabel('Form:');
+    if (formSel && setSelectOption(formSel, 'Consult-Psychiatry 1.0')) {
+      setTimeout(function() {
+        var typeSel = document.querySelector('select[name="assessment_type"]') || selectAfterLabel('Type of Form:');
+        setSelectOption(typeSel, 'Initial');
+      }, 350);
+    }
+  }
+
   // ============ RUN — once, patiently ============
   if (/newassess\.jsp/.test(location.pathname)) {
     // Take keyboard focus the moment the popup opens (his F -> D -> F
@@ -192,7 +192,7 @@
     });
     (function waitPopup() {
       if (!interacted && tries < 8) { try { window.focus(); } catch (e) {} }
-      if (isCopyPopup()) { runCopyPopup(); if (dPlanted && tries > 8) return; }
+      if (popupMode() === 'C') plantD();
       else runNewPopup();
       if (++tries < 20) setTimeout(waitPopup, 250);
     })();
