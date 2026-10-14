@@ -518,6 +518,33 @@
       }
       }
     } catch (e) {}
+
+      // Tier 2 (chip evidence, 2026-10-14): the strict whole-row gates
+      // above can miss the real row on the live page — several rows
+      // contain 'in progress', and the true row's whole-row text failed
+      // a substring gate while its Status CELL reads exactly
+      // 'In Progress'. Judge by the cell: exact 'In Progress' status,
+      // psych in the row, a visible edit link.
+      try {
+        var docs2 = allDocs();
+        for (var d2 = 0; d2 < docs2.length; d2++) {
+          var rows2 = docs2[d2].querySelectorAll('table tr');
+          for (var i2 = 0; i2 < rows2.length; i2++) {
+            var rtxt = (rows2[i2].innerText || '').toLowerCase();
+            if (rtxt.indexOf('psych') === -1) continue;
+            var cells = rows2[i2].querySelectorAll('td');
+            var isIP = false;
+            for (var c = 0; c < cells.length; c++) {
+              if ((cells[c].textContent || '').trim().toLowerCase() === 'in progress') { isIP = true; break; }
+            }
+            if (!isIP) continue;
+            var links2 = rows2[i2].querySelectorAll('a');
+            for (var j2 = 0; j2 < links2.length; j2++) {
+              if ((links2[j2].textContent || '').trim().toLowerCase() === 'edit' && visible(links2[j2])) return links2[j2];
+            }
+          }
+        }
+      } catch (e2) {}
     return null;
   }
   function findViewLink() {
