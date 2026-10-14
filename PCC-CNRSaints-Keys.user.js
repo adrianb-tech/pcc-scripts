@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.10
+// @version      1.11
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -951,16 +951,12 @@
     } catch (e) {}
   }
 
-  // Remove stale F view badges from all docs (including iframes)
-  function removeStaleViewBadges() {
+  // Remove F view badges from ONE document (v1.11 — the window-wide
+  // version let a veto in one frame strip a good badge in another).
+  function removeViewBadgesInDoc(doc) {
     try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        try {
-          var stale = docs[d].querySelectorAll('.' + FBTN_CLASS + '-view');
-          for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
-        } catch (e3) {}
-      }
+      var stale = doc.querySelectorAll('.' + FBTN_CLASS + '-view');
+      for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
     } catch (e) {}
   }
   // Progress Notes: F badge on VIEW ALL button
@@ -998,38 +994,28 @@
       var target = findViewLink();
       if (!target || !target.parentNode) return;
       var tdoc = target.ownerDocument || document;
-      // v1.10: every veto below is judged on the TARGET'S OWN document. The
-      // old guards scanned the whole window (allDocs/findAdmissionRecord run
-      // from window.top), so content in a SIBLING frame could veto — and on
-      // later passes remove — the badge that belonged on this page: the
-      // badge flickered in and out and was gone when he looked (his CNR
-      // report, 2026-10-14). The F key was never affected: it resolves in
-      // the focused frame at press time.
+      // v1.11: section lists are owned end-to-end by
+      // applyFSectionListBadge, which judges the page inside its own
+      // document. This generic pass never places or vetoes anything there.
+      if (isSectionListDoc(tdoc)) return;
+      // v1.11: vetoes are judged on the TARGET'S OWN document and strip
+      // badges ONLY in that document. v1.10 judged per-document but still
+      // called the window-wide remover, so a veto verdict in any sibling
+      // frame erased the section list's view badge too — his "F is still
+      // not on that one page" report, 2026-10-14.
       if (isResidentListDoc(tdoc) || isProgressNotesDoc(tdoc) || isFormsListDoc(tdoc) || isFormsGridDoc(tdoc)) {
-        removeStaleViewBadges();
+        removeViewBadgesInDoc(tdoc);
         return;
       }
       if (isBoroPark() && isSignedSectionPage()) {
-        removeStaleViewBadges();
+        removeViewBadgesInDoc(tdoc);
         return;
       }
       // Profile page: the ONLY F there is the Admission Record (his rule,
       // 2026-10-13) — judged on this page itself, not any other frame.
       if (findAdmissionRecordInDoc(tdoc)) {
-        removeStaleViewBadges();
+        removeViewBadgesInDoc(tdoc);
         return;
-      }
-      if (isSectionListDoc(tdoc)) {
-        // Section list: sweep stray edit badges in this doc
-        try {
-          var stray = tdoc.querySelectorAll('.' + FBTN_CLASS + '-edit, .' + FBTN_CLASS + '-sectedit, .' + FBTN_CLASS + '-copy');
-          for (var ss = 0; ss < stray.length; ss++) { try { stray[ss].remove(); } catch (e5) {} }
-        } catch (e6) {}
-        // Sign waiting -> the badge belongs on SIGN; both green -> no badge
-        if (findSectionSignLinkInDoc(tdoc) || sectionListAllSignedInDoc(tdoc)) {
-          removeStaleViewBadges();
-          return;
-        }
       }
       var badgeCls = FBTN_CLASS + '-view';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
@@ -1039,53 +1025,79 @@
       else target.parentNode.appendChild(badge);
     } catch (e) {}
   }
-  function removeStaleSignBadges() {
+  // CNR/Saints section list — ONE pass owns this page type end to end
+  // (v1.11). The state is judged entirely inside the section list's own
+  // document, and every placement/removal is scoped to that document:
+  //   sign link waiting  -> badge on SIGN, no view badge
+  //   both lines signed  -> no F badge of any kind
+  //   otherwise          -> badge on VIEW
+  // Before v1.11 three separate passes shared the page, and the generic
+  // view pass could still veto/strip this page's badge from another
+  // frame's verdict via the window-wide removers.
+  function findViewLinkInDoc(doc) {
     try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        try {
-          var stale = docs[d].querySelectorAll('.' + FBTN_CLASS + '-sign');
-          for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
-        } catch (e3) {}
+      var links = doc.querySelectorAll('a');
+      for (var j = 0; j < links.length; j++) {
+        var lt = (links[j].textContent || '').trim().toLowerCase();
+        if (lt === 'view' && visible(links[j])) {
+          try {
+            var tbl = links[j].closest('table');
+            if (tbl) {
+              var th = (tbl.innerText || '').toLowerCase();
+              if (th.indexOf('effective date') !== -1) continue;
+              if (th.indexOf('external facilities') !== -1) continue;
+            }
+          } catch (e2) {}
+          return links[j];
+        }
       }
     } catch (e) {}
+    return null;
   }
-  // CNR/Saints section list: F badge on the SIGN link while a signature waits
-  function applyFSectionSignBadge() {
-    try {
-      if (!shouldRun()) return;
-      var docs = allDocs();
-      var anyTarget = false;
-      for (var d = 0; d < docs.length; d++) {
-        if (!isSectionListDoc(docs[d])) continue;
-        var target = findSectionSignLinkInDoc(docs[d]);
-        if (!target || !target.parentNode) continue;
-        anyTarget = true;
-        var badgeCls = FBTN_CLASS + '-sign';
-        if (target.parentNode.querySelector('.' + badgeCls)) continue;
-        var badge = makeFBadge('Sign section (same as F key)', function() { doFAction(); }, target.ownerDocument);
-        badge.classList.add(badgeCls);
-        if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
-        else target.parentNode.appendChild(badge);
-      }
-      if (!anyTarget) removeStaleSignBadges();
-    } catch (e) {}
-  }
-  // Both lines green -> strip EVERY F badge from this page (v1.7): whichever
-  // badge pass placed one, none belongs on a completed section list.
-  function applyFSectionListCleanup() {
+  function applyFSectionListBadge() {
     try {
       if (!shouldRun()) return;
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
+        var doc = docs[d];
         try {
-          if (!isSectionListDoc(docs[d]) || !sectionListAllSignedInDoc(docs[d])) continue;
-          var all = docs[d].querySelectorAll('.' + FBTN_CLASS);
-          for (var s = 0; s < all.length; s++) { try { all[s].remove(); } catch (e2) {} }
+          if (!isSectionListDoc(doc)) continue;
+          var stray = doc.querySelectorAll('.' + FBTN_CLASS + '-edit, .' + FBTN_CLASS + '-sectedit, .' + FBTN_CLASS + '-copy');
+          for (var ss = 0; ss < stray.length; ss++) { try { stray[ss].remove(); } catch (e5) {} }
+          var signTarget = findSectionSignLinkInDoc(doc);
+          if (signTarget && signTarget.parentNode) {
+            removeViewBadgesInDoc(doc);
+            var signCls = FBTN_CLASS + '-sign';
+            if (!signTarget.parentNode.querySelector('.' + signCls)) {
+              var sb = makeFBadge('Sign section (same as F key)', function() { doFAction(); }, doc);
+              sb.classList.add(signCls);
+              if (signTarget.nextSibling) signTarget.parentNode.insertBefore(sb, signTarget.nextSibling);
+              else signTarget.parentNode.appendChild(sb);
+            }
+            continue;
+          }
+          var staleSign = doc.querySelectorAll('.' + FBTN_CLASS + '-sign');
+          for (var s2 = 0; s2 < staleSign.length; s2++) { try { staleSign[s2].remove(); } catch (e7) {} }
+          if (sectionListAllSignedInDoc(doc)) {
+            var all = doc.querySelectorAll('.' + FBTN_CLASS);
+            for (var s = 0; s < all.length; s++) { try { all[s].remove(); } catch (e2) {} }
+            continue;
+          }
+          var viewTarget = findViewLinkInDoc(doc);
+          if (!viewTarget || !viewTarget.parentNode) continue;
+          var viewCls = FBTN_CLASS + '-view';
+          if (viewTarget.parentNode.querySelector('.' + viewCls)) continue;
+          var vb = makeFBadge('View section (same as F key)', function() { doFAction(); }, doc);
+          vb.classList.add(viewCls);
+          if (viewTarget.nextSibling) viewTarget.parentNode.insertBefore(vb, viewTarget.nextSibling);
+          else viewTarget.parentNode.appendChild(vb);
         } catch (e3) {}
       }
     } catch (e) {}
   }
+  // Kept names: the startup schedule and click re-runs call these two.
+  function applyFSectionSignBadge() { applyFSectionListBadge(); }
+  function applyFSectionListCleanup() { applyFSectionListBadge(); }
   function applyFLockBadge() {
     try {
       if (!shouldRun()) return;
