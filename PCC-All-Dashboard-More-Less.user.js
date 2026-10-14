@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.9
+// @version      2.0
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -211,7 +211,8 @@
 
   function queueCopy(label, value) {
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value); } catch (err) {}
-    var key = label === 'Age/Sex' ? 'pccFillAgeSex' : (label === 'Allergies' ? 'pccFillAllergies' : null);
+    var KEYS = { 'Age/Sex': 'pccFillAgeSex', 'Allergies': 'pccFillAllergies', 'Psych meds': 'pccFillPsychMeds', 'Relationships': 'pccFillRelationships', 'BIMS': 'pccFillBims' };
+    var key = KEYS[label] || null;
     if (key) { try { localStorage.setItem(key, JSON.stringify({ value: value, ts: Date.now() })); } catch (err) {} }
   }
 
@@ -241,7 +242,7 @@
     var d = document.createElement('div');
     d.style.cssText = 'background:' + (opts.rose ? '#fdf3f2' : '#fff') + ';border:1px solid ' +
       (opts.rose ? '#f0c8c2' : '#e2e8f0') + ';border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);' +
-      'padding:' + (opts.pad || '12px 16px 14px') + ';' + (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;');
+      'padding:' + (opts.pad || '12px 16px 14px') + ';' + (opts.grow ? 'flex:1 1 400px;min-width:340px;' : (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;'));
     var lab = document.createElement('div');
     lab.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;';
     var ls = document.createElement('span');
@@ -253,7 +254,8 @@
     var v = document.createElement('div');
     v.textContent = valueText;
     v.style.cssText = 'margin-top:9px;font-size:' + (opts.size || 21) + 'px;font-weight:' + (opts.weight || 700) +
-      ';line-height:1.3;color:' + (opts.color || '#131c2b') + ';';
+      ';line-height:' + (opts.multi ? '1.45' : '1.3') + ';color:' + (opts.color || '#131c2b') + ';' +
+      (opts.multi ? 'white-space:pre-line;' : '');
     if (opts.fit) v.setAttribute('data-fit', '1');
     d.appendChild(lab); d.appendChild(v);
     if (opts.fill) {
@@ -324,10 +326,14 @@
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar || !bar.parentNode) return;
     var d = cardData();
-    if (d) d.weight = weightValue();
+    if (d) {
+      d.weight = weightValue();
+      var mb = document.getElementById('copyMedListBtn');
+      if (mb) { var mv = mb.getAttribute('data-fill-value'); if (mv) d.meds = mv; }
+    }
     var row = document.getElementById(ROW_ID);
     if (!d) { if (row) row.remove(); return; }
-    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || ''].join('|');
+    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.meds || ''].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
     row = document.createElement('div');
@@ -344,6 +350,7 @@
     if (d.room) row.appendChild(tile('Room', d.room, {}));
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
+    if (d.meds) row.appendChild(tile('Psych meds', d.meds, { grow: true, multi: true, size: 13, weight: 600, click: { label: 'Psych meds', value: d.meds }, fill: { label: 'Psych meds', value: d.meds } }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
   }
@@ -363,6 +370,40 @@
       el.style.fontSize = size + 'px';
       guard++;
     }
+  }
+
+  // ---------- per-tab tiles (his plan, 2026-10-14) ----------
+  // PROFILE: a Relationships tile beside the relationships box.
+  // FORMS: a BIMS tile beside the BIMS box. Each reads the value
+  // from that box's own Copy button, and the tile itself carries
+  // the same contract, so clicking it (or G) copies + queues
+  // exactly what the box's Copy does.
+  function sideTile(rowId, anchorEl, label, value) {
+    if (!anchorEl || !anchorEl.parentNode || !value) return;
+    var row = document.getElementById(rowId);
+    if (row && row.getAttribute('data-sig') === value) return;
+    if (row) row.remove();
+    row = document.createElement('div');
+    row.id = rowId;
+    row.setAttribute('data-sig', value);
+    row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;' +
+      'font-family:-apple-system,Helvetica,Arial,sans-serif;';
+    row.appendChild(tile(label, value, { grow: true, multi: true, size: 13, weight: 600, click: { label: label, value: value }, fill: { label: label, value: value } }));
+    anchorEl.parentNode.insertBefore(row, anchorEl);
+  }
+  function buildRelTile() {
+    var btn = document.getElementById('relCopyBtn');
+    var box = document.getElementById('relBox');
+    if (!btn || !box) return;
+    sideTile('tmRelRow', box, 'Relationships', btn.getAttribute('data-fill-value') || '');
+  }
+  function buildBimsTile() {
+    var box = document.getElementById('custom-bims-badge');
+    if (!box) return;
+    var btn = box.querySelector('.pcc-fill-copy');
+    var val = btn ? (btn.getAttribute('data-fill-value') || '') : '';
+    if (!val) { var vv = box.querySelector('.bims-value'); if (vv) val = (vv.textContent || '').trim(); }
+    sideTile('tmBimsRow', box, 'BIMS', val);
   }
 
   function run() {
@@ -401,6 +442,8 @@
     }
     apply();
     buildCards();
+    buildRelTile();
+    buildBimsTile();
   }
 
   // Bounded staggered passes (the Connect button is built late by PCC's
