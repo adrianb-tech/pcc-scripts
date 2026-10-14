@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.4
+// @version      1.5
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -116,6 +116,23 @@
     return (out.ageSex || out.room || out.allergies || out.admission) ? out : null;
   }
 
+  // Weight tile (his ask, 2026-10-14): from the header vitals
+  // table's Weight cell, mirrored exactly as PCC shows it — this
+  // resident's cell reads 0 Lbs (no reading recorded), and the
+  // tile still shows, because he expects the box to be there.
+  function weightValue() {
+    var blocks = document.querySelectorAll('.vitalDetails');
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i].querySelector('b');
+      var v = blocks[i].querySelector('.vitalValue');
+      if (b && v && /^weight$/i.test((b.textContent || '').trim())) {
+        var m = (v.textContent || '').match(/([\d.]+)\s*lbs/i);
+        if (m) return m[1] + ' lbs';
+      }
+    }
+    return null;
+  }
+
   function copyBtn(label, value) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -165,9 +182,10 @@
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar || !bar.parentNode) return;
     var d = cardData();
+    if (d) d.weight = weightValue();
     var row = document.getElementById(ROW_ID);
     if (!d) { if (row) row.remove(); return; }
-    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || ''].join('|');
+    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || ''].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
     row = document.createElement('div');
@@ -183,6 +201,7 @@
     if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { size: 24, weight: 800, btn: copyBtn('Age/Sex', d.ageSex) }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, flex: true, size: 14.5, weight: 600, color: '#a33327', btn: copyBtn('Allergies', d.allergies) }));
+    if (d.weight) row.appendChild(tile('Weight', d.weight, {}));
     bar.parentNode.insertBefore(row, bar.nextSibling);
   }
 
