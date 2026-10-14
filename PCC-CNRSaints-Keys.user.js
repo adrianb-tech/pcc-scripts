@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.20
+// @version      1.21
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -250,6 +250,7 @@
         });
         if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
         else target.parentNode.appendChild(btn);
+        noteFLoaded(doc);   // the F is on the page — the date may follow now
       }
     } catch (e) {}
   }
@@ -903,7 +904,8 @@
   // Date of Consult — STAGGERED (his design, 2026-10-14: "first the
   // F button is placed instantly and then a moment later the date is
   // filled out"). The F badges plant on the normal instant passes;
-  // the date fills afterwards, once, at 4000ms (retry 9000ms), so the
+  // the date now waits for the F button to be placed (v1.21, his
+  // method) — chained to applyFButton, then a 1200ms beat — so the
   // two never land in the same instant. The fill is typed character
   // by character (the input class PCC's widget is built for) WITHOUT
   // taking focus — focus is never stolen on a form he is editing —
@@ -912,6 +914,20 @@
   // fill runs there with focus (his keypress, his moment), and either
   // way the field gets a real focus/blur cycle so the widget parses
   // what it holds before the save click lands.
+  // The date waits for the F (his method, 2026-10-14: "wait until
+  // the F fully loads before putting in the date"). The fill is
+  // chained to the F button actually being PLACED on the form — the
+  // proof that PCC has finished loading the page — instead of a fixed
+  // clock (v1.19/v1.20's timed fills could land before the form's own
+  // widget finished initializing). Queued once per document.
+  function noteFLoaded(doc){
+    try {
+      if (doc.__pccDateQueued) return;
+      doc.__pccDateQueued = true;
+      setTimeout(fillConsultDateSoft, 1200);
+      setTimeout(fillConsultDateSoft, 3500);
+    } catch (e) {}
+  }
   function todayStrK(){ var d = new Date(); return ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + '/' + d.getFullYear(); }
   function keyEvK(doc, type, ch){
     var w = doc.defaultView || window;
@@ -1429,11 +1445,8 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // The staggered date fill (v1.19, his design; v1.20: a little
-  // longer, his tuning): F buttons first, instantly — the date
-  // follows a few seconds later, once.
-  setTimeout(fillConsultDateSoft, 4000);
-  setTimeout(fillConsultDateSoft, 9000);
+  // (v1.21: the date fill is no longer on a fixed clock — it is
+  // chained to the F button being placed; see noteFLoaded.)
   // Runs last: on a both-green section list, no F badge survives (v1.7)
   applyFSectionListCleanup();
   setTimeout(applyFSectionListCleanup, 1500);
