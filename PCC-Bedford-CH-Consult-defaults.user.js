@@ -1,15 +1,22 @@
 // ==UserScript==
-// @version 1.1
+// @version      1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @name         Bedford + Crown Heights — Consult defaults (Crown Heights)
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
-// @run-at       document-idle
+// @run-at       document-start
 // @grant        none
 // ==/UserScript==
 
 (function() {
-  setTimeout(function() {
+  // v1.2 speed-up (his request, same pattern as CNR+Saints): document-start
+  // + a fast bounded burst until the form exists, then run ONCE — instead
+  // of document-idle + a flat 1s wait. The 200ms spacing between
+  // questionReviewed calls stays: that pacing is PCC's, not ours.
+  var done = false;
+  function run() {
+    if (done) return;
+    done = true;
     // 1. Set answer defaults.
     var reasonEval = document.querySelector('input[name="Cust_1_A"][value="a"]');
     if (reasonEval && !reasonEval.checked) reasonEval.click();
@@ -42,5 +49,17 @@
         }
       }, i * 200);
     });
-  }, 1000);
+  }
+  function attempt() {
+    if (done) return;
+    if (document.querySelector('input[name="Cust_1_A"]') || document.querySelector('a.qcheck')) run();
+  }
+  var burstLeft = 50;
+  (function burst() {
+    attempt();
+    if (done || --burstLeft <= 0) return;
+    setTimeout(burst, 60);
+  })();
+  setTimeout(attempt, 4000);
+  setTimeout(attempt, 7000);
 })();
