@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.0
+// @version      2.1
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -330,10 +330,12 @@
       d.weight = weightValue();
       var mb = document.getElementById('copyMedListBtn');
       if (mb) { var mv = mb.getAttribute('data-fill-value'); if (mv) d.meds = mv; }
+      d.bims = bimsValue();
+      d.rel = relValue();
     }
     var row = document.getElementById(ROW_ID);
     if (!d) { if (row) row.remove(); return; }
-    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.meds || ''].join('|');
+    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.meds || '', d.bims || '', d.rel || ''].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
     row = document.createElement('div');
@@ -350,6 +352,8 @@
     if (d.room) row.appendChild(tile('Room', d.room, {}));
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
+    if (d.bims) row.appendChild(tile('BIMS', d.bims, { click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
+    if (d.rel) row.appendChild(tile('Relationships', d.rel, { grow: true, multi: true, size: 13, weight: 600, click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
     if (d.meds) row.appendChild(tile('Psych meds', d.meds, { grow: true, multi: true, size: 13, weight: 600, click: { label: 'Psych meds', value: d.meds }, fill: { label: 'Psych meds', value: d.meds } }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
@@ -372,38 +376,40 @@
     }
   }
 
-  // ---------- per-tab tiles (his plan, 2026-10-14) ----------
-  // PROFILE: a Relationships tile beside the relationships box.
-  // FORMS: a BIMS tile beside the BIMS box. Each reads the value
-  // from that box's own Copy button, and the tile itself carries
-  // the same contract, so clicking it (or G) copies + queues
-  // exactly what the box's Copy does.
-  function sideTile(rowId, anchorEl, label, value) {
-    if (!anchorEl || !anchorEl.parentNode || !value) return;
-    var row = document.getElementById(rowId);
-    if (row && row.getAttribute('data-sig') === value) return;
-    if (row) row.remove();
-    row = document.createElement('div');
-    row.id = rowId;
-    row.setAttribute('data-sig', value);
-    row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin:10px 0;' +
-      'font-family:-apple-system,Helvetica,Arial,sans-serif;';
-    row.appendChild(tile(label, value, { grow: true, multi: true, size: 13, weight: 600, click: { label: label, value: value }, fill: { label: label, value: value } }));
-    anchorEl.parentNode.insertBefore(row, anchorEl);
+  // ---------- per-tab tiles, IN the tile row ----------
+  // His correction (2026-10-14 18:21): the BIMS and Relationships
+  // tiles belong IN the tile row (next to Weight), not down in the
+  // tab content. The boxes live in other frames, so the values are
+  // read across frames; the tiles join the row when he is on that
+  // tab. Every data tile is copyable (click = copy + queue, G too).
+  function allDocs() {
+    var docs = [];
+    (function walk(w) {
+      try { docs.push(w.document); } catch (e) { return; }
+      for (var i = 0; i < w.frames.length; i++) walk(w.frames[i]);
+    })(window.top || window);
+    return docs;
   }
-  function buildRelTile() {
-    var btn = document.getElementById('relCopyBtn');
-    var box = document.getElementById('relBox');
-    if (!btn || !box) return;
-    sideTile('tmRelRow', box, 'Relationships', btn.getAttribute('data-fill-value') || '');
+  function crossValue(fn) {
+    var docs = allDocs();
+    for (var i = 0; i < docs.length; i++) { var v = fn(docs[i]); if (v) return v; }
+    return '';
   }
-  function buildBimsTile() {
-    var box = document.getElementById('custom-bims-badge');
-    if (!box) return;
-    var btn = box.querySelector('.pcc-fill-copy');
-    var val = btn ? (btn.getAttribute('data-fill-value') || '') : '';
-    if (!val) { var vv = box.querySelector('.bims-value'); if (vv) val = (vv.textContent || '').trim(); }
-    sideTile('tmBimsRow', box, 'BIMS', val);
+  function bimsValue() {
+    return crossValue(function (doc) {
+      var box = doc.getElementById('custom-bims-badge');
+      if (!box) return '';
+      var btn = box.querySelector('.pcc-fill-copy');
+      if (btn && btn.getAttribute('data-fill-value')) return btn.getAttribute('data-fill-value');
+      var vv = box.querySelector('.bims-value');
+      return vv ? (vv.textContent || '').trim() : '';
+    });
+  }
+  function relValue() {
+    return crossValue(function (doc) {
+      var btn = doc.getElementById('relCopyBtn');
+      return btn ? (btn.getAttribute('data-fill-value') || '') : '';
+    });
   }
 
   function run() {
@@ -440,11 +446,26 @@
       var sBtn = document.getElementById('tmSBtn');
       bar.insertBefore(g, sBtn ? sBtn.nextSibling : more.nextSibling);
     }
+    var stray;
+    while ((stray = document.getElementById('tmRelRow') || document.getElementById('tmBimsRow'))) stray.remove();
     apply();
     buildCards();
-    buildRelTile();
-    buildBimsTile();
   }
+
+  var lastPing = 0;
+  document.addEventListener('click', function () {
+    var now = Date.now();
+    if (now - lastPing < 1500) return;
+    lastPing = now;
+    try { localStorage.setItem('tmRowPing', String(now)); } catch (e) {}
+    setTimeout(buildCards, 700);
+  }, true);
+  window.addEventListener('storage', function (e) {
+    if (e.key !== 'tmRowPing' || !e.newValue) return;
+    var ts = parseInt(e.newValue, 10);
+    if (!ts || Date.now() - ts > 5000) return;
+    setTimeout(buildCards, 700);
+  });
 
   // Bounded staggered passes (the Connect button is built late by PCC's
   // own deferred script, so re-apply the state a few times). No
