@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.8
+// @version      1.9
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -266,6 +266,11 @@
       d.setAttribute('data-fill-label', opts.fill.label);
       d.setAttribute('data-fill-value', opts.fill.value);
     }
+    if (opts.nav) {
+      d.style.cursor = 'pointer';
+      d.title = 'Go to WTS/VITALS';
+      d.addEventListener('click', function () { goWtsVitals(); });
+    }
     if (opts.click) {
       // The whole tile is the button (his ask, 2026-10-14): click
       // anywhere on it does exactly what its Copy button did; the
@@ -279,6 +284,40 @@
       });
     }
     return d;
+  }
+
+  // Weight tile = a button to the WTS/VITALS tab (his ask,
+  // 2026-10-14). The tab lives in another frame's tab bar, so the
+  // click searches every frame for the tab labeled WTS/VITALS —
+  // preferring a bar that also holds the other chart tabs — and
+  // fires a real click sequence (PCC ignores synthetic .click()).
+  function fireClick(el) {
+    ['mousedown', 'mouseup', 'click'].forEach(function (type) {
+      el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    });
+  }
+  function goWtsVitals() {
+    var docs = [];
+    (function walk(w) {
+      try { docs.push(w.document); } catch (e) { return; }
+      for (var i = 0; i < w.frames.length; i++) walk(w.frames[i]);
+    })(window.top || window);
+    var LABELS = ['DASH', 'PROFILE', 'ORDERS', 'RESULTS', 'FORMS', 'PROG NOTES'];
+    for (var d = 0; d < docs.length; d++) {
+      var doc = docs[d];
+      var bodyTxt = (doc.body && doc.body.textContent) || '';
+      var others = 0;
+      LABELS.forEach(function (L) { if (bodyTxt.indexOf(L) !== -1) others++; });
+      if (others < 4) continue; // not the tab-bar frame
+      var els = doc.querySelectorAll('a,button,[role="tab"],li,td,span,div');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx !== 'WTS/VITALS') continue;
+        var target = els[i].querySelector('a') || els[i];
+        fireClick(target);
+        return;
+      }
+    }
   }
 
   function buildCards() {
@@ -304,7 +343,7 @@
     if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', click: { label: 'Age/Sex', value: d.ageSex }, fill: { label: 'Age/Sex', value: d.ageSex } }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
-    if (d.weight) row.appendChild(tile('Weight', d.weight, {}));
+    if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
   }
