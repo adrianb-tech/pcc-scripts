@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.13
+// @version      1.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1075,52 +1075,6 @@
     } catch (e) {}
     return null;
   }
-  // TEMP DIAGNOSTIC (v1.12 — remove once the section-list badge is
-  // proven): a small chip inside any page that even LOOKS like a section
-  // list, reporting what the badge pass sees and decides there. His
-  // screenshot is the bug report, so the page states its own verdict.
-  function renderSectionDiagAll() {
-    try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var doc = docs[d];
-        try {
-          var t = docText(doc);
-          var hasBy = t.indexOf('signed by') !== -1;
-          var hasDate = t.indexOf('signed date') !== -1;
-          var signAll = false;
-          var els = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
-          for (var i = 0; i < els.length; i++) {
-            var v = (((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase());
-            if (v === 'sign all') { signAll = true; break; }
-          }
-          if (!hasBy && !signAll) continue;
-          var links = doc.querySelectorAll('a');
-          var nV = 0, nVv = 0, nS = 0;
-          for (var j = 0; j < links.length; j++) {
-            var lt = (links[j].textContent || '').trim().toLowerCase();
-            if (lt === 'view') { nV++; if (visible(links[j])) nVv++; }
-            if (lt === 'sign') nS++;
-          }
-          var msg = 'F-check - sectionPage:' + (isSectionListDoc(doc) ? 'YES' : 'no') +
-            ' - signedBy:' + (hasBy ? 'Y' : 'N') + ' signedDate:' + (hasDate ? 'Y' : 'N') +
-            ' - signAllBtn:' + (signAll ? 'Y' : 'N') +
-            ' - viewLinks:' + nV + ' (visible ' + nVv + ') - signLinks:' + nS +
-            ' - allSigned:' + (sectionListAllSignedInDoc(doc) ? 'YES' : 'no') +
-            ' - badgesOnPage:' + doc.querySelectorAll('.' + FBTN_CLASS).length +
-            ' - facility:' + String(checkCNRSaintsFacility());
-          var chip = doc.getElementById('pcc-f-diag');
-          if (!chip) {
-            chip = doc.createElement('div');
-            chip.id = 'pcc-f-diag';
-            chip.setAttribute('style', 'position:fixed;top:6px;right:6px;z-index:2147483647;background:#111827;color:#f9fafb;font:11px/1.5 ui-monospace,Menlo,monospace;padding:6px 9px;border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.35);max-width:46%;');
-            (doc.body || doc.documentElement).appendChild(chip);
-          }
-          chip.textContent = msg;
-        } catch (e2) {}
-      }
-    } catch (e) {}
-  }
   function applyFSectionListBadge() {
     try {
       if (!shouldRun()) return;
@@ -1161,7 +1115,6 @@
         } catch (e3) {}
       }
     } catch (e) {}
-    try { renderSectionDiagAll(); } catch (e9) {}
   }
   // Kept names: the startup schedule and click re-runs call these two.
   function applyFSectionSignBadge() { applyFSectionListBadge(); }
@@ -1315,8 +1268,6 @@
   setTimeout(applyFViewBadge, 8000);
   setTimeout(applyFSectionSignBadge, 8000);
   setTimeout(applyFSectionListCleanup, 9000);
-  setTimeout(renderSectionDiagAll, 6000);
-  setTimeout(renderSectionDiagAll, 12000);
   (function attachSectionBadgeClicks() {
     try {
       var docs = allDocs();
