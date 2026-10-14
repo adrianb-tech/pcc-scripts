@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.12
+// @version      1.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -662,24 +662,45 @@
   // other section row is signed too -> the form is done; no F anything here.
   function sectionListAllSignedInDoc(doc) {
     try {
-      var rows = doc.querySelectorAll('table tr');
-      var signedRows = 0, psychSigned = false;
-      for (var i = 0; i < rows.length; i++) {
-        var txt = (rows[i].innerText || '');
-        if (!/\d{1,2}\/\d{1,2}\/\d{4}/.test(txt)) continue;
-        var hasView = false, hasSign = false;
-        var ls = rows[i].querySelectorAll('a');
-        for (var j = 0; j < ls.length; j++) {
-          var lt = (ls[j].textContent || '').trim().toLowerCase();
-          if (lt === 'view') hasView = true;
-          if (lt === 'sign') hasSign = true;
+      // v1.13: judge ONLY the section table's own rows, and only by the
+      // Signed Date COLUMN. The old version scanned every <tr> on the
+      // page; PCC wraps content in outer layout tables whose row text
+      // contains everything at once (a date, the view link, the word
+      // Psychiatry), fabricating a signed psych row plus a second signed
+      // row — the page read as all-signed and every F badge was stripped.
+      // Caught by the v1.12 F-check chip on his live page:
+      // allSigned:YES with the psych section unsigned.
+      var tables = doc.querySelectorAll('table');
+      for (var ti = 0; ti < tables.length; ti++) {
+        var tbl = tables[ti];
+        var trs = tbl.querySelectorAll('tr');
+        var rows = [];
+        for (var ri = 0; ri < trs.length; ri++) {
+          if (trs[ri].closest('table') === tbl) rows.push(trs[ri]);
         }
-        if (hasView && !hasSign) {
+        var hdrIdx = -1, dateCol = -1;
+        for (var h = 0; h < rows.length; h++) {
+          var cells = rows[h].cells || [];
+          var hasBy = false, dc = -1;
+          for (var c = 0; c < cells.length; c++) {
+            var ct = (cells[c].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            if (ct.indexOf('signed by') !== -1) hasBy = true;
+            if (ct.indexOf('signed date') !== -1) dc = c;
+          }
+          if (hasBy && dc !== -1) { hdrIdx = h; dateCol = dc; break; }
+        }
+        if (hdrIdx === -1) continue;
+        var signedRows = 0, psychSigned = false;
+        for (var r = hdrIdx + 1; r < rows.length; r++) {
+          var rc = rows[r].cells || [];
+          if (dateCol >= rc.length) continue;
+          var dv = (rc[dateCol].textContent || '').trim();
+          if (!/\d{1,2}\/\d{1,2}\/\d{4}/.test(dv)) continue;
           signedRows++;
-          if (/psych/i.test(txt)) psychSigned = true;
+          if (/psych/i.test(rows[r].textContent || '')) psychSigned = true;
         }
+        if (psychSigned && signedRows >= 2) return true;
       }
-      return psychSigned && signedRows >= 2;
     } catch (e) {}
     return false;
   }
