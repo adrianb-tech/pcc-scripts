@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version 2.4
+// @version 2.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -24,7 +24,15 @@
           var ft = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
           if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) foundBoro = true;
           if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) foundOther = true;
-          if (ft.indexOf('saint joachim') !== -1) foundOther = true;
+          // Saints: the old check searched for 'saint joachim' — the
+          // facility's name is "Saints Joachim" (with the s), so it
+          // NEVER matched and this script ran at Saints, planting its
+          // Boro-Park-only 3 badge there (his reports, 2026-10-13 + 14;
+          // CNR was caught only because 'downtown brooklyn' is exact).
+          if (ft.indexOf('saints joachim') !== -1 || ft.indexOf('joachim & anne') !== -1 || ft.indexOf('joachim and anne') !== -1) foundOther = true;
+          // CNR/Saints' own form name — present on the very list pages
+          // the badges land on, even when no frame shows a facility name.
+          if (ft.indexOf('consult form - psychiatry') !== -1) foundOther = true;
           // CNR was missing here — this script ran at CNR and planted its
           // 1/2/3 badges there (his report, 2026-10-13). CNR's header name
           // is "Downtown Brooklyn..."; a standalone CNR counts too (the
@@ -350,6 +358,20 @@
   }
   function applyNumberBadges() {
     try {
+      if (checkBoroParkFacility() === false) {
+        // Another facility: remove this script's MD badge (data-kind=md
+        // is Boro-Park-only) if an early pass planted it before the
+        // facility text loaded. The 1/2 badges share class+kind with the
+        // local facility's own and are indistinguishable — leave them.
+        try {
+          var docs0 = allDocs();
+          for (var d0 = 0; d0 < docs0.length; d0++) {
+            var mds = docs0[d0].querySelectorAll('.pcc-num-badge-1[data-kind="md"]');
+            for (var m0 = 0; m0 < mds.length; m0++) { try { mds[m0].remove(); } catch (e3) {} }
+          }
+        } catch (e4) {}
+        return;
+      }
       if (!shouldRun()) return;
       var acted = findInFrames(window.top || window, function(doc) {
         var sel = findTypeSelect(doc);
@@ -1008,6 +1030,9 @@
       return;
     }
     if (k === '1' || k === '2' || k === '3') {
+      // The 3 key is Boro-Park-only: require POSITIVE Boro Park
+      // detection, not merely the absence of another facility's name.
+      if (k === '3' && checkBoroParkFacility() !== true) return;
       if (handleNumberKey(k)) e.preventDefault();
       return;
     }
