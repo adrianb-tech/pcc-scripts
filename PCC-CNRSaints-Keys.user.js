@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.8
+// @version      1.9
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1189,6 +1189,60 @@
   setTimeout(applyFSectionListCleanup, 1500);
   setTimeout(applyFSectionListCleanup, 4000);
   setTimeout(applyFSectionListCleanup, 6000);
+  // Badge reliability (v1.9, his CNR report: F key works but no badge on the
+  // view link): the fixed 0/1.5s/4s passes can all land before PCC finishes
+  // rendering the section table in its frame, and nothing re-ran them. The
+  // F key was unaffected (it resolves its target at press time). Fix: later
+  // passes + a throttled click re-run for the section-list badge trio.
+  setTimeout(applyFViewBadge, 8000);
+  setTimeout(applyFSectionSignBadge, 8000);
+  setTimeout(applyFSectionListCleanup, 9000);
+  (function attachSectionBadgeClicks() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        (function(doc) {
+          if (doc.__fSectionClickAttached) return;
+          doc.__fSectionClickAttached = true;
+          var last = 0;
+          doc.addEventListener('click', function(e) {
+            if (!e.isTrusted) return;
+            var now = Date.now();
+            if (now - last < 800) return;
+            last = now;
+            setTimeout(function() {
+              applyFViewBadge();
+              applyFSectionSignBadge();
+              applyFSectionListCleanup();
+            }, 300);
+          }, true);
+        })(docs[d]);
+      }
+    } catch (e) {}
+  })();
+  setTimeout(function() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        (function(doc) {
+          if (doc.__fSectionClickAttached) return;
+          doc.__fSectionClickAttached = true;
+          var last = 0;
+          doc.addEventListener('click', function(e) {
+            if (!e.isTrusted) return;
+            var now = Date.now();
+            if (now - last < 800) return;
+            last = now;
+            setTimeout(function() {
+              applyFViewBadge();
+              applyFSectionSignBadge();
+              applyFSectionListCleanup();
+            }, 300);
+          }, true);
+        })(docs[d]);
+      }
+    } catch (e) {}
+  }, 2500);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
