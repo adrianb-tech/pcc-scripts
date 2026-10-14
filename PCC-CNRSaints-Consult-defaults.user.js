@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.5
+// @version      1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @name         CNR + Saints — Consult form defaults
@@ -55,28 +55,121 @@
     return done;
   }
 
-  // Q9 Date of Consult is NOT touched by this script (v1.5). Proven by
-  // bisect on 2026-10-14: with this script disabled and the date picked
-  // by hand through PCC's calendar, signing lands on the section list
-  // clean; with ANY version of the script setting the date — v1.2's slow
-  // schedule included, the one that signed fine for weeks — signing the
-  // form throws PCC's server error '...because "date" is null' (the
-  // signature itself lands; the page after it crashes). Writing the
-  // visible dummy field by value evidently leaves PCC's real date null
-  // in current PCC builds. He picks the date himself (one calendar
-  // click); everything else here still auto-fills instantly.
+  // Q9 Date of Consult (v1.6): filled THROUGH PCC's own calendar widget
+  // — the script opens the calendar and taps today's cell, so PCC
+  // registers the date exactly as it does for a hand-pick. Why: signing
+  // a form throws PCC's server error '...because "date" is null'
+  // whenever PCC has no registered date for the form — proven three ways
+  // on 2026-10-14: (1) bisect — script off + date hand-picked via the
+  // calendar -> signing lands clean; (2) v1.5 — script on but leaving the
+  // field EMPTY -> signing throws it again; (3) the weeks-old value-set
+  // versions displayed a date yet signing still threw it. So the date
+  // must go in through the widget's own path. If the tap cannot be
+  // verified, a warning chip stays on the form so he never signs an
+  // unset date unknowingly.
+  var MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+  function fireTap(el){
+    ['mousedown','mouseup','click'].forEach(function(ev){
+      try { el.dispatchEvent(new MouseEvent(ev, { bubbles: true, cancelable: true })); } catch(e){}
+    });
+  }
+  function dateIsToday(doc){
+    var el = doc.querySelector('[name="displaydateCust_2_II_9_dummy"]');
+    return !!el && (el.value || '').replace(/\s+/g, '') === todayStr();
+  }
+  function findCalTrigger(doc, input){
+    try {
+      var scope = input.closest('td') || input.parentNode;
+      if (!scope) return null;
+      var els = scope.querySelectorAll('img, button, a, input[type="button"]');
+      for (var i = 0; i < els.length; i++) {
+        if (els[i] === input) continue;
+        var hay = ((els[i].getAttribute && (els[i].getAttribute('src') || '')) + ' ' + (els[i].alt || '') + ' ' + (els[i].title || '') + ' ' + (els[i].className || '') + ' ' + (els[i].getAttribute && els[i].getAttribute('onclick') || '')).toLowerCase();
+        if (hay.indexOf('cal') !== -1) return els[i];
+      }
+      // fallback: first clickable sibling right after the input
+      var n = input.nextElementSibling;
+      if (n && /^(IMG|BUTTON|A|INPUT)$/.test(n.tagName)) return n;
+    } catch (e) {}
+    return null;
+  }
+  function tapTodayCell(doc){
+    try {
+      var now = new Date();
+      var dayNum = String(now.getDate());
+      var monthName = MONTHS[now.getMonth()];
+      var yearStr = String(now.getFullYear());
+      var all = doc.querySelectorAll('td, a, span, div');
+      var best = null;
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        if ((el.textContent || '').replace(/\s+/g, ' ').trim() !== dayNum) continue;
+        if (!el.getClientRects || !el.getClientRects().length) continue;
+        // the cell must sit inside a calendar showing THIS month + year
+        var anc = el, inCal = false;
+        for (var up = 0; up < 6 && anc; up++) {
+          var at = (anc.textContent || '').toLowerCase();
+          if (at.indexOf(monthName) !== -1 && at.indexOf(yearStr) !== -1 && at.length < 4000) { inCal = true; break; }
+          anc = anc.parentNode;
+        }
+        if (!inCal) continue;
+        var cls = (el.className || '') + ' ' + ((el.getAttribute && el.getAttribute('title')) || '');
+        if (/other|prev|next|disabled|inactive/i.test(cls)) continue;
+        best = el;
+        if (/today/i.test(cls)) break;
+      }
+      if (best) { fireTap(best); return true; }
+    } catch (e) {}
+    return false;
+  }
+  function dateWarn(doc, show){
+    try {
+      var chip = doc.getElementById('pcc-date-warn');
+      if (!show) { if (chip && chip.parentNode) chip.parentNode.removeChild(chip); return; }
+      if (chip) return;
+      chip = doc.createElement('div');
+      chip.id = 'pcc-date-warn';
+      chip.textContent = 'Date of Consult is NOT set - open the calendar icon and pick today before signing.';
+      chip.setAttribute('style', 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#fff;border:1.5px solid #b45309;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:9px 14px;font:600 13px -apple-system,Helvetica,Arial,sans-serif;color:#92400e;');
+      (doc.body || doc.documentElement).appendChild(chip);
+    } catch (e) {}
+  }
+  function runDateIn(doc, latePass){
+    if (!doc || doc.__consultDateDone) return;
+    if (!doc.querySelector('input[name="Cust_2_I_1"]')) return;
+    if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); return; }
+    var input = doc.querySelector('[name="displaydateCust_2_II_9_dummy"]');
+    if (!input) return;
+    if (!doc.__consultDateTried) {
+      doc.__consultDateTried = true;
+      var trig = findCalTrigger(doc, input);
+      if (trig) {
+        fireTap(trig);
+        setTimeout(function(){ try { tapTodayCell(doc); } catch(e){} }, 450);
+        setTimeout(function(){ try { if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); } } catch(e){} }, 1100);
+      }
+    }
+    if (latePass && !doc.__consultDateDone && !dateIsToday(doc)) dateWarn(doc, true);
+  }
+  function runDateAll(latePass){
+    runDateIn(document, latePass);
+    var ifr = document.querySelectorAll('iframe');
+    for (var i = 0; i < ifr.length; i++){ try { runDateIn(ifr[i].contentDocument, latePass); } catch(e){} }
+  }
 
   // v1.3 speed-up (his request, piloted like the tab bar): document-start +
   // a fast bounded burst — retry every 60ms until the form is fully set
   // (~3s cap) — so each check lands the moment PCC renders its field,
   // instead of at the old 1.5s/3s/6s/10s waves. The staggered tail remains
   // as a safety net for very late form frames. Not a permanent interval.
-  // (v1.5: the date is never set by script at all — see the Q9 note.)
+  // (v1.6: the date goes through PCC's calendar widget — see runDateIn.)
   var burstLeft = 50;
   (function burst(){
     if (runAll()) return;
     if (--burstLeft <= 0) return;
     setTimeout(burst, 60);
   })();
-  [1500, 3000, 6000, 10000].forEach(function (ms) { setTimeout(runAll, ms); });
+  [1500, 3000, 6000, 10000].forEach(function (ms) {
+    setTimeout(function(){ runAll(); runDateAll(ms >= 3000); }, ms);
+  });
 })();
