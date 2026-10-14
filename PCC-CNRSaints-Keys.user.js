@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.14
+// @version      1.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -881,6 +881,17 @@
   function isBoroPark() { return false; } // CNR/Saints script
   function doFAction() {
     if (!shouldRun()) return false;
+    // One press, ONE action (his discovery + rule, 2026-10-14): F was
+    // firing twice on the section list — sign AND a second target in the
+    // same press — and the two navigations raced his signing onto PCC's
+    // error page. The script runs once per frame, so the first F action
+    // stamps the top window and every other hearer stands down briefly.
+    try {
+      var tw = window.top || window;
+      var nowF = Date.now();
+      if (tw.__pccFAt && nowF - tw.__pccFAt < 1200) return true;
+      tw.__pccFAt = nowF;
+    } catch (e) {}
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
@@ -1117,6 +1128,39 @@
     } catch (e) {}
   }
   // Kept names: the startup schedule and click re-runs call these two.
+  // "Make sure there aren't two F buttons on the page" (his words,
+  // 2026-10-14). All F badges/buttons share one class, so this sweep can
+  // enforce it per document: on a section list the section badge is the
+  // only F allowed; anywhere else, a second badge with the same title in
+  // the same parent is a double-plant and goes. (Form pages keep their
+  // top + bottom save-exit F buttons — different parents, by design.)
+  function sweepFDoc(doc) {
+    try {
+      var bs = doc.querySelectorAll('.' + FBTN_CLASS);
+      if (bs.length <= 1) return;
+      var i, keep = null;
+      for (i = 0; i < bs.length; i++) {
+        if (/^(Sign|View) section/.test(bs[i].title || '')) { keep = bs[i]; break; }
+      }
+      if (keep) {
+        for (i = 0; i < bs.length; i++) if (bs[i] !== keep) { try { bs[i].remove(); } catch (e) {} }
+        return;
+      }
+      var seenFP = {};
+      for (i = 0; i < bs.length; i++) {
+        var key = (bs[i].title || '') + '|' + (bs[i].parentNode ? bs[i].parentNode.tagName + ':' + (bs[i].parentNode.className || '') : '');
+        if (seenFP[key]) { try { bs[i].remove(); } catch (e2) {} }
+        else seenFP[key] = 1;
+      }
+    } catch (e) {}
+  }
+  function sweepFAll() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) sweepFDoc(docs[d]);
+    } catch (e) {}
+  }
+
   function applyFSectionSignBadge() { applyFSectionListBadge(); }
   function applyFSectionListCleanup() { applyFSectionListBadge(); }
   function applyFLockBadge() {
@@ -1205,6 +1249,10 @@
   applyFSectionSignBadge();
   setTimeout(applyFSectionSignBadge, 1500);
   setTimeout(applyFSectionSignBadge, 4000);
+  setTimeout(sweepFAll, 2000);
+  setTimeout(sweepFAll, 4500);
+  setTimeout(sweepFAll, 9000);
+  setTimeout(sweepFAll, 13000);
   applyFViewAllBadge();
   setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
