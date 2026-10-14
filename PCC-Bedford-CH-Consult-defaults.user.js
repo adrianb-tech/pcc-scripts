@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.8
+// @version      1.9
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -133,24 +133,30 @@
     }
   }
 
-  // COPY mode (his ask, 2026-10-14): an "S" badge on the Save button,
-  // and the S key confirms the follow-up (clicks Save). Keys stay dead
-  // while he's typing in a field or a select has focus; no repeats.
-  var sPlanted = false;
+  // COPY mode (his ask, 2026-10-14): a "D" badge on the Save button,
+  // and the D key confirms the follow-up (clicks Save). (Was S for one
+  // version — S is taken by his name/room copy.) Keys stay dead while
+  // he's typing in a field or a select has focus; no repeats.
+  var dPlanted = false;
   function runCopyPopup() {
-    if (sPlanted || !popupFacilityOk()) return;
+    if (dPlanted || !popupFacilityOk()) return;
     var btn = saveButton();
     if (!btn) return;
     var badge = document.createElement('span');
-    badge.textContent = 'S';
+    badge.textContent = 'D';
     badge.style.cssText = 'display:inline-block;margin-left:6px;padding:1px 7px;' +
       'background:#2f6f4f;color:#fff;border-radius:6px;vertical-align:middle;' +
       'font:600 12px -apple-system,Helvetica,Arial,sans-serif;';
     btn.parentNode.insertBefore(badge, btn.nextSibling);
-    sPlanted = true;
+    dPlanted = true;
+    // Arm the key immediately: if PCC left focus sitting in the date
+    // field, D would read as "typing" and stay dead — hand focus to
+    // the page body. Clicking into a field himself re-arms the
+    // typing guard, as always.
+    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
     document.addEventListener('keydown', function(e) {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
-      if (e.key !== 's' && e.key !== 'S') return;
+      if (e.key !== 'd' && e.key !== 'D') return;
       var a = document.activeElement;
       if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return;
       var b = saveButton();
@@ -162,9 +168,17 @@
 
   // ============ RUN — once, patiently ============
   if (/newassess\.jsp/.test(location.pathname)) {
-    var tries = 0;
+    // Take keyboard focus the moment the popup opens (his F -> D -> F
+    // flow): the popup asks its own window to come forward on the
+    // first ticks; if Dia ignores programmatic focus, this is a no-op
+    // and nothing changes. Stops the moment he touches anything.
+    var tries = 0, interacted = false;
+    ['keydown', 'mousedown'].forEach(function(ev) {
+      document.addEventListener(ev, function() { interacted = true; }, { once: true, capture: true });
+    });
     (function waitPopup() {
-      if (isCopyPopup()) { runCopyPopup(); if (sPlanted) return; }
+      if (!interacted && tries < 8) { try { window.focus(); } catch (e) {} }
+      if (isCopyPopup()) { runCopyPopup(); if (dPlanted && tries > 8) return; }
       else runNewPopup();
       if (++tries < 20) setTimeout(waitPopup, 250);
     })();
