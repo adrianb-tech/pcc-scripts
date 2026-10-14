@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.11
+// @version      1.12
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -22,6 +22,9 @@
   //     (questionReviewed), NOT images — the old img.qcheck selector
   //     never matched anything on this form.
   // EVERY open (fresh or copied):
+  //   - 1A Reason = a (Psychiatric Evaluation) CHECKED (his rule,
+  //     2026-10-14 14:42 — NEW and follow-up alike; this restores the
+  //     original script, which always set it)
   //   - 3D GDR = No, 3F new recommendations = No
   //   - every qcheck ack link gets clicked
   //   - F1 text and E. Plan text: never touched (the plan lives in the note)
@@ -52,6 +55,7 @@
   }
 
   function applyForm() {
+    setChecked(control('checkbox', 'Cust_1_A', 'a'), true); // Reason: Psychiatric Evaluation (always)
     setChecked(control('radio', 'Cust_3_D', 'b'), true); // GDR: No
     setChecked(control('radio', 'Cust_3_F', 'b'), true); // New recommendations: No
     var acks = document.querySelectorAll('a.qcheck');
@@ -60,6 +64,7 @@
     if (!formLooksBlank()) return; // worked / copied form: checks stay as they are
     var boxes = document.querySelectorAll('input[type="checkbox"][name^="Cust_"]');
     for (var j = 0; j < boxes.length; j++) setChecked(boxes[j], false);
+    setChecked(control('checkbox', 'Cust_1_A', 'a'), true);  // Reason: Psychiatric Evaluation
     setChecked(control('checkbox', 'Cust_3_C', 'a'), true);  // Chart Reviewed
     setChecked(control('checkbox', 'Cust_3_C', 'b'), true);  // Labs and Workup Noted
     setChecked(control('checkbox', 'Cust_3_C1', 'e'), true);  // Care coordinated: Nursing
