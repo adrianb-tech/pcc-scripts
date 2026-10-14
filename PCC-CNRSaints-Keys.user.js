@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.15
+// @version      1.16
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1146,11 +1146,22 @@
         for (i = 0; i < bs.length; i++) if (bs[i] !== keep) { try { bs[i].remove(); } catch (e) {} }
         return;
       }
-      var seenFP = {};
+      // A duplicate is a second badge next to the SAME anchor element
+      // (the double-plant race). v1.15 keyed on the parent's tag+class —
+      // PCC gives the top and bottom toolbars IDENTICAL markup, so the
+      // sweep ate the bottom Save & Exit F and the badge flickered /
+      // stayed gone (his report, 2026-10-14). Key on the anchor node
+      // itself: top and bottom buttons are different elements, so both
+      // keep their F.
+      var seenFP = [];
       for (i = 0; i < bs.length; i++) {
-        var key = (bs[i].title || '') + '|' + (bs[i].parentNode ? bs[i].parentNode.tagName + ':' + (bs[i].parentNode.className || '') : '');
-        if (seenFP[key]) { try { bs[i].remove(); } catch (e2) {} }
-        else seenFP[key] = 1;
+        var anchor = bs[i].previousElementSibling || bs[i].parentNode;
+        var dup = false;
+        for (var s2 = 0; s2 < seenFP.length; s2++) {
+          if (seenFP[s2].anchor === anchor && seenFP[s2].title === (bs[i].title || '')) { dup = true; break; }
+        }
+        if (dup) { try { bs[i].remove(); } catch (e2) {} }
+        else seenFP.push({ anchor: anchor, title: bs[i].title || '' });
       }
     } catch (e) {}
   }
