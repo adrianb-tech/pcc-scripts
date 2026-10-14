@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.1
+// @version      1.2
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -65,6 +65,22 @@
     }
   }
 
+  // S and G beside More (his ask, 2026-10-14), same rh-header-btn
+  // look. They fire the REAL features, not copies: S dispatches the
+  // keystroke the S script listens for (it doesn't check isTrusted),
+  // in this frame, whose text carries the resident name + Location;
+  // G clicks this frame's G badge when one exists (Grab-all's own
+  // requestGrab: local grab + broadcast to the other frames), else
+  // writes Grab-all's broadcast signal directly.
+  function triggerS() {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 's', bubbles: true, cancelable: true }));
+  }
+  function triggerG() {
+    var badge = document.querySelector('.pcc-g-badge');
+    if (badge) { badge.click(); return; }
+    try { localStorage.setItem('pccGrabSignal', String(Date.now())); } catch (e) {}
+  }
+
   function run() {
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar) return;
@@ -76,6 +92,28 @@
       b.textContent = 'More';
       b.addEventListener('click', function () { shown = !shown; apply(); });
       bar.appendChild(b);
+    }
+    var more = document.getElementById(BTN_ID);
+    if (!document.getElementById('tmSBtn')) {
+      var s = document.createElement('button');
+      s.type = 'button';
+      s.id = 'tmSBtn';
+      s.className = 'rh-header-btn';
+      s.textContent = 'S';
+      s.title = 'Copy name + room (same as the S key)';
+      s.addEventListener('click', triggerS);
+      bar.insertBefore(s, more.nextSibling);
+    }
+    if (!document.getElementById('tmGBtn')) {
+      var g = document.createElement('button');
+      g.type = 'button';
+      g.id = 'tmGBtn';
+      g.className = 'rh-header-btn';
+      g.textContent = 'G';
+      g.title = 'Grab all — queue everything on screen (same as the G key)';
+      g.addEventListener('click', triggerG);
+      var sBtn = document.getElementById('tmSBtn');
+      bar.insertBefore(g, sBtn ? sBtn.nextSibling : more.nextSibling);
     }
     apply();
   }
