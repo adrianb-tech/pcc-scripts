@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.3
+// @version 1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -96,7 +96,7 @@
       box.__mode = mode;
       var b = box.firstChild, s = box.lastChild;
       if (mode === 'alert'){
-        box.style.cssText = 'display:inline-block;margin-left:16px;padding:5px 16px;background:#e60000;color:#fff;border:3px solid #7a0000;border-radius:8px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-weight:800;line-height:1.2;vertical-align:middle;';
+        box.style.cssText = 'display:inline-block;margin-left:16px;padding:5px 16px;background:#ff1a1a;color:#fff;border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-weight:800;line-height:1.2;vertical-align:middle;';
         b.style.cssText = 'font-size:26px;letter-spacing:1px;';
         s.style.cssText = 'font-size:14px;font-weight:600;margin-left:12px;';
       } else {
@@ -110,7 +110,7 @@
       box.id = BOX_ID; box.__mode = mode;
       var b2 = document.createElement('span'), s2 = document.createElement('span');
       if (mode === 'alert'){
-        box.style.cssText = 'display:inline-block;margin-left:16px;padding:5px 16px;background:#e60000;color:#fff;border:3px solid #7a0000;border-radius:8px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-weight:800;line-height:1.2;vertical-align:middle;';
+        box.style.cssText = 'display:inline-block;margin-left:16px;padding:5px 16px;background:#ff1a1a;color:#fff;border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;font-family:-apple-system,Helvetica,Arial,sans-serif;font-weight:800;line-height:1.2;vertical-align:middle;';
         b2.style.cssText = 'font-size:26px;letter-spacing:1px;';
         s2.style.cssText = 'font-size:14px;font-weight:600;margin-left:12px;';
       } else {
