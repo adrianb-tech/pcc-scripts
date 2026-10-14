@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version 1.7
+// @version 1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -724,6 +724,15 @@
       else adm.parentNode.appendChild(badge);
     } catch (e) {}
   }
+  function removeListBadges(cls) {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var stale = docs[d].querySelectorAll('.' + cls);
+        for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
+      }
+    } catch (e) {}
+  }
   function applyFEditBadge() {
     try {
       if (!shouldRun()) return;
@@ -737,6 +746,11 @@
         badgeCls = FBTN_CLASS + '-copy';
       }
       if (!target || !target.parentNode) return;
+      // ONLY the current state's badge may exist (his rule, 2026-10-14:
+      // a form In Progress means F is on edit ONLY). A badge planted in
+      // the earlier state — copy, before the follow-up existed — used to
+      // survive forever because each pass only ever added its own.
+      removeListBadges(badgeCls === FBTN_CLASS + '-edit' ? FBTN_CLASS + '-copy' : FBTN_CLASS + '-edit');
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge(label, function() { doFAction(); });
       badge.classList.add(badgeCls);
@@ -889,6 +903,28 @@
   applyFEditBadge();
   setTimeout(applyFEditBadge, 1500);
   setTimeout(applyFEditBadge, 4000);
+  setTimeout(applyFEditBadge, 8000);
+  // The list can change under the page (copy creates the In Progress
+  // row without a full reload) — re-judge the badge on clicks, throttled.
+  (function attachEditBadgeClicks() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        (function(doc) {
+          if (doc.__fEditClickAttached) return;
+          doc.__fEditClickAttached = true;
+          var last = 0;
+          doc.addEventListener('click', function() {
+            var now = Date.now();
+            if (now - last < 1000) return;
+            last = now;
+            setTimeout(applyFEditBadge, 300);
+          }, true);
+        })(docs[d]);
+      }
+    } catch (e) {}
+    setTimeout(attachEditBadgeClicks, 3000);
+  })();
   applyFViewBadge();
   setTimeout(applyFViewBadge, 1500);
   setTimeout(applyFViewBadge, 4000);
