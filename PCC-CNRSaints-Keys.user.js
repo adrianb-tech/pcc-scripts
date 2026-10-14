@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.22
+// @version      1.23
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -226,6 +226,11 @@
       if (!shouldRun()) return;
       var targets = findAllSaveExitChain();
       for (var ti = 0; ti < targets.length; ti++) {
+        // BOTTOM F BADGE OFF (his bisect, 2026-10-14): he suspects the
+        // bottom badge is what makes the form misread — the form page
+        // gets ONE F badge, on the TOP Save & Exit only. Leave the
+        // bottom one off until his verdict says otherwise.
+        if (ti > 0) continue;
         var target = targets[ti];
         if (!target || !target.parentNode) continue;
         var nxt = target.nextSibling;
