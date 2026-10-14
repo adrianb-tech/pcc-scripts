@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.19
+// @version 1.20
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -126,6 +126,16 @@
     // notes instead (his screenshot: "HTN, HLD, AUD, tobacco use
     // disorder" for a chart whose answer was the admission list).
     grab(text, /\bwith\s+diagnoses\s+of\s*:\s*([A-Z][^\n]+?)(?=\.\s+[A-Z0-9]|\.\s*$|\n|$)/gm).forEach(function (s) {
+      s = s.trim();
+      if (s.length < 3) return;
+      if (dxLists.indexOf(s) < 0) dxLists.push(s);
+    });
+    // "With a DX of leg swelling, heart failure, essential
+    // hypertension, prediabetes." (his CH social-work note,
+    // 2026-10-14) — the same canonical family: a clinician stating
+    // the resident's diagnosis list outright. Items here are
+    // lowercase prose, so no capital-start requirement.
+    grab(text, /\bwith\s+(?:a\s+)?dx\s+of\s*:?\s*([A-Za-z][^\n]+?)(?=\.\s+[A-Z]|\.\s*$|\n|$)/gi).forEach(function (s) {
       s = s.trim();
       if (s.length < 3) return;
       if (dxLists.indexOf(s) < 0) dxLists.push(s);
