@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.7
+// @version      1.8
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -93,10 +93,86 @@
   // too. The row shows in both More and Less states.
   var ROW_ID = 'tmCardsRow';
 
-  function cardData() {
-    var card = document.getElementById('copyInfoTable');
-    if (!card) return null;
+  // ---------- self-sourced tile data ----------
+  // The tile row used to read its values from the header card
+  // (#copyInfoTable). He retired that card (2026-10-14), so the row
+  // now computes every value itself, with the same proven finders
+  // the card used. The card remains a fallback while it still
+  // exists on a page (update order doesn't matter).
+  function fmtAllergies(raw) {
+    if (!raw) return '';
+    var cleaned = raw.trim();
+    if (/^no\s+known\s+(?:drug\s+)?allergies/i.test(cleaned) || /^nkda?/i.test(cleaned)) return 'NKA';
+    var list = cleaned.split(/[,;\/\n]+/);
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i].replace(/\s+/g, ' ').trim();
+      item = item.replace(/(?:Copy|Copied)$/i, '').trim();
+      if (!item) continue;
+      item = item.replace(/\bpen[ie]cill?in\b/gi, 'PCN');
+      out.push(item);
+    }
+    return out.join(', ');
+  }
+  function isCrownHeights() {
+    try {
+      var els = document.querySelectorAll('select, button, a, span, div, td');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').trim();
+        if (tx.length > 90 || tx.length < 6) continue;
+        if (!/crown\s*heights/i.test(tx)) continue;
+        var r = null;
+        try { r = els[i].getBoundingClientRect(); } catch (e) {}
+        if (r && r.top >= -50 && r.top < 300) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  function roomBedNumber(withWing) {
+    try {
+      var txt = (document.body && document.body.textContent) ? document.body.textContent : '';
+      var v = '';
+      var m = txt.match(/\bLocation\s*:?\s*([^\n]*?)(?=\s*(?:Status|Code Status|Physician|DOB|Admission|Initial Admission|Discharge|Allergies|Special Instructions)\b|\n|$)/);
+      if (m) v = m[1].replace(/\s+/g, ' ').trim();
+      if (!v) {
+        var li = txt.search(/\bLocation\b/i);
+        if (li !== -1) v = txt.substr(li, 40).replace(/\s+/g, ' ').trim();
+      }
+      var rm = v.match(/\b(\d{2,4})\s*-?\s*([A-Za-z])?\b/);
+      if (!rm) return '';
+      var pre = '';
+      if (withWing) {
+        var tok = v.slice(0, rm.index).match(/([A-Za-z]+)\s*$/);
+        if (tok && /^(east|west)$/i.test(tok[1])) pre = tok[1].charAt(0).toUpperCase();
+        else if (tok && tok[1].length === 1 && /[ew]/i.test(tok[1])) pre = tok[1].toUpperCase();
+      }
+      return pre + rm[1] + (rm[2] ? rm[2].toUpperCase() : '');
+    } catch (e) { return ''; }
+  }
+  function selfData() {
     var out = {};
+    try {
+      var txt = (document.body && document.body.textContent) ? document.body.textContent : '';
+      var m = txt.match(/\((\d{1,3})\/(Male|Female)\)/);
+      if (m) out.ageSex = m[1] + (m[2] === 'Male' ? 'M' : 'F');
+      var room = roomBedNumber(isCrownHeights());
+      if (room) out.room = room;
+      var al = document.querySelector('.residentAllergies .residentDetailValue');
+      if (al) { var f = fmtAllergies((al.textContent || '').trim()); if (f) out.allergies = f; }
+      var a1 = txt.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (a1) out.admission = a1[1] + ' (re-entry)';
+      else {
+        var a2 = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+        if (a2) out.admission = a2[1] + ' (initial)';
+      }
+    } catch (e) {}
+    return out;
+  }
+
+  function cardData() {
+    var out = selfData();
+    var card = document.getElementById('copyInfoTable');
+    if (!card) return (out.ageSex || out.room || out.allergies || out.admission) ? out : null;
     var cells = card.children;
     for (var i = 0; i < cells.length; i++) {
       var c = cells[i];
@@ -108,10 +184,10 @@
       var val = valSpan ? (valSpan.textContent || '').trim() : '';
       var btn = c.querySelector('.pcc-fill-copy');
       var qv = btn ? btn.getAttribute('data-fill-value') : null;
-      if (name.indexOf('age') === 0) out.ageSex = qv || val;
-      else if (name.indexOf('room') === 0) out.room = val;
-      else if (name.indexOf('allergies') === 0) { out.allergies = qv || val; }
-      else if (name.indexOf('admission') === 0) out.admission = val;
+      if (name.indexOf('age') === 0) { if (!out.ageSex) out.ageSex = qv || val; }
+      else if (name.indexOf('room') === 0) { if (!out.room) out.room = val; }
+      else if (name.indexOf('allergies') === 0) { if (!out.allergies) out.allergies = qv || val; }
+      else if (name.indexOf('admission') === 0) { if (!out.admission) out.admission = val; }
     }
     return (out.ageSex || out.room || out.allergies || out.admission) ? out : null;
   }
@@ -180,6 +256,16 @@
       ';line-height:1.3;color:' + (opts.color || '#131c2b') + ';';
     if (opts.fit) v.setAttribute('data-fit', '1');
     d.appendChild(lab); d.appendChild(v);
+    if (opts.fill) {
+      // Carry the Copy-button contract on the tile itself, so G
+      // (Grab-all) keeps queuing this value even with no button:
+      // it clicks .pcc-fill-copy elements, which lands on the
+      // tile's own click handler. Pre-marked: no G badge planted.
+      d.classList.add('pcc-fill-copy');
+      d.setAttribute('data-g-badge', '1');
+      d.setAttribute('data-fill-label', opts.fill.label);
+      d.setAttribute('data-fill-value', opts.fill.value);
+    }
     if (opts.click) {
       // The whole tile is the button (his ask, 2026-10-14): click
       // anywhere on it does exactly what its Copy button did; the
@@ -215,9 +301,9 @@
       var kind = m && m[3] ? m[3].toLowerCase() : '';
       row.appendChild(tile(kind ? 'Admission (' + kind + ')' : 'Admission', m ? m[1] : d.admission, {}));
     }
-    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', click: { label: 'Age/Sex', value: d.ageSex } }));
+    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', click: { label: 'Age/Sex', value: d.ageSex }, fill: { label: 'Age/Sex', value: d.ageSex } }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
-    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies } }));
+    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, {}));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
