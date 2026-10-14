@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.1
+// @version      1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-emphasis.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-emphasis.user.js
 // @name         Every facility — Header emphasis
@@ -107,9 +107,13 @@
   }
 
   function run(){
-    wrapPattern('\\(\\s*\\d{1,3}\\s*\\/\\s*(?:male|female|m|f)\\s*\\)');   // (94/Female)
-    boldLabelValue('Location', /\d{1,4}-[A-Za-z]/);                        // 8 East 836-B, IPU 821-P, W 242-P
-    boldLabelValue('Admission\\s*\\(re-?entry\\)', /\d{1,2}\/\d{1,2}\/\d{2,4}/);  // 9/20/2026
+    // All three highlights removed at his request (2026-10-13): age/sex,
+    // room (Location), and the re-admission date are no longer emphasized.
+    // The machinery stays so any single one can be switched back on by
+    // restoring its line here:
+    //   wrapPattern('\\(\\s*\\d{1,3}\\s*\\/\\s*(?:male|female|m|f)\\s*\\)');   // (94/Female)
+    //   boldLabelValue('Location', /\d{1,4}-[A-Za-z]/);                        // room
+    //   boldLabelValue('Admission\\s*\\(re-?entry\\)', /\d{1,2}\/\d{1,2}\/\d{2,4}/);  // re-admission date
   }
 
   // Scheduling: bounded staggered runs after load + re-run on your clicks.
