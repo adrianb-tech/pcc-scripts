@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -630,6 +630,37 @@
     return null;
   }
   function isBoroPark() { return false; } // Bedford/CH only script
+
+  // Commit-before-save (his evidence, 2026-10-14): clicking Save & Exit
+  // with the mouse registers the note correctly; the scripted F did
+  // not. A real click first blurs the field in focus — that blur is
+  // what makes PCC commit the field (the date widget parses on blur,
+  // fields commit on blur). A synthetic click never moves focus, so
+  // the commit never ran and the section saved as incomplete. Scripted
+  // F now does exactly what his mouse does: blur, a beat for the
+  // handlers, then click.
+  function commitBlur(){
+    try {
+      var docs = allDocs(), targets = [];
+      for (var i = 0; i < docs.length; i++) {
+        var ae = docs[i].activeElement;
+        if (!ae) continue;
+        var tag = ae.tagName || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae.isContentEditable) targets.push(ae);
+      }
+      for (var j = 0; j < targets.length; j++) { try { targets[j].blur(); } catch (e) {} }
+    } catch (e) {}
+  }
+  function fireSaveClick(btn){
+    try {
+      var nowS = Date.now();
+      if (window.__pccSaveAt && nowS - window.__pccSaveAt < 1000) return true;
+      window.__pccSaveAt = nowS;
+    } catch (e) {}
+    commitBlur();
+    setTimeout(function(){ fireClick(btn); }, 120);
+    return true;
+  }
   function doFAction() {
     if (!shouldRun()) return false;
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
@@ -662,10 +693,10 @@
     if (ns) { fireClick(ns); return true; }
     // Form edit page (Bedford/CH): F clicks Save & Sign & Lock & Exit (not Save & Exit)
     var t = findSaveSignLockExit();
-    if (t) { fireClick(t); return true; }
+    if (t) return fireSaveClick(t);
     // Fallback: Save & Exit (shouldn't happen at Bedford/CH, but just in case)
     var se = findSaveExit();
-    if (se) { fireClick(se); return true; }
+    if (se) return fireSaveClick(se);
     return false;
   }
 
