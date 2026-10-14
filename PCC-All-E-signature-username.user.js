@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Form helper: e-signature username
-// @version      1.3
+// @version      1.4
 // @description  On the Electronic Signature popup: plants the facility's login for the password manager (CNR/Saints pja.abalestra, Boro Park csc.abalestra, Bedford allure.abalestra, Crown Heights allure.AdBalestra), focuses the password field, and focuses Sign once the password is filled — never clicks Sign. v1.3: permanent intervals replaced with bounded staggered checks + input events (no-timers rule). Filed per facility in the master key — this one file serves all of them.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-E-signature-username.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-E-signature-username.user.js
@@ -81,7 +81,48 @@
     [600, 1500, 3000, 6000, 10000, 15000].forEach(function (ms) { setTimeout(check, ms); });
   }
 
+  function findSignBtn(){
+    var btns = document.querySelectorAll('input[type="button"],input[type="submit"],button');
+    for (var i = 0; i < btns.length; i++){
+      if (/^Sign$/i.test((btns[i].value || btns[i].textContent || '').trim())) return btns[i];
+    }
+    return null;
+  }
+
+  // D = Sign (his ask, 2026-10-14): left hand presses D, right hand
+  // presses Enter (Sign is focused once the password is filled) —
+  // either hand can sign. Green D badge beside Sign; key handler
+  // ignores presses while typing in a field, with modifiers, or on
+  // key-repeat. Planted on every e-sig popup, independent of the
+  // login-hint flow below.
+  var dArmed = false;
+  function plantD(){
+    if (!/Electronic Signature/i.test(document.title + ' ' + (document.body ? document.body.innerText.slice(0, 400) : ''))) return;
+    var sign = findSignBtn();
+    if (!sign || !sign.parentNode) return;
+    if (!document.getElementById('tmEsigD')) {
+      var d = document.createElement('span');
+      d.id = 'tmEsigD';
+      d.textContent = 'D';
+      d.title = 'D = Sign';
+      d.style.cssText = 'display:inline-block;margin-left:8px;padding:3px 12px;background:#1e7d32;color:#fff;border-radius:999px;font:bold 14px -apple-system,sans-serif;vertical-align:middle;';
+      sign.parentNode.insertBefore(d, sign.nextSibling);
+    }
+    if (!dArmed) {
+      dArmed = true;
+      document.addEventListener('keydown', function (ev) {
+        if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.repeat) return;
+        if (!ev.key || ev.key.toLowerCase() !== 'd') return;
+        var tg = ev.target;
+        if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT' || tg.isContentEditable)) return;
+        var s = findSignBtn();
+        if (s) { ev.preventDefault(); s.click(); }
+      });
+    }
+  }
+
   function run(){
+    plantD();
     if (document.getElementById('tmUserHint')) return;
     if (!/Electronic Signature/i.test(document.title + ' ' + (document.body ? document.body.innerText.slice(0, 400) : ''))) return;
     var pw = document.querySelector('input[type="password"]');
