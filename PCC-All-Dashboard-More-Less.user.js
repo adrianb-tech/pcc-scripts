@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.9
+// @version      3.0
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -295,7 +295,7 @@
     var d = document.createElement('div');
     d.style.cssText = 'background:' + (opts.rose ? '#fdf3f2' : '#fff') + ';border:1px solid ' +
       (opts.rose ? '#f0c8c2' : '#e2e8f0') + ';border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);' +
-      'padding:' + (opts.pad || '12px 16px 14px') + ';' + (opts.grow ? 'flex:1 1 400px;min-width:340px;' : (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;'));
+      'padding:' + (opts.pad || '12px 16px 14px') + ';' + (opts.wide ? 'flex:1 1 520px;min-width:440px;' : (opts.grow ? 'flex:1 1 400px;min-width:340px;' : (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;')));
     var lab = document.createElement('div');
     lab.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;';
     var ls = document.createElement('span');
@@ -305,10 +305,26 @@
     lab.appendChild(ls);
     if (opts.btn) lab.appendChild(opts.btn);
     var v = document.createElement('div');
-    v.textContent = valueText;
-    v.style.cssText = 'margin-top:9px;font-size:' + (opts.size || 21) + 'px;font-weight:' + (opts.weight || 700) +
-      ';line-height:' + (opts.multi ? '1.45' : '1.3') + ';color:' + (opts.color || '#131c2b') + ';' +
-      (opts.multi ? 'white-space:pre-line;' : '');
+    var fontCss = 'font-size:' + (opts.size || 21) + 'px;font-weight:' + (opts.weight || 700) +
+      ';line-height:' + (opts.multi ? '1.45' : '1.3') + ';color:' + (opts.color || '#131c2b') + ';';
+    if (opts.cols) {
+      // Banner layout (his pick, design A in the row): the lines
+      // flow into columns of at most 4, so the tile grows sideways,
+      // never tall: 1-4 lines = 1 column, 10 lines = 3 columns.
+      var lines = String(valueText).split('\n');
+      var ncols = Math.max(1, Math.ceil(lines.length / 4));
+      var per = Math.ceil(lines.length / ncols);
+      v.style.cssText = 'margin-top:9px;display:flex;gap:26px;';
+      for (var ci = 0; ci < ncols; ci++) {
+        var col = document.createElement('div');
+        col.style.cssText = fontCss + 'white-space:pre-line;';
+        col.textContent = lines.slice(ci * per, (ci + 1) * per).join('\n');
+        v.appendChild(col);
+      }
+    } else {
+      v.textContent = valueText;
+      v.style.cssText = 'margin-top:9px;' + fontCss + (opts.multi ? 'white-space:pre-line;' : '');
+    }
     if (opts.fit) v.setAttribute('data-fit', '1');
     d.appendChild(lab); d.appendChild(v);
     if (opts.fill) {
@@ -413,12 +429,14 @@
     if (d) {
       d.weight = weightValue();
       d.meds = medsDisplay();
+      var mb2 = document.getElementById('copyMedListBtn');
+      d.medsFill = (mb2 && mb2.hasAttribute('data-fill-value')) ? mb2.getAttribute('data-fill-value') : null;
       d.bims = bimsValue();
       d.rel = relValue();
     }
     var row = document.getElementById(ROW_ID);
     if (!d) { if (row) row.remove(); return; }
-    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.meds || '', d.bims || '', d.rel || ''].join('|');
+    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || ''].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
     row = document.createElement('div');
@@ -435,9 +453,20 @@
     if (d.room) row.appendChild(tile('Room', d.room, {}));
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
+    if (d.meds) {
+      // Design A in the row, right after Weight (his pick): a wide
+      // banner tile whose lines flow into columns. First-class tile
+      // now (copy + G like the others) reading the value the
+      // Dashboard stamps at render; the delegate proxy remains only
+      // as a fallback for older Dashboard installs.
+      if (d.medsFill !== null && d.medsFill !== undefined) {
+        row.appendChild(tile('Psych meds', d.meds, { wide: true, cols: true, multi: true, size: 13, weight: 600, click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }));
+      } else {
+        row.appendChild(tile('Psych meds', d.meds, { wide: true, cols: true, multi: true, size: 13, weight: 600, delegate: 'meds' }));
+      }
+    }
     if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 340, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
     if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 340, fit: true, click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
-    if (d.meds) row.appendChild(tile('Psych meds', d.meds, { multi: true, size: 13, weight: 600, maxw: '760px', delegate: 'meds' }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
   }
