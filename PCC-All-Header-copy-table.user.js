@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Header copy table
-// @version 1.19
+// @version 1.20
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @match        https://*.pointclickcare.com/*
@@ -320,7 +320,10 @@
     var wrap = doc.createElement('span');
     wrap.id = 'copyInfoTable';
     wrap.setAttribute('data-sig', sig);
-    wrap.style.cssText = 'display:inline-block;vertical-align:middle;margin-left:12px;' +
+    // Floated, not in flow (v1.20, his request): the card hovers at the spot
+    // right after the allergies value without stretching the header — the
+    // space before/after the Allergies section keeps its original size.
+    wrap.style.cssText = 'position:absolute;z-index:60;margin-left:12px;' +
       'background:linear-gradient(135deg,#263449,#131c2b);border-radius:16px;' +
       'box-shadow:0 10px 28px rgba(2,6,23,.35);padding:14px 18px 8px;min-width:430px;max-width:640px;' +
       'font-family:-apple-system,Helvetica,Arial,sans-serif;color:#f8fafc;';
