@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.4
+// @version 1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -136,9 +136,23 @@
       else clear();
       return;
     }
-    if (rd >= lf.d) render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
-    else if (SHOW_OK) render(re.node, 'ok', '', 're-entry ' + re.str + ' is before last psych form ' + lf.s + ' - OK');
-    else clear();
+    if (rd >= lf.d) {
+      render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
+      // Publish the verdict so the tile-row script can show the same
+      // warning beside the G button in the header bar (his ask,
+      // 2026-10-14). Keyed to this resident + this re-entry date.
+      try {
+        var idm = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+        localStorage.setItem('tmReadmitNote', JSON.stringify({ id: idm ? idm[1] : '', date: re.str, ts: Date.now() }));
+      } catch (e) {}
+    } else {
+      try {
+        var cur = JSON.parse(localStorage.getItem('tmReadmitNote') || 'null');
+        if (cur && cur.date === re.str) localStorage.removeItem('tmReadmitNote');
+      } catch (e) {}
+      if (SHOW_OK) render(re.node, 'ok', '', 're-entry ' + re.str + ' is before last psych form ' + lf.s + ' - OK');
+      else clear();
+    }
   }
 
   // Bounded staggered runs after load — then it stops (no permanent interval).
