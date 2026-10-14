@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.16
+// @version 1.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -77,6 +77,10 @@
     // Template brackets are markup, not text; "Dementia(FTLD)" needs its space (2026-10-13)
     text = text.replace(/[\[\]]/g, '').replace(/([A-Za-z])\(/g, '$1 (');
     // "Primary admitting diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
+    // "c. diff" carries a period that reads as a sentence end to the list
+    // captures below — the PMHX grab stopped mid-list at "...stroke, c"
+    // (his Saints chart, 2026-10-14). Normalize it to C-Diff up front.
+    text = text.replace(/\bc\.\s*diff\b/gi, 'C-Diff');
     text = text.replace(/\b(?:primary\s+)?admitting diagnosis\s*:\s*/gi, '');
     text = text.replace(/\badmission diagnosis\s*:\s*/gi, '');
 
@@ -94,6 +98,20 @@
     grab(text, /\bPMHx?\b\s*:?\s*(?:significant for\s*)?([^\n]+?)(?=\.\s+[A-Z]|\n|$)/gi).forEach(push);
     // "The patient with h/o CHF, Asthma, ... was seen" carries the whole list (CNR note, 2026-10-13)
     grab(text, /\b(?:patient|pt)\s+with\s+(?:h\/o|history\s+of)\s+(.+?)\s+was\s+seen\b/gi).forEach(push);
+
+    // Nursing notes carry the facility's canonical list as "Dx- A, B, C."
+    // (his Saints chart, 2026-10-14). That list IS the answer when present:
+    // verbatim as written (no abbreviation pass — "Osteoarthritis" stays
+    // whole), and prose mining is skipped entirely, so partial prose lists
+    // (the MD's PMHX sentence) can't pollute or truncate it.
+    var dxLists = [];
+    grab(text, /\bDx\s*[-:]\s*([A-Z][^\n]+?)(?=\.\s+[A-Z]|\.\s*$|\n|$)/gm).forEach(function (s) {
+      s = s.trim();
+      if (/^[A-Z]\d{1,3}(?:\.\d+)?\b/.test(s)) return;   // "Dx: G30.9 ..." code-first lines aren't prose lists
+      if (s.length < 3) return;
+      dxLists.push(s);
+    });
+    var verbatimOnly = dxLists.length > 0;
 
     // "Additional Diagnosis:" / "Secondary diagnosis:" — capture verbatim
     // (explicit clinician statements, bypass condensing filters)
@@ -152,6 +170,11 @@
 
     // Normalize for dedup: lowercase, strip qualifiers, keep the core concept
     function normDx(s){
+      // DM type-2 spellings are one concept (his Saints list says "DM2";
+      // prose says "type 2 DM" — keep the first form, drop the rest)
+      if (/\b(?:dm2|dmii|t2dm)\b/i.test(s) || /\btype\s*(?:2|ii)\s*(?:dm|diabetes)/i.test(s) || /\bdiabetes\s+mellitus\s+type\s*(?:2|ii)/i.test(s)) return 'dm2key';
+      // "stroke" in prose == "Cerebral Infarction" in the canonical list
+      if (/\bstroke\b/i.test(s) || /\bcerebral\s+infarction\b/i.test(s) || /\bcva\b/i.test(s)) return 'strokekey';
       // "S/P mechanical fall" / "status postfall" / "s/p fall" = one concept (his call, 2026-10-13)
       if (/\bpostfall\b/i.test(s) || (/\b(?:s\/?p|status\s*post)\b/i.test(s) && /\bfall\b/i.test(s))) return 'fallstatus';
       // "Seizures" and "Seizure disorder" are the same thing (his call, 2026-10-13)
@@ -162,12 +185,26 @@
         .replace(/[^a-z0-9]/g, '');
     }
 
+    // Dx- lists lead, cleaned only by the safety filters (procedures and
+    // weakness/function items out) — never abbreviated, never condensed.
+    function cleanDxList(s) {
+      return s.replace(/[\s.]+$/, '').split(/\s*,\s*/).filter(function (p) {
+        if (!p || isProcedureItem(p) || isWeaknessItem(p)) return false;
+        if (/^(?:unspecified|not intractable|intractable|with status epilepticus|without status epilepticus)$/i.test(p.trim())) return false;
+        return true;
+      }).join(', ');
+    }
+
     var seen = {}, out = [];
+    dxLists.forEach(function (s) {
+      var c = cleanDxList(s);
+      if (c && !seen['v:' + c.toLowerCase()]) { seen['v:' + c.toLowerCase()] = 1; out.push(c); }
+    });
     // Verbatim diagnoses go first, unfiltered
     verbatim.forEach(function(v){
       if (v && !seen['v:'+v.toLowerCase()]) { seen['v:'+v.toLowerCase()] = 1; out.push(v); }
     });
-    raw.forEach(function(str){
+    if (!verbatimOnly) raw.forEach(function(str){
       // Clean out tailing narrative phrases like "seen today for PA admission"
       str = str.replace(/\bseen\s+today\s+for\s+[^\n,]*/gi, '');
       // Generalized history labels are not diagnoses — the whole list is a history
@@ -193,6 +230,7 @@
                .replace(/^(?:hx|h\/o|history|recent|adm with dx|admitted for)\s+of\s+/i, '')
                .replace(/^\/PSH\s*/i, '');
 
+        if (/^(?:c|diff)$/i.test(it)) return;   // split "c. diff" debris is not a diagnosis
         if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it) || isWeaknessItem(it)) return;
         if (/\d+\.\d+/.test(it)) return;
         // Reject fragments and narrative leftovers
@@ -242,7 +280,7 @@
     });
     out = finalOut;
     // Cap at 12 most important (ICD lines come first, so they're prioritized)
-    return out.slice(0, 12);
+    return { items: out.slice(0, 12), verbatimOnly: verbatimOnly };
   }
 
   // ===== DOM Helpers =====
@@ -348,13 +386,16 @@
   function runDx(){
     var out = document.getElementById('pnDxOut');
     var copy = document.getElementById('pnDxCopy');
-    var items = extractDx(notesText());
+    var res = extractDx(notesText());
+    var items = res.items;
     if (!items.length) {
       out.textContent = 'No serious diagnoses found in the loaded notes.';
       copy.style.display = 'none';
       return;
     }
-    items = abbrDx(items);
+    // A clinician's own list (Dx- / Additional / Secondary) is presented
+    // as written; the abbreviation pass is only for prose-mined items.
+    items = res.verbatimOnly ? items : abbrDx(items);
     var text = items.join(', ');
     out.textContent = text;
     copy.style.display = '';
