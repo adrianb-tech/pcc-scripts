@@ -1,82 +1,93 @@
 // ==UserScript==
-// @version      1.5
-// @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
-// @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
-// @name         Bedford + Crown Heights — Consult defaults (Crown Heights)
+// @name         Every facility — Bedford + Crown Heights — Consult defaults
+// @namespace    mica.pcc
+// @version      1.6
+// @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Runs ONCE, after the form has fully loaded — the patient timing the original script used (the fast burst fired before PCC registered the clicks, which is what desynced 3F from F1 on copied forms).
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
-// @run-at       document-start
+// @run-at       document-idle
 // @grant        none
 // ==/UserScript==
-
 (function() {
-  // v1.2 speed-up (his request, same pattern as CNR+Saints): document-start
-  // + a fast bounded burst until the form exists, then run ONCE — instead
-  // of document-idle + a flat 1s wait. The 200ms spacing between
-  // questionReviewed calls stays: that pacing is PCC's, not ours.
-  var done = false;
-  function run() {
-    if (done) return;
-    done = true;
-    // 1. Set answer defaults. His rule for this form (2026-10-14):
-    // NO checkboxes get checked — Reason for Consult included (the
-    // 'a. Psychiatric Evaluation' check this script used to set is
-    // gone). The only answers set are the two No radios below.
-    // Copied/follow-up forms carry his answers — F1 recommendations
-    // written, D1 boxes checked, a GDR answer that may be Yes. Forcing
-    // the No radios there desyncs PCC's own trigger logic: he had to
-    // press Yes, then No again to make the form register (his report,
-    // 2026-10-14). Defaults are for FRESH forms only — if any editable
-    // textarea already holds text, this form has been worked: set
-    // nothing. (The review acks below still run; they change no answers.)
-    var worked = false;
-    var tas = document.querySelectorAll('textarea');
-    for (var ti = 0; ti < tas.length; ti++) {
-      if (tas[ti].disabled || tas[ti].readOnly) continue;
-      if ((tas[ti].value || '').trim().length > 10) { worked = true; break; }
-    }
-    if (!worked) {
-      var gdrNo = document.querySelector('input[name="Cust_3_D"][value="b"]');
-      if (gdrNo && !gdrNo.checked) gdrNo.click();
+  'use strict';
 
-      var newRecsNo = document.querySelector('input[name="Cust_3_F"][value="b"]');
-      if (newRecsNo && !newRecsNo.checked) newRecsNo.click();
-    }
+  // ============ THE FORM — adrian's standard state (his words, 2026-10-14) ============
+  // EVERY open (fresh or copied):
+  //   - 3D GDR = No, 3F new recommendations = No (radios)
+  //   - every "question reviewed" ack gets clicked
+  //   - F1 text and E. Plan text: never touched (the plan lives in the note)
+  // FRESH form only (nothing written yet):
+  //   - every checkbox cleared (Reason, B4a, MSE, ROS, D1 — all of them)
+  //   - then the standard set is checked:
+  //       3C Assessment: a. Chart Reviewed + b. Labs and Workup Noted
+  //       3C1 Care Coordinated With: e. Nursing
+  // COPIED / follow-up form: checkboxes stay EXACTLY as copied
+  //   (D1 included — "in a follow up, D1 should remain what it was previously").
+  // G. Psychotherapy: never touched.
+  // Runs once, ~1s after the form's controls exist. Anything he changes
+  // by hand afterwards is never re-asserted.
 
-    // 2. Find every question still needing review (hidden ack field == "N").
-    var links = document.querySelectorAll('a.qcheck');
-    var keys = [];
-    links.forEach(function(link) {
-      var ackName = link.id.replace(/^link/, '');                 // linkackCust_1_A -> ackCust_1_A
-      var ackInput = document.querySelector('input[name="' + ackName + '"]');
-      if (ackInput && ackInput.value === 'N') {
-        keys.push(ackName.replace(/^ack/, ''));                    // ackCust_1_A -> Cust_1_A
+  function byId(id) { return document.getElementById(id); }
+
+  // Click only when the control isn't already in the wanted state —
+  // a click TOGGLES a checkbox, so an unguarded click can turn OFF
+  // what should be ON.
+  function setChecked(el, want) {
+    if (el && !!el.checked !== !!want) el.click();
+  }
+
+  function radioByValue(name, value) {
+    var els = document.querySelectorAll('input[type="radio"][name="' + name + '"]');
+    for (var i = 0; i < els.length; i++) if (els[i].value === value) return els[i];
+    return null;
+  }
+
+  // The short option label printed right after a checkbox
+  // ("a. Chart Reviewed", "e. Nursing", ...).
+  function optionLabel(input) {
+    var node = input.nextSibling, txt = '';
+    while (node && txt.length < 60) {
+      txt += (node.textContent || '') + ' ';
+      node = node.nextSibling;
+    }
+    return txt.replace(/\s+/g, ' ').trim();
+  }
+
+  function formLooksBlank() {
+    var areas = document.querySelectorAll('textarea');
+    for (var i = 0; i < areas.length; i++) {
+      if (areas[i].disabled || areas[i].readOnly) continue;
+      if ((areas[i].value || '').trim().length > 10) return false;
+    }
+    return true;
+  }
+
+  function applyForm() {
+    // --- every open ---
+    setChecked(radioByValue('Cust_3_D', 'b'), true); // GDR: No
+    setChecked(radioByValue('Cust_3_F', 'b'), true); // New recommendations: No
+    var acks = document.querySelectorAll('img.qcheck');
+    for (var i = 0; i < acks.length; i++) { try { acks[i].click(); } catch (e) {} }
+
+    // --- fresh form only: clean slate, then the standard set ---
+    if (!formLooksBlank()) return;
+    var boxes = document.querySelectorAll('input[type="checkbox"]');
+    for (var j = 0; j < boxes.length; j++) setChecked(boxes[j], false);
+    for (var k = 0; k < boxes.length; k++) {
+      var label = optionLabel(boxes[k]);
+      if (/chart reviewed/i.test(label) ||
+          /labs and workup/i.test(label) ||
+          /nursing/i.test(label)) {
+        setChecked(boxes[k], true);
       }
-    });
+    }
+  }
 
-    // 3. Review them one at a time, 200ms apart, so PCC processes each.
-    //    questionReviewed() is PCC's own function; @grant none lets us call it.
-    keys.forEach(function(key, i) {
-      setTimeout(function() {
-        try {
-          questionReviewed(key);
-        } catch (e) {
-          console.log('review failed:', key, e);
-        }
-      }, i * 200);
-    });
-  }
-  function attempt() {
-    if (done) return;
-    if (document.querySelector('input[name="Cust_1_A"]') || document.querySelector('a.qcheck')) run();
-  }
-  // --- Reasons for Form popup (his ask, 2026-10-14): clicking New on a
-  // new patient opens this popup with the wrong form preselected. Set
-  // Form = 'Consult-Psychiatry 1.0' and Type of Form = 'Initial'.
-  // One-shot at open, like the form defaults — if he changes either
-  // afterwards, nothing re-asserts it. Facility-gated through the
-  // opener (the popup itself carries no facility name): only when the
-  // chart behind it is Bedford / Crown Heights.
+  // ============ NEW-FORM POPUP (his ask, 2026-10-14) ============
+  // Clicking New opens PCC's "Reasons for Form" popup preselected to
+  // the wrong form. Set Form = 'Consult-Psychiatry 1.0' and Type of
+  // Form = 'Initial'. One-shot at open; facility-gated through the
+  // opener (the popup itself carries no facility name).
   function setSelectByLabel(labelText, optionText) {
     var labels = document.querySelectorAll('td, div, span, label');
     for (var i = 0; i < labels.length; i++) {
@@ -104,22 +115,27 @@
     } catch (e) { return false; }
   }
   function runPopup() {
-    if (done) return;
-    if (!/newassess\.jsp/.test(location.pathname)) return;
-    if (!popupFacilityOk()) { done = true; return; }
+    if (!popupFacilityOk()) return;
     if (setSelectByLabel('Form:', 'Consult-Psychiatry 1.0')) {
-      done = true;
-      // Type options may refresh off the Form change — give PCC a beat.
       setTimeout(function() { setSelectByLabel('Type of Form:', 'Initial'); }, 350);
     }
   }
-  var burstLeft = 50;
-  (function burst() {
-    attempt();
-    runPopup();
-    if (done || --burstLeft <= 0) return;
-    setTimeout(burst, 60);
+
+  // ============ RUN — once, patiently ============
+  if (/newassess\.jsp/.test(location.pathname)) {
+    var tries = 0;
+    (function waitPopup() {
+      runPopup();
+      if (++tries < 20) setTimeout(waitPopup, 250);
+    })();
+    return;
+  }
+  var waited = 0;
+  (function waitForm() {
+    if (byId('Cust_3_D') || document.querySelector('img.qcheck')) {
+      setTimeout(applyForm, 1000); // let PCC finish its own setup first
+      return;
+    }
+    if (++waited < 32) setTimeout(waitForm, 250);
   })();
-  setTimeout(attempt, 4000);
-  setTimeout(attempt, 7000);
 })();
