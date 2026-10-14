@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.10
+// @version      2.11
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -587,7 +587,7 @@
     raw = raw.replace(/\*+.*$/, '');
     raw = raw.replace(/\s+(?:to\s+)?add\s+in\b.*$/i, '');                       // "anxiety To add in 10 mg for total of 50 mg" -> "anxiety"
     raw = raw.replace(/\s+with\s+(?:\S+\s+)?\d+(?:\.\d+)?\s*(?:mg|mcg|g)\b.*$/i, '');  // "anxiety with PROzac 40mg together" -> "anxiety"
-    raw = raw.replace(/\s+(?:related to|addition to|in addition|along with|and give|give|total of|by mouth|orally|po|sublingual|tablets?|capsules?|caps?|\d+\s*\/\s*\d+|[½¼¾]|\d+(?:\.\d+)?\s*(?:mg|mcg|ml|g)\b).*$/i, '');
+    raw = raw.replace(/\s+(?:related to|addition to|in addition|along with|to give|and give|give|total of|by mouth|orally|po|sublingual|tablets?|capsules?|caps?|\d+\s*\/\s*\d+|[½¼¾]|\d+(?:\.\d+)?\s*(?:mg|mcg|ml|g)\b).*$/i, '');
     raw = raw.replace(/\s*\([^)]*\)\s*$/, '');
     raw = raw.replace(/,.*$/, '');
     raw = raw.replace(/\s*\(\s*[A-Z]\d{2}(?:\.[0-9A-Z]{1,4})?\s*\)/g, '');            // ICD code in parentheses
@@ -595,6 +595,7 @@
     raw = raw.replace(/\s+without\s+behaviou?ral\b.*$/i, '');                          // "without behavioral disturbance"
     raw = raw.replace(/^for\s+/i, '');                                              // double-"for" sigs: "for for anxiety" capture starts "for anxiety"
     raw = raw.replace(/^\s*(?:other|unspecified|acute|chronic|mild|moderate|severe)\s+/i, '');
+    raw = raw.replace(/\s+(?:to|in|for|with|and)\s*$/i, '');                          // dangling tail word ("schizophrenia to" -> "schizophrenia")
     raw = raw.replace(/^\s+|\s+$/g, '');
     if (!raw.length) return def;
     var key = raw.toLowerCase().replace(/\bd\/o\b/g, 'disorder');
