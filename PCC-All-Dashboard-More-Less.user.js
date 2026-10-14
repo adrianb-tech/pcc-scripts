@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.3
+// @version      1.4
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -120,6 +120,9 @@
     var b = document.createElement('button');
     b.type = 'button';
     b.className = 'pcc-fill-copy';
+    // Pre-marked so Grab-all never plants its G badge on these tiles
+    // (his call, 2026-10-14) — the button stays grabbable by G itself.
+    b.setAttribute('data-g-badge', '1');
     b.setAttribute('data-fill-label', label);
     b.setAttribute('data-fill-value', value);
     b.textContent = 'Copy';
