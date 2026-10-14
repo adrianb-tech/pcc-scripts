@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.7
+// @version      1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @name         CNR + Saints — Consult form defaults
@@ -55,18 +55,17 @@
     return done;
   }
 
-  // Q9 Date of Consult (v1.6): filled THROUGH PCC's own calendar widget
-  // — the script opens the calendar and taps today's cell, so PCC
-  // registers the date exactly as it does for a hand-pick. Why: signing
-  // a form throws PCC's server error '...because "date" is null'
-  // whenever PCC has no registered date for the form — proven three ways
-  // on 2026-10-14: (1) bisect — script off + date hand-picked via the
-  // calendar -> signing lands clean; (2) v1.5 — script on but leaving the
-  // field EMPTY -> signing throws it again; (3) the weeks-old value-set
-  // versions displayed a date yet signing still threw it. So the date
-  // must go in through the widget's own path. If the tap cannot be
-  // verified, a warning chip stays on the form so he never signs an
-  // unset date unknowingly.
+  // Q9 Date of Consult (v1.8): INSTANT value fill the moment the form
+  // opens (the way it worked for weeks — see setDateValue), PLUS a
+  // silent background registration through PCC's own calendar widget,
+  // because signing throws PCC's server error '...because "date" is
+  // null' whenever PCC has no REGISTERED date: proven 2026-10-14 three
+  // ways (hand-picked date signs clean / empty field throws / a merely
+  // displayed script-set date threw on PCC's current build). If the
+  // widget syncs its real field from the instant fill, registration is
+  // already done and the calendar never opens; if registration still
+  // can't be confirmed, a warning chip stays on the form so he never
+  // signs an unconfirmed date unknowingly.
   var MONTHS = ['january','february','march','april','may','june','july','august','september','october','november','december'];
   function fireTap(el){
     ['mousedown','mouseup','click'].forEach(function(ev){
@@ -179,17 +178,67 @@
       if (chip) return;
       chip = doc.createElement('div');
       chip.id = 'pcc-date-warn';
-      chip.textContent = 'Date of Consult is NOT set - open the calendar icon and pick today before signing.';
+      chip.textContent = 'Date is filled but PCC has not confirmed it - tap the calendar icon and pick today once before signing.';
       chip.setAttribute('style', 'position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#fff;border:1.5px solid #b45309;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:9px 14px;font:600 13px -apple-system,Helvetica,Arial,sans-serif;color:#92400e;');
       (doc.body || doc.documentElement).appendChild(chip);
     } catch (e) {}
   }
-  function runDateIn(doc, latePass){
+  // INSTANT fill (v1.8, his demand: "make it instant — it worked every
+  // time before"): the value goes in with the same opening burst as the
+  // other defaults, exactly the way the script always did it — typed
+  // into the display field with the full event set, plus any real
+  // (hidden) field for the same question.
+  function setDateValue(doc, input){
+    try {
+      var v = todayStr();
+      try { input.focus(); } catch (e) {}
+      input.value = v;
+      ['input', 'change', 'blur', 'focusout', 'keyup'].forEach(function (ev) {
+        try { input.dispatchEvent(new Event(ev, { bubbles: true })); } catch (e) {}
+      });
+      var els = doc.querySelectorAll('input');
+      for (var i = 0; i < els.length; i++) {
+        var nm = ((els[i].getAttribute && els[i].getAttribute('name')) || '') + ' ' + (els[i].id || '');
+        if (els[i] !== input && nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
+          try {
+            els[i].value = v;
+            els[i].dispatchEvent(new Event('input', { bubbles: true }));
+            els[i].dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  }
+  // If the widget keeps a hidden field for this question and it now
+  // holds today, PCC has the date registered — nothing more to do.
+  function hiddenDateSynced(doc){
+    try {
+      var now = new Date();
+      var iso = now.getFullYear() + '-' + ('0' + (now.getMonth() + 1)).slice(-2) + '-' + ('0' + now.getDate()).slice(-2);
+      var els = doc.querySelectorAll('input');
+      for (var i = 0; i < els.length; i++) {
+        var nm = ((els[i].getAttribute && els[i].getAttribute('name')) || '') + ' ' + (els[i].id || '');
+        if (nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
+          var v = (els[i].value || '').replace(/\s+/g, '');
+          if (v === todayStr() || v.indexOf(iso) !== -1) return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+  function runDateIn(doc, latePass, fillOnly){
     if (!doc || doc.__consultDateDone) return;
     if (!doc.querySelector('input[name="Cust_2_I_1"]')) return;
-    if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); return; }
     var input = doc.querySelector('[name="displaydateCust_2_II_9_dummy"]');
     if (!input) return;
+    // 1) Instant fill — the moment the form opens, like before.
+    if ((input.value || '').replace(/\s+/g, '') !== todayStr()) setDateValue(doc, input);
+    // 2) Registered already? (the widget synced its real field)
+    if (hiddenDateSynced(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); return; }
+    if (fillOnly) return;
+    // 3) Not confirmed registered -> register it through PCC's own
+    // calendar (v1.7 machinery), silently, in the background. If the
+    // widget took the instant fill, this is a harmless same-day re-pick.
     if (!doc.__consultDateTried) {
       doc.__consultDateTried = true;
       hookPopup(doc);
@@ -199,15 +248,24 @@
         [350, 900, 1600, 2600, 4000].forEach(function (ms) {
           setTimeout(function(){
             try {
-              if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); return; }
-              tryTapCalendars(doc);
+              if (hiddenDateSynced(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); return; }
+              if (tryTapCalendars(doc)) doc.__consultDateTapped = true;
             } catch(e){}
           }, ms);
         });
-        setTimeout(function(){ try { if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); } } catch(e){} }, 4800);
+        setTimeout(function(){
+          try {
+            if (hiddenDateSynced(doc) || doc.__consultDateTapped) { doc.__consultDateDone = true; dateWarn(doc, false); }
+          } catch(e){}
+        }, 4800);
       }
     }
-    if (latePass && !doc.__consultDateDone && !dateIsToday(doc)) dateWarn(doc, true);
+    if (latePass && !doc.__consultDateDone && !hiddenDateSynced(doc) && !doc.__consultDateTapped) dateWarn(doc, true);
+  }
+  function runDateFillAll(){
+    runDateIn(document, false, true);
+    var ifr = document.querySelectorAll('iframe');
+    for (var i = 0; i < ifr.length; i++){ try { runDateIn(ifr[i].contentDocument, false, true); } catch(e){} }
   }
   function runDateAll(latePass){
     runDateIn(document, latePass);
@@ -227,6 +285,7 @@
     if (--burstLeft <= 0) return;
     setTimeout(burst, 60);
   })();
+  [60, 300, 800].forEach(function (ms) { setTimeout(runDateFillAll, ms); });
   [1500, 3000, 6000, 10000].forEach(function (ms) {
     setTimeout(function(){ runAll(); runDateAll(ms >= 3000); }, ms);
   });
