@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.12
+// @version      2.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1067,6 +1067,20 @@
     return w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : t.slice(0, 30);
   }
 
+  // Brand → generic canonicalization, so the flags count DRUGS, not order rows —
+  // e.g. a 'Prozac' row and a 'Fluoxetine' row are ONE drug, not two SSRIs.
+  // v2.13: fixes the "Multiple SSRIs — Prozac, Fluoxetine" false positive.
+  var GENERIC_OF = {
+    prozac: 'fluoxetine', zoloft: 'sertraline', lexapro: 'escitalopram',
+    celexa: 'citalopram', paxil: 'paroxetine', effexor: 'venlafaxine',
+    pristiq: 'desvenlafaxine', cymbalta: 'duloxetine', viibryd: 'vilazodone',
+    trintellix: 'vortioxetine'
+  };
+  function canonName(g) {
+    var s = shortName(g).toLowerCase();
+    return GENERIC_OF[s] || s;
+  }
+
   function flagAll(groups) {
     var ssriRows = [], adRows = [], serotRows = [], anticoagRows = [], qtcRows = [], benzoRows = [], opioidRows = [], fallRows = [];
     var lithiumRows = [], valproateRows = [], seizureDrugRows = [], antipsychoticRows = [], glaucomaRiskRows = [], sedatingRows = [];
@@ -1107,11 +1121,14 @@
       });
     }
 
-    if (ssriRows.length >= 2) flag(ssriRows, 'Multiple SSRIs');
+    // Count unique DRUGS, not order rows — a Prozac row + a Fluoxetine row are one drug.
+    var uniqueSSRIs = {};
+    ssriRows.forEach(function(g) { uniqueSSRIs[canonName(g)] = true; });
+    if (Object.keys(uniqueSSRIs).length >= 2) flag(ssriRows, 'Multiple SSRIs');
     // Count unique drugs, not orders — two Bupropion strengths (e.g. 300mg + 150mg)
     // are one drug, not two antidepressants.
     var uniqueADs = {};
-    adRows.forEach(function(g) { uniqueADs[shortName(g).toLowerCase()] = true; });
+    adRows.forEach(function(g) { uniqueADs[canonName(g)] = true; });
     var uniqueADNames = Object.keys(uniqueADs);
     if (uniqueADNames.length >= 3) flag(adRows, uniqueADNames.length + ' antidepressants');
 
@@ -1410,29 +1427,35 @@
     setButton(doc, 'psychToggle', psychToggleHtml,
       function() { setOn('pccPsychFirst', !isOn('pccPsychFirst')); sortMeds(doc); });
     var copyBtn = doc.getElementById('copyMedListBtn');
-    if (copyBtn) copyBtn.onclick = function(e) {
-      e.stopPropagation();
-      // Transfer rule (his words, 2026-10-14): in the NOTE, methadone
-      // reads '- Methadone managed by medical' — no dose, no indication.
-      // The box on screen keeps the full order line; only the
-      // transferred text (fill value + clipboard) is rewritten.
-      var seenMethadone = false;
-      var medText = medRes.lines.map(function(l) {
-        var body = l.replace(/^\s*-\s*/, '');
-        if (/^methadone\b/i.test(body)) {
-          if (seenMethadone) return null;
-          seenMethadone = true;
-          return '- Methadone managed by medical';
-        }
-        return l;
-      }).filter(function(l) { return l !== null; }).join('\n');
+    // Transfer rule (his words, 2026-10-14): in the NOTE, methadone
+    // reads '-Methadone managed by medical' - no dose, no indication.
+    // The box on screen keeps the full order line; only the
+    // transferred text (fill value + clipboard) is rewritten.
+    // The text is computed ONCE here and stamped on the button at
+    // render (v2.14) so the tile row's Psych meds tile can read it
+    // like every other tile's value - before, it existed only
+    // inside the click handler, so no tile could carry it.
+    var seenMethadone = false;
+    var medText = medRes.lines.map(function(l) {
+      var body = l.replace(/^\s*-\s*/, '');
+      if (/^methadone\b/i.test(body)) {
+        if (seenMethadone) return null;
+        seenMethadone = true;
+        return '-Methadone managed by medical';
+      }
+      return l;
+    }).filter(function(l) { return l !== null; }).join('\n');
+    if (copyBtn) {
       copyBtn.setAttribute('data-fill-value', medText);
-      copyToClipboard(doc, medText, copyBtn);
-      // Also drop a fill request so the note panel can replace "- none".
-      try {
-        localStorage.setItem('pccFillPsychMeds', JSON.stringify({ value: medText, ts: Date.now() }));
-      } catch(err){}
-    };
+      copyBtn.onclick = function(e) {
+        e.stopPropagation();
+        copyToClipboard(doc, medText, copyBtn);
+        // Also drop a fill request so the note panel can replace "- none".
+        try {
+          localStorage.setItem('pccFillPsychMeds', JSON.stringify({ value: medText, ts: Date.now() }));
+        } catch(err){}
+      };
+    }
 
     // Labs + Warnings row: two half-width boxes side by side
     var labsData = buildLabsData(groups);
