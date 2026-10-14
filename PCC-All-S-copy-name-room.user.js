@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.2
+// @version 1.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-S-copy-name-room.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-S-copy-name-room.user.js
 // @name         Every facility — S key: copy name + room
@@ -81,10 +81,34 @@
   }
 
   function residentLastFirst(doc) {
+    // Primary: the resident-name element itself — its own text STARTS
+    // with the name. (The old body-wide regex swallowed a preceding
+    // page word: on the assessment list the text runs '... Clinical
+    // Brown, William (CH187985) ...', so S copied 'Clinical Brown,
+    // William'. His report, 2026-10-14.)
+    try {
+      var els = doc.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx.length > 70 || tx.length < 5) continue;
+        if (/^clinical\s/i.test(tx)) continue; // page chrome, never a name
+        var em = tx.match(/^([A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?)\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/);
+        if (em) return em[1].trim();
+      }
+    } catch (e) {}
+    // Fallback: body-wide, but SHORTEST last name first (1 word, then
+    // 2, then 3) so a chain of page words before the name can't get
+    // swallowed into it.
     try {
       var txt = doc.body ? (doc.body.textContent || '') : '';
-      var m = txt.match(/([A-Za-z][A-Za-z'’.\-]*(?:\s+[A-Za-z][A-Za-z'’.\-]*)*\s*,\s*[A-Za-z][A-Za-z'’.\- ]*?)\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/);
-      if (m) return m[1].replace(/\s+/g, ' ').trim();
+      var W = "[A-Za-z][A-Za-z'’.\\-]+";
+      var FIRST = "[A-Za-z][A-Za-z'’.\\- ]*?";
+      for (var words = 1; words <= 3; words++) {
+        var pat = '(' + W + '(?:\\s+' + W + ')' + '{' + (words - 1) + '}' +
+          '\\s*,\\s*' + FIRST + ')\\s*\\(\\s*[A-Za-z]{0,5}\\d{3,}\\s*\\)';
+        var m = txt.match(new RegExp(pat));
+        if (m) return m[1].replace(/\s+/g, ' ').trim();
+      }
     } catch (e) {}
     return '';
   }
