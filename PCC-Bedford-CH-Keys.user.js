@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -18,6 +18,8 @@
       if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) return true;
       if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) return false;
       if (ft.indexOf('saint joachim') !== -1 || ft.indexOf('saints') !== -1) return false;
+      // CNR excluded too (same omission as Boro Park's gate, 2026-10-13).
+      if (ft.indexOf('downtown brooklyn') !== -1 || /(^|[^a-z])cnr([^a-z]|$)/.test(ft)) return false;
     } catch (e) {}
     return null; // unknown
   }
