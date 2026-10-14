@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.5
+// @version      1.6
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -161,7 +161,7 @@
     var d = document.createElement('div');
     d.style.cssText = 'background:' + (opts.rose ? '#fdf3f2' : '#fff') + ';border:1px solid ' +
       (opts.rose ? '#f0c8c2' : '#e2e8f0') + ';border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);' +
-      'padding:12px 16px 14px;' + (opts.flex ? 'flex:1 1 230px;max-width:340px;' : 'flex:none;');
+      'padding:12px 16px 14px;' + (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;');
     var lab = document.createElement('div');
     lab.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;';
     var ls = document.createElement('span');
@@ -172,8 +172,9 @@
     if (opts.btn) lab.appendChild(opts.btn);
     var v = document.createElement('div');
     v.textContent = valueText;
-    v.style.cssText = 'margin-top:9px;font-size:' + (opts.size || 20) + 'px;font-weight:' + (opts.weight || 700) +
+    v.style.cssText = 'margin-top:9px;font-size:' + (opts.size || 21) + 'px;font-weight:' + (opts.weight || 700) +
       ';line-height:1.3;color:' + (opts.color || '#131c2b') + ';';
+    if (opts.fit) v.setAttribute('data-fit', '1');
     d.appendChild(lab); d.appendChild(v);
     return d;
   }
@@ -198,11 +199,29 @@
       var kind = m && m[3] ? m[3].toLowerCase() : '';
       row.appendChild(tile(kind ? 'Admission (' + kind + ')' : 'Admission', m ? m[1] : d.admission, {}));
     }
-    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { size: 24, weight: 800, btn: copyBtn('Age/Sex', d.ageSex) }));
+    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { btn: copyBtn('Age/Sex', d.ageSex) }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
-    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, flex: true, size: 14.5, weight: 600, color: '#a33327', btn: copyBtn('Allergies', d.allergies) }));
+    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, btn: copyBtn('Allergies', d.allergies) }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, {}));
     bar.parentNode.insertBefore(row, bar.nextSibling);
+    fitAllergies(row);
+  }
+
+  // The Allergies box is always the same size; a long allergy list
+  // shrinks its text until it fits the box (his spec, 2026-10-14).
+  // Starts from the shared value size (21px, same as every other
+  // tile) and steps down only as far as needed.
+  function fitAllergies(row) {
+    var el = row.querySelector('[data-fit="1"]');
+    if (!el) return;
+    var size = 21;
+    el.style.fontSize = size + 'px';
+    var guard = 0;
+    while (guard < 14 && size > 10 && (el.scrollHeight > 56 || el.scrollWidth > el.clientWidth)) {
+      size -= 1;
+      el.style.fontSize = size + 'px';
+      guard++;
+    }
   }
 
   function run() {
