@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.8
+// @version      2.9
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1401,7 +1401,20 @@
     var copyBtn = doc.getElementById('copyMedListBtn');
     if (copyBtn) copyBtn.onclick = function(e) {
       e.stopPropagation();
-      var medText = medRes.lines.join('\n');
+      // Transfer rule (his words, 2026-10-14): in the NOTE, methadone
+      // reads '- Methadone managed by medical' — no dose, no indication.
+      // The box on screen keeps the full order line; only the
+      // transferred text (fill value + clipboard) is rewritten.
+      var seenMethadone = false;
+      var medText = medRes.lines.map(function(l) {
+        var body = l.replace(/^\s*-\s*/, '');
+        if (/^methadone\b/i.test(body)) {
+          if (seenMethadone) return null;
+          seenMethadone = true;
+          return '- Methadone managed by medical';
+        }
+        return l;
+      }).filter(function(l) { return l !== null; }).join('\n');
       copyBtn.setAttribute('data-fill-value', medText);
       copyToClipboard(doc, medText, copyBtn);
       // Also drop a fill request so the note panel can replace "- none".
