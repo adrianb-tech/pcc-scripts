@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.2
+// @version      2.3
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -268,10 +268,25 @@
       d.setAttribute('data-fill-label', opts.fill.label);
       d.setAttribute('data-fill-value', opts.fill.value);
     }
+    if (opts.maxw) d.style.maxWidth = opts.maxw;
     if (opts.nav) {
       d.style.cursor = 'pointer';
       d.title = 'Go to WTS/VITALS';
       d.addEventListener('click', function () { goWtsVitals(); });
+    }
+    if (opts.delegate === 'meds') {
+      // The tile's click presses the panel's real Copy button, so the
+      // transferred text (methadone rule included) is the button's own.
+      d.style.cursor = 'pointer';
+      d.title = 'Click to copy';
+      d.addEventListener('click', function () {
+        var b = document.getElementById('copyMedListBtn');
+        if (b) {
+          fireClick(b);
+          var o = ls.textContent; ls.textContent = 'Copied';
+          setTimeout(function () { ls.textContent = o; }, 1000);
+        }
+      });
     }
     if (opts.click) {
       // The whole tile is the button (his ask, 2026-10-14): click
@@ -322,14 +337,31 @@
     }
   }
 
+  // The med list's visible lines (or '- none'). The Copy button only
+  // learns its fill value when clicked, so the tile reads the panel
+  // for display and DELEGATES its click to the real button — the
+  // transfer text (incl. the methadone rule) stays the button's own.
+  function medsDisplay() {
+    var box = document.getElementById('medListBox');
+    if (!box && !document.getElementById('copyMedListBtn')) return '';
+    if (!box) return '- none';
+    var divs = box.querySelectorAll('div');
+    var lines = [];
+    for (var i = 1; i < divs.length; i++) {
+      var tx = (divs[i].textContent || '').trim();
+      if (tx.indexOf('REVIEW') === 1) break;
+      if (tx) lines.push(tx);
+    }
+    return lines.length ? lines.join('\n') : '- none';
+  }
+
   function buildCards() {
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar || !bar.parentNode) return;
     var d = cardData();
     if (d) {
       d.weight = weightValue();
-      var mb = document.getElementById('copyMedListBtn');
-      if (mb) { var mv = mb.getAttribute('data-fill-value'); if (mv) d.meds = mv; }
+      d.meds = medsDisplay();
       d.bims = bimsValue();
       d.rel = relValue();
     }
@@ -353,8 +385,8 @@
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
     if (d.bims) row.appendChild(tile('BIMS', d.bims, { click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
-    if (d.rel) row.appendChild(tile('Relationships', d.rel, { grow: true, multi: true, size: 13, weight: 600, click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
-    if (d.meds) row.appendChild(tile('Psych meds', d.meds, { grow: true, multi: true, size: 13, weight: 600, click: { label: 'Psych meds', value: d.meds }, fill: { label: 'Psych meds', value: d.meds } }));
+    if (d.rel) row.appendChild(tile('Relationships', d.rel, { multi: true, size: 13, weight: 600, maxw: '560px', click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
+    if (d.meds) row.appendChild(tile('Psych meds', d.meds, { multi: true, size: 13, weight: 600, maxw: '760px', delegate: 'meds' }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
   }
