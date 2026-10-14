@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.9
+// @version      1.10
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @name         CNR + Saints — Consult form defaults
@@ -55,30 +55,52 @@
     return done;
   }
 
-  // Q9 Date of Consult (v1.9): INSTANT value fill only — the way it
-  // worked every time before PCC changed. The v1.6-v1.8 calendar
-  // automation is REMOVED: it opened PCC's calendar unattended on a
-  // form he was editing, and the widget interaction left the section
-  // flagged "errors" when he saved (his report, 2026-10-14). Standing
-  // rule from this: on a form he is editing, the script sets values
-  // and nothing else — no widget is opened, tapped, or focused.
+  // Q9 Date of Consult (v1.10): the date is TYPED into the field —
+  // character by character, with real key events, ending in a blur —
+  // so PCC's date widget processes it exactly as if he typed it
+  // himself. Why: a plain value write (v1.9) displays fine but PCC
+  // still judged the section INCOMPLETE on save (his report, 2026-10-14:
+  // the pink "errors" row, fixed by hand each time) — the widget never
+  // parsed the answer. Hand entry is the proven-good input (his typed
+  // and calendar-picked dates validate and sign clean). This is still
+  // instant: one burst in the form's opening moments, nothing opens,
+  // and once the field holds today every later pass is a no-op.
+  function keyEv(doc, type, ch){
+    var w = doc.defaultView || window;
+    var e = new w.KeyboardEvent(type, { key: ch, bubbles: true, cancelable: true });
+    try {
+      var code = ch.charCodeAt(0);
+      Object.defineProperty(e, 'keyCode', { get: function(){ return code; } });
+      Object.defineProperty(e, 'which', { get: function(){ return code; } });
+    } catch (err) {}
+    return e;
+  }
   function setDateValue(doc, input){
     try {
       var v = todayStr();
-      input.value = v;
-      ['input', 'change'].forEach(function (ev) {
-        try { input.dispatchEvent(new Event(ev, { bubbles: true })); } catch (e) {}
-      });
+      try { input.focus(); } catch (e0) {}
+      input.value = '';
+      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e1) {}
+      for (var i = 0; i < v.length; i++) {
+        var ch = v.charAt(i);
+        try { input.dispatchEvent(keyEv(doc, 'keydown', ch)); } catch (e2) {}
+        input.value = v.slice(0, i + 1);   // the character lands
+        try { input.dispatchEvent(keyEv(doc, 'keypress', ch)); } catch (e3) {}
+        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e4) {}
+        try { input.dispatchEvent(keyEv(doc, 'keyup', ch)); } catch (e5) {}
+      }
+      try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e6) {}
+      try { input.blur(); } catch (e7) {}   // tab-out commit, like a typist leaving the field
       // The widget's real field, if the form carries one: same value.
       var els = doc.querySelectorAll('input');
-      for (var i = 0; i < els.length; i++) {
-        var nm = ((els[i].getAttribute && els[i].getAttribute('name')) || '') + ' ' + (els[i].id || '');
-        if (els[i] !== input && nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
+      for (var j = 0; j < els.length; j++) {
+        var nm = ((els[j].getAttribute && els[j].getAttribute('name')) || '') + ' ' + (els[j].id || '');
+        if (els[j] !== input && nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
           try {
-            els[i].value = v;
-            els[i].dispatchEvent(new Event('input', { bubbles: true }));
-            els[i].dispatchEvent(new Event('change', { bubbles: true }));
-          } catch (e) {}
+            els[j].value = v;
+            els[j].dispatchEvent(new Event('input', { bubbles: true }));
+            els[j].dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (e8) {}
         }
       }
     } catch (e) {}
