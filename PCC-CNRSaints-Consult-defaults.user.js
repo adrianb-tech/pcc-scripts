@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.6
+// @version      1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @name         CNR + Saints — Consult form defaults
@@ -93,19 +93,60 @@
     } catch (e) {}
     return null;
   }
+  // The calendar may open as an in-page popup or as a separate window
+  // (window.open). Hook window.open once per form window so the popup —
+  // if any — is reachable. v1.6 only tapped inside the form's own page
+  // and the calendar sat open waiting for him (his report, 2026-10-14:
+  // "it opened the date for me to choose. i want it to actually put
+  // todays date in.").
+  function hookPopup(doc){
+    try {
+      var w = doc.defaultView;
+      if (!w || w.__pccCalHooked) return;
+      w.__pccCalHooked = true;
+      var orig = w.open;
+      if (typeof orig !== 'function') return;
+      w.open = function(){
+        var p = null;
+        try { p = orig.apply(this, arguments); } catch(e){}
+        try { if (p) w.__pccCalPopup = p; } catch(e){}
+        return p;
+      };
+    } catch (e) {}
+  }
   function tapTodayCell(doc){
     try {
       var now = new Date();
       var dayNum = String(now.getDate());
+      var mo = now.getMonth() + 1, yr = now.getFullYear();
       var monthName = MONTHS[now.getMonth()];
-      var yearStr = String(now.getFullYear());
+      var yearStr = String(yr);
       var all = doc.querySelectorAll('td, a, span, div');
-      var best = null;
-      for (var i = 0; i < all.length; i++) {
-        var el = all[i];
+      // Strategy 1: an element whose own handler/link names today's date.
+      var pats = [mo + '/' + dayNum + '/' + yr, yr + '-' + mo + '-' + dayNum, yr + '/' + mo + '/' + dayNum,
+                  '(' + yr + ', ' + (mo - 1) + ', ' + dayNum + ')', '(' + yr + ',' + (mo - 1) + ',' + dayNum + ')',
+                  '(' + yr + ', ' + mo + ', ' + dayNum + ')', '(' + yr + ',' + mo + ',' + dayNum + ')'];
+      var i, el, hay;
+      for (i = 0; i < all.length; i++) {
+        el = all[i];
+        hay = ((el.getAttribute && el.getAttribute('onclick')) || '') + ' ' + ((el.getAttribute && el.getAttribute('href')) || '') + ' ' + ((el.getAttribute && el.getAttribute('title')) || '');
+        if (!hay.trim()) continue;
+        for (var p = 0; p < pats.length; p++) if (hay.indexOf(pats[p]) !== -1) { fireTap(el); return true; }
+      }
+      // Strategy 2: a cell the calendar itself marks as today.
+      for (i = 0; i < all.length; i++) {
+        el = all[i];
+        var cls = ((el.className || '') + ' ' + ((el.getAttribute && el.getAttribute('title')) || '')).toLowerCase();
+        if (cls.indexOf('today') !== -1 && el.getClientRects && el.getClientRects().length) { fireTap(el); return true; }
+      }
+      // Strategy 3: the bare day number inside a calendar showing this
+      // month + year — clickable links first, then cells.
+      var rank = { A: 0, TD: 1, SPAN: 2, DIV: 3 };
+      var cands = [];
+      for (i = 0; i < all.length; i++) {
+        el = all[i];
         if ((el.textContent || '').replace(/\s+/g, ' ').trim() !== dayNum) continue;
         if (!el.getClientRects || !el.getClientRects().length) continue;
-        // the cell must sit inside a calendar showing THIS month + year
         var anc = el, inCal = false;
         for (var up = 0; up < 6 && anc; up++) {
           var at = (anc.textContent || '').toLowerCase();
@@ -113,12 +154,21 @@
           anc = anc.parentNode;
         }
         if (!inCal) continue;
-        var cls = (el.className || '') + ' ' + ((el.getAttribute && el.getAttribute('title')) || '');
-        if (/other|prev|next|disabled|inactive/i.test(cls)) continue;
-        best = el;
-        if (/today/i.test(cls)) break;
+        var cl2 = (el.className || '') + ' ' + ((el.getAttribute && el.getAttribute('title')) || '');
+        if (/other|prev|next|disabled|inactive/i.test(cl2)) continue;
+        cands.push(el);
       }
-      if (best) { fireTap(best); return true; }
+      cands.sort(function (a, b) { return (rank[a.tagName] || 9) - (rank[b.tagName] || 9); });
+      if (cands.length) { fireTap(cands[0]); return true; }
+    } catch (e) {}
+    return false;
+  }
+  function tryTapCalendars(doc){
+    if (tapTodayCell(doc)) return true;
+    try {
+      var w = doc.defaultView;
+      var pop = w && w.__pccCalPopup;
+      if (pop && !pop.closed && pop.document) return tapTodayCell(pop.document);
     } catch (e) {}
     return false;
   }
@@ -142,11 +192,19 @@
     if (!input) return;
     if (!doc.__consultDateTried) {
       doc.__consultDateTried = true;
+      hookPopup(doc);
       var trig = findCalTrigger(doc, input);
       if (trig) {
         fireTap(trig);
-        setTimeout(function(){ try { tapTodayCell(doc); } catch(e){} }, 450);
-        setTimeout(function(){ try { if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); } } catch(e){} }, 1100);
+        [350, 900, 1600, 2600, 4000].forEach(function (ms) {
+          setTimeout(function(){
+            try {
+              if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); return; }
+              tryTapCalendars(doc);
+            } catch(e){}
+          }, ms);
+        });
+        setTimeout(function(){ try { if (dateIsToday(doc)) { doc.__consultDateDone = true; dateWarn(doc, false); } } catch(e){} }, 4800);
       }
     }
     if (latePass && !doc.__consultDateDone && !dateIsToday(doc)) dateWarn(doc, true);
