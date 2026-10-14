@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Relationships-copy-box.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Relationships-copy-box.user.js
 // @name         Every facility — Profile: relationships copy box
@@ -185,7 +185,11 @@
     if (box) return box;
     box = document.createElement('div');
     box.id = 'relBox';
-    box.style.cssText = 'margin:8px 0;padding:10px 12px;border:1px solid #93c5fd;background:#eff6ff;border-radius:8px;font:13px/1.4 -apple-system,sans-serif;max-width:460px;';
+    box.style.cssText = 'display:none;margin:8px 0;padding:10px 12px;border:1px solid #93c5fd;background:#eff6ff;border-radius:8px;font:13px/1.4 -apple-system,sans-serif;max-width:460px;';
+    // Hidden since the tile row carries this value (his cleanup ask,
+    // 2026-10-14). The box + Copy button stay in the DOM: the tile
+    // reads the button's fill value across frames, and the note
+    // engine's queue contract is unchanged.
     box.innerHTML =
       '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">' +
         '<b style="color:#1d4ed8;">Relationships</b>' +
