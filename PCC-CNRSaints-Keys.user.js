@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.9
+// @version      1.10
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -427,6 +427,32 @@
       return f[0] || null;
     });
   }
+  // Per-document page tests (v1.10). The window-wide tests scan every frame
+  // from window.top; badge vetoes must be judged on the page that OWNS the
+  // target, or a sibling frame's content vetoes this page's badge.
+  function docText(doc) { try { return (doc.body ? doc.body.innerText : '').toLowerCase(); } catch (e) { return ''; } }
+  function isResidentListDoc(doc) { var t = docText(doc); return t.indexOf('search current residents') !== -1 || (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1); }
+  function isProgressNotesDoc(doc) { var t = docText(doc); if (t.indexOf('view all') !== -1 && (t.indexOf('progress note') !== -1 || t.indexOf('effective date') !== -1)) return true; return t.indexOf('add progress note') !== -1 || t.indexOf('progress notes - view all') !== -1; }
+  function isFormsListDoc(doc) { var t = docText(doc); return (t.indexOf('forms list') !== -1 || t.indexOf('in progress list') !== -1) && t.indexOf('form type') !== -1 && t.indexOf('created by') !== -1; }
+  function isFormsGridDoc(doc) { var t = docText(doc); return (t.indexOf('assessment date') !== -1 || t.indexOf('form date') !== -1) && t.indexOf('created by') !== -1; }
+  function isSectionListDoc(doc) {
+    var t = docText(doc);
+    if (t.indexOf('signed by') !== -1 && t.indexOf('signed date') !== -1) return true;
+    if (t.indexOf('signed by') !== -1) {
+      var els = doc.querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var i = 0; i < els.length; i++) {
+        var v = (((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase());
+        if (v === 'sign all') return true;
+      }
+    }
+    return false;
+  }
+  function findAdmissionRecordInDoc(doc) {
+    var c = findByExactText(doc, 'ADMISSION RECORD');
+    if (c.length) return c[0];
+    var f2 = findByExactText(doc, 'FACE SHEET');
+    return f2[0] || null;
+  }
   function allDocs() {
     var docs = [];
     try {
@@ -602,55 +628,65 @@
   }
   // CNR/Saints section list: the "sign" link exists ONLY on the row awaiting
   // his signature (yellow row: edit + sign). Prefer the psych row's sign link.
+  function findSectionSignLinkInDoc(doc) {
+    var fallback = null;
+    try {
+      var links = doc.querySelectorAll('a');
+      for (var j = 0; j < links.length; j++) {
+        var lt = (links[j].textContent || '').trim().toLowerCase();
+        if (lt !== 'sign' || !visible(links[j])) continue;
+        try {
+          var tbl = links[j].closest('table');
+          if (tbl && (tbl.innerText || '').toLowerCase().indexOf('effective date') !== -1) continue;
+        } catch (e2) {}
+        var row = links[j].closest('tr');
+        var rt = row ? (row.innerText || '').toLowerCase() : '';
+        if (rt.indexOf('psych') !== -1) return links[j];
+        if (!fallback) fallback = links[j];
+      }
+    } catch (e) {}
+    return fallback;
+  }
   function findSectionSignLink() {
     try {
       var docs = allDocs();
-      var fallback = null;
       for (var d = 0; d < docs.length; d++) {
-        var links = docs[d].querySelectorAll('a');
-        for (var j = 0; j < links.length; j++) {
-          var lt = (links[j].textContent || '').trim().toLowerCase();
-          if (lt !== 'sign' || !visible(links[j])) continue;
-          try {
-            var tbl = links[j].closest('table');
-            if (tbl && (tbl.innerText || '').toLowerCase().indexOf('effective date') !== -1) continue;
-          } catch (e2) {}
-          var row = links[j].closest('tr');
-          var rt = row ? (row.innerText || '').toLowerCase() : '';
-          if (rt.indexOf('psych') !== -1) return links[j];
-          if (!fallback) fallback = links[j];
-        }
+        var hit = findSectionSignLinkInDoc(docs[d]);
+        if (hit) return hit;
       }
-      return fallback;
     } catch (e) {}
     return null;
   }
   // CNR/Saints section list, both-green state (his rule, 2026-10-14): the
   // psych section row is signed (signer + date on the row) and at least one
   // other section row is signed too -> the form is done; no F anything here.
+  function sectionListAllSignedInDoc(doc) {
+    try {
+      var rows = doc.querySelectorAll('table tr');
+      var signedRows = 0, psychSigned = false;
+      for (var i = 0; i < rows.length; i++) {
+        var txt = (rows[i].innerText || '');
+        if (!/\d{1,2}\/\d{1,2}\/\d{4}/.test(txt)) continue;
+        var hasView = false, hasSign = false;
+        var ls = rows[i].querySelectorAll('a');
+        for (var j = 0; j < ls.length; j++) {
+          var lt = (ls[j].textContent || '').trim().toLowerCase();
+          if (lt === 'view') hasView = true;
+          if (lt === 'sign') hasSign = true;
+        }
+        if (hasView && !hasSign) {
+          signedRows++;
+          if (/psych/i.test(txt)) psychSigned = true;
+        }
+      }
+      return psychSigned && signedRows >= 2;
+    } catch (e) {}
+    return false;
+  }
   function sectionListAllSigned() {
     try {
       var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var rows = docs[d].querySelectorAll('table tr');
-        var signedRows = 0, psychSigned = false;
-        for (var i = 0; i < rows.length; i++) {
-          var txt = (rows[i].innerText || '');
-          if (!/\d{1,2}\/\d{1,2}\/\d{4}/.test(txt)) continue;
-          var hasView = false, hasSign = false;
-          var ls = rows[i].querySelectorAll('a');
-          for (var j = 0; j < ls.length; j++) {
-            var lt = (ls[j].textContent || '').trim().toLowerCase();
-            if (lt === 'view') hasView = true;
-            if (lt === 'sign') hasSign = true;
-          }
-          if (hasView && !hasSign) {
-            signedRows++;
-            if (/psych/i.test(txt)) psychSigned = true;
-          }
-        }
-        if (psychSigned && signedRows >= 2) return true;
-      }
+      for (var d = 0; d < docs.length; d++) if (sectionListAllSignedInDoc(docs[d])) return true;
     } catch (e) {}
     return false;
   }
@@ -959,46 +995,42 @@
   function applyFViewBadge() {
     try {
       if (!shouldRun()) return;
-      // Section list (CNR/Saints): view is the ONLY F — sweep stray edit badges
-      if (isSectionListPage()) {
-        try {
-          var docs2 = allDocs();
-          for (var dd = 0; dd < docs2.length; dd++) {
-            var stray = docs2[dd].querySelectorAll('.' + FBTN_CLASS + '-edit, .' + FBTN_CLASS + '-sectedit, .' + FBTN_CLASS + '-copy');
-            for (var ss = 0; ss < stray.length; ss++) { try { stray[ss].remove(); } catch (e5) {} }
-          }
-        } catch (e6) {}
-      }
-      // Resident list and Progress Notes: no F on view — remove any stale badges
-      // (Progress Notes gets F on VIEW ALL instead, via applyFViewAllBadge)
-      if (isResidentListPage() || isProgressNotesPage() || isFormsListPage()) {
+      var target = findViewLink();
+      if (!target || !target.parentNode) return;
+      var tdoc = target.ownerDocument || document;
+      // v1.10: every veto below is judged on the TARGET'S OWN document. The
+      // old guards scanned the whole window (allDocs/findAdmissionRecord run
+      // from window.top), so content in a SIBLING frame could veto — and on
+      // later passes remove — the badge that belonged on this page: the
+      // badge flickered in and out and was gone when he looked (his CNR
+      // report, 2026-10-14). The F key was never affected: it resolves in
+      // the focused frame at press time.
+      if (isResidentListDoc(tdoc) || isProgressNotesDoc(tdoc) || isFormsListDoc(tdoc) || isFormsGridDoc(tdoc)) {
         removeStaleViewBadges();
         return;
       }
-      // Signed section page (Boro Park): F goes on Lock, not view — remove stale view badge
       if (isBoroPark() && isSignedSectionPage()) {
         removeStaleViewBadges();
         return;
       }
-      // Assessments/Forms list: F goes on copy/edit, not view — skip here (also clean stale)
-      if (isFormsGridPage()) {
+      // Profile page: the ONLY F there is the Admission Record (his rule,
+      // 2026-10-13) — judged on this page itself, not any other frame.
+      if (findAdmissionRecordInDoc(tdoc)) {
         removeStaleViewBadges();
         return;
       }
-      // Profile page: the ONLY F here is the Admission Record (his rule, 2026-10-13).
-      // The generic view badge landed on the External Facilities "view" link — suppress it.
-      if (findAdmissionRecord()) {
-        removeStaleViewBadges();
-        return;
+      if (isSectionListDoc(tdoc)) {
+        // Section list: sweep stray edit badges in this doc
+        try {
+          var stray = tdoc.querySelectorAll('.' + FBTN_CLASS + '-edit, .' + FBTN_CLASS + '-sectedit, .' + FBTN_CLASS + '-copy');
+          for (var ss = 0; ss < stray.length; ss++) { try { stray[ss].remove(); } catch (e5) {} }
+        } catch (e6) {}
+        // Sign waiting -> the badge belongs on SIGN; both green -> no badge
+        if (findSectionSignLinkInDoc(tdoc) || sectionListAllSignedInDoc(tdoc)) {
+          removeStaleViewBadges();
+          return;
+        }
       }
-      // Section list: if a sign is waiting, the F badge belongs on SIGN, not
-      // view; if both lines are signed, no F badge at all (v1.7).
-      if (isSectionListPage() && (findSectionSignLink() || sectionListAllSigned())) {
-        removeStaleViewBadges();
-        return;
-      }
-      var target = findViewLink();
-      if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-view';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge('View section (same as F key)', function() { doFAction(); }, target.ownerDocument);
@@ -1022,15 +1054,21 @@
   function applyFSectionSignBadge() {
     try {
       if (!shouldRun()) return;
-      if (!isSectionListPage()) { removeStaleSignBadges(); return; }
-      var target = findSectionSignLink();
-      if (!target || !target.parentNode) { removeStaleSignBadges(); return; }
-      var badgeCls = FBTN_CLASS + '-sign';
-      if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('Sign section (same as F key)', function() { doFAction(); }, target.ownerDocument);
-      badge.classList.add(badgeCls);
-      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
-      else target.parentNode.appendChild(badge);
+      var docs = allDocs();
+      var anyTarget = false;
+      for (var d = 0; d < docs.length; d++) {
+        if (!isSectionListDoc(docs[d])) continue;
+        var target = findSectionSignLinkInDoc(docs[d]);
+        if (!target || !target.parentNode) continue;
+        anyTarget = true;
+        var badgeCls = FBTN_CLASS + '-sign';
+        if (target.parentNode.querySelector('.' + badgeCls)) continue;
+        var badge = makeFBadge('Sign section (same as F key)', function() { doFAction(); }, target.ownerDocument);
+        badge.classList.add(badgeCls);
+        if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+        else target.parentNode.appendChild(badge);
+      }
+      if (!anyTarget) removeStaleSignBadges();
     } catch (e) {}
   }
   // Both lines green -> strip EVERY F badge from this page (v1.7): whichever
@@ -1038,10 +1076,10 @@
   function applyFSectionListCleanup() {
     try {
       if (!shouldRun()) return;
-      if (!isSectionListPage() || !sectionListAllSigned()) return;
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         try {
+          if (!isSectionListDoc(docs[d]) || !sectionListAllSignedInDoc(docs[d])) continue;
           var all = docs[d].querySelectorAll('.' + FBTN_CLASS);
           for (var s = 0; s < all.length; s++) { try { all[s].remove(); } catch (e2) {} }
         } catch (e3) {}
