@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.5
+// @version      1.6
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -51,6 +51,9 @@
       // ate the line beneath it (his Saints report, 2026-10-14).
       out.push(lines[mi]);
       out.push(dx);
+      out.push('');   // his ask (2026-10-14, Saints form): an Enter at the
+                      // end of the diagnoses — a blank line before
+                      // Family/Social Hx. (Follow-up format has none.)
     } else {
       // Follow-up notes carry the diagnoses on the header line itself —
       // replace them there, same shape as before.
