@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version 2.3
+// @version 2.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -25,6 +25,11 @@
           if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) foundBoro = true;
           if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) foundOther = true;
           if (ft.indexOf('saint joachim') !== -1) foundOther = true;
+          // CNR was missing here — this script ran at CNR and planted its
+          // 1/2/3 badges there (his report, 2026-10-13). CNR's header name
+          // is "Downtown Brooklyn..."; a standalone CNR counts too (the
+          // boundary keeps Boro Park's own BPCNR code from matching).
+          if (ft.indexOf('downtown brooklyn') !== -1 || /(^|[^a-z])cnr([^a-z]|$)/.test(ft)) foundOther = true;
         } catch (e2) {}
       }
       if (foundBoro) return true;
