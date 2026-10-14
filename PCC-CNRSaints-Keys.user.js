@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version 1.6
+// @version      1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -576,6 +576,60 @@
     } catch (e) {}
     return null;
   }
+  // CNR/Saints section list: the "sign" link exists ONLY on the row awaiting
+  // his signature (yellow row: edit + sign). Prefer the psych row's sign link.
+  function findSectionSignLink() {
+    try {
+      var docs = allDocs();
+      var fallback = null;
+      for (var d = 0; d < docs.length; d++) {
+        var links = docs[d].querySelectorAll('a');
+        for (var j = 0; j < links.length; j++) {
+          var lt = (links[j].textContent || '').trim().toLowerCase();
+          if (lt !== 'sign' || !visible(links[j])) continue;
+          try {
+            var tbl = links[j].closest('table');
+            if (tbl && (tbl.innerText || '').toLowerCase().indexOf('effective date') !== -1) continue;
+          } catch (e2) {}
+          var row = links[j].closest('tr');
+          var rt = row ? (row.innerText || '').toLowerCase() : '';
+          if (rt.indexOf('psych') !== -1) return links[j];
+          if (!fallback) fallback = links[j];
+        }
+      }
+      return fallback;
+    } catch (e) {}
+    return null;
+  }
+  // CNR/Saints section list, both-green state (his rule, 2026-10-14): the
+  // psych section row is signed (signer + date on the row) and at least one
+  // other section row is signed too -> the form is done; no F anything here.
+  function sectionListAllSigned() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var rows = docs[d].querySelectorAll('table tr');
+        var signedRows = 0, psychSigned = false;
+        for (var i = 0; i < rows.length; i++) {
+          var txt = (rows[i].innerText || '');
+          if (!/\d{1,2}\/\d{1,2}\/\d{4}/.test(txt)) continue;
+          var hasView = false, hasSign = false;
+          var ls = rows[i].querySelectorAll('a');
+          for (var j = 0; j < ls.length; j++) {
+            var lt = (ls[j].textContent || '').trim().toLowerCase();
+            if (lt === 'view') hasView = true;
+            if (lt === 'sign') hasSign = true;
+          }
+          if (hasView && !hasSign) {
+            signedRows++;
+            if (/psych/i.test(txt)) psychSigned = true;
+          }
+        }
+        if (psychSigned && signedRows >= 2) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
   // Progress Notes: VIEW ALL button (may be div/span styled as button, not a real <button>)
   function findViewAllButton() {
     try {
@@ -749,8 +803,13 @@
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
     var adm = findAdmissionRecord();
     if (adm) { fireClick(adm); return true; }
-    // CNR/Saints section list: F clicks VIEW (signed Reason for Consultation) — only facility with this rule
+    // CNR/Saints section list (v1.7, his three-state rule, 2026-10-14):
+    // a sign link is waiting -> F clicks SIGN; both psych lines signed/green
+    // -> F deliberately does nothing on this page; otherwise -> VIEW (as before)
     if (isSectionListPage()) {
+      var sgn = findSectionSignLink();
+      if (sgn) { fireClick(sgn); return true; }
+      if (sectionListAllSigned()) return true;
       var svw = findViewLink();
       if (svw) { fireClick(svw); return true; }
     }
@@ -908,6 +967,12 @@
         removeStaleViewBadges();
         return;
       }
+      // Section list: if a sign is waiting, the F badge belongs on SIGN, not
+      // view; if both lines are signed, no F badge at all (v1.7).
+      if (isSectionListPage() && (findSectionSignLink() || sectionListAllSigned())) {
+        removeStaleViewBadges();
+        return;
+      }
       var target = findViewLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-view';
@@ -916,6 +981,47 @@
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+  function removeStaleSignBadges() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var stale = docs[d].querySelectorAll('.' + FBTN_CLASS + '-sign');
+          for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
+        } catch (e3) {}
+      }
+    } catch (e) {}
+  }
+  // CNR/Saints section list: F badge on the SIGN link while a signature waits
+  function applyFSectionSignBadge() {
+    try {
+      if (!shouldRun()) return;
+      if (!isSectionListPage()) { removeStaleSignBadges(); return; }
+      var target = findSectionSignLink();
+      if (!target || !target.parentNode) { removeStaleSignBadges(); return; }
+      var badgeCls = FBTN_CLASS + '-sign';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('Sign section (same as F key)', function() { doFAction(); }, target.ownerDocument);
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+  // Both lines green -> strip EVERY F badge from this page (v1.7): whichever
+  // badge pass placed one, none belongs on a completed section list.
+  function applyFSectionListCleanup() {
+    try {
+      if (!shouldRun()) return;
+      if (!isSectionListPage() || !sectionListAllSigned()) return;
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var all = docs[d].querySelectorAll('.' + FBTN_CLASS);
+          for (var s = 0; s < all.length; s++) { try { all[s].remove(); } catch (e2) {} }
+        } catch (e3) {}
+      }
     } catch (e) {}
   }
   function applyFLockBadge() {
@@ -1001,6 +1107,9 @@
   applyFViewBadge();
   setTimeout(applyFViewBadge, 1500);
   setTimeout(applyFViewBadge, 4000);
+  applyFSectionSignBadge();
+  setTimeout(applyFSectionSignBadge, 1500);
+  setTimeout(applyFSectionSignBadge, 4000);
   applyFViewAllBadge();
   setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
@@ -1051,6 +1160,11 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
+  // Runs last: on a both-green section list, no F badge survives (v1.7)
+  applyFSectionListCleanup();
+  setTimeout(applyFSectionListCleanup, 1500);
+  setTimeout(applyFSectionListCleanup, 4000);
+  setTimeout(applyFSectionListCleanup, 6000);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
