@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.6
+// @version      1.7
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -171,6 +171,13 @@
     var chartLines = medsValue.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
     var chartMeds = [];
     chartLines.forEach(function (l) { var p = parseMedLine(l); if (p) { p.line = l; chartMeds.push(p); } });
+    // Specless chart-owned lines (his rule, 2026-10-14): the methadone
+    // line carries no dose/frequency, so it never parses as a med —
+    // but it is a real payload line and must land (at the end of the
+    // list), not disqualify the whole fill.
+    var chartExtras = chartLines.filter(function (l) {
+      return !parseMedLine(l) && /^-\s*Methadone managed by medical\s*$/i.test(l);
+    });
 
     var lines = txt.split('\n');
     var hi = -1, ei = -1, i;
@@ -186,8 +193,10 @@
     var isNone = block.length === 1 && /^-\s*none\s*$/i.test(block[0].trim());
     var newBlock;
     if (isNone || block.length === 0) {
-      newBlock = chartLines.length ? chartLines.slice() : ['- none'];
-    } else if (!chartMeds.length) {
+      if (!chartLines.length) newBlock = ['- none'];
+      else if (chartMeds.length) newBlock = chartLines.slice();
+      else newBlock = ['- none'].concat(chartLines.filter(function (l) { return !/^-\s*none\s*$/i.test(l); }));
+    } else if (!chartMeds.length && !chartExtras.length) {
       return txt;   // queued value didn't parse as meds — don't touch his list
     } else {
       var chartByCanon = {};
@@ -195,6 +204,8 @@
       var used = {};
       var rebuilt = [], lastMedPos = -1;
       block.forEach(function (line) {
+        if (/^-\s*none\s*$/i.test(line.trim())) return;              // placeholder — re-derived below
+        if (chartExtras.indexOf(line.trim()) !== -1) return;         // chart-owned — re-appended in place
         var p = parseMedLine(line);
         if (!p) { rebuilt.push(line); return; }                    // annotation — untouched
         var c = chartByCanon[p.canon];
@@ -213,7 +224,7 @@
       }
       var anyMed = rebuilt.some(function (l) { return !!parseMedLine(l); });
       if (!anyMed) rebuilt.unshift('- none');
-      newBlock = rebuilt;
+      newBlock = rebuilt.concat(chartExtras);
     }
 
     var out = lines.slice(0, hi + 1).concat(newBlock, trailingBlanks, lines.slice(ei));
