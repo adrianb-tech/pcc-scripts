@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version 2.7
+// @version      2.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -548,6 +548,7 @@
     if (/\bfour times a day\b|\bq\.i\.d\.?|\bqid\b|\b4 times a day\b/.test(l)) return 'QID';
     if (/\bevery morning\b|\beach morning\b|\bin the morning\b|\bqam\b/.test(l)) return 'QAM';
     if (/\bevery evening\b|\bqpm\b/.test(l)) return 'QPM';
+    if (/\bone[ -]time only\b|\bone[ -]time dose\b|\bsingle dose\b/.test(l)) return 'QD';  // one-time order -> QD (his ruling, 2026-10-14: "the review Ativan is 2mg QD")
     if (/\bone time a day\b|\bonce a day\b|\bonce daily\b|\bevery day\b|\bdaily\b|\bq\.d\.?|\bqd\b|\bq day\b|\b1 time a day\b/.test(l)) return 'QD';
     return '';
   }
@@ -575,12 +576,15 @@
     if (raw === null) return def;
     raw = raw.replace(/[\t\r\n].*$/s, '');
     raw = raw.replace(/\*+.*$/, '');
+    raw = raw.replace(/\s+(?:to\s+)?add\s+in\b.*$/i, '');                       // "anxiety To add in 10 mg for total of 50 mg" -> "anxiety"
+    raw = raw.replace(/\s+with\s+(?:\S+\s+)?\d+(?:\.\d+)?\s*(?:mg|mcg|g)\b.*$/i, '');  // "anxiety with PROzac 40mg together" -> "anxiety"
     raw = raw.replace(/\s+(?:related to|addition to|in addition|along with|and give|give|total of|by mouth|orally|po|sublingual|tablets?|capsules?|caps?|\d+\s*\/\s*\d+|[½¼¾]|\d+(?:\.\d+)?\s*(?:mg|mcg|ml|g)\b).*$/i, '');
     raw = raw.replace(/\s*\([^)]*\)\s*$/, '');
     raw = raw.replace(/,.*$/, '');
     raw = raw.replace(/\s*\(\s*[A-Z]\d{2}(?:\.[0-9A-Z]{1,4})?\s*\)/g, '');            // ICD code in parentheses
     raw = raw.replace(/\s+(?:in the (?:morning|afternoon|evening)|at bedtime|at night)\b.*$/i, '');   // trailing timing words
     raw = raw.replace(/\s+without\s+behaviou?ral\b.*$/i, '');                          // "without behavioral disturbance"
+    raw = raw.replace(/^for\s+/i, '');                                              // double-"for" sigs: "for for anxiety" capture starts "for anxiety"
     raw = raw.replace(/^\s*(?:other|unspecified|acute|chronic|mild|moderate|severe)\s+/i, '');
     raw = raw.replace(/^\s+|\s+$/g, '');
     if (!raw.length) return def;
@@ -678,8 +682,16 @@
           });
           return;
         }
-        var total = 0;
-        uniq.forEach(function(r) { total += r.dnum; });
+        var total = 0, statedTotal = null;
+        uniq.forEach(function(r) {
+          total += r.dnum;
+          // A prescriber-stated total ("...add in 10 mg for total of 50 mg")
+          // already INCLUDES the companion order's dose — summing the rows
+          // would double-count (50 + 10 = 60). The stated total wins.
+          var tm = r.raw.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i);
+          if (tm && Math.abs((+tm[1]) - r.dnum) < 0.001 && tm[2].toLowerCase() === r.dunit) statedTotal = +tm[1];
+        });
+        if (statedTotal !== null) total = statedTotal;
         var freqDisp = (uniq.length > 1 && b === 'QD') ? 'QD' : r0.fr;
         var dosePart = r0.comboDose ? r0.comboDose : (fmtNum(total) + r0.dunit);
         pairs.push([dosePart, r0.rt, freqDisp].filter(function(x) { return x.length; }).join(' '));
