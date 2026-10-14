@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Header copy table
-// @version 1.20
+// @version 1.21
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @match        https://*.pointclickcare.com/*
@@ -204,7 +204,7 @@
         b.setAttribute('data-fill-label', label);
     }
     b.type = 'button'; b.textContent = 'Copy';
-    b.style.cssText = GLASS_BTN + 'display:inline-block;font-size:13px;padding:7px 16px;margin-left:6px;flex:none;';
+    b.style.cssText = GLASS_BTN + 'display:inline-block;font-size:11.5px;padding:4px 11px;flex:none;';
     b.addEventListener('click', function(e){
       e.preventDefault(); e.stopPropagation();
       copyText(text);
@@ -291,92 +291,105 @@
     return null;
   }
 
-  // ---------- DARK SLATE CARD (his design, 2026-10-13) ----------
-  // Replaces the old white table, same anchor (right after the allergies
-  // value). Title = resident name + room pill; rows = Age/Sex, Allergies
-  // (each with its glass Copy — Grab-all still finds .pcc-fill-copy and adds
-  // its G badge, restyled glass inside this card), then Admission.
+  // ---------- ONE-LINE SLATE BAR (his pick, 2026-10-13) ----------
+  // A single line that rides the Allergies line in the space to its right:
+  // ROOM pill | age/sex + Copy | ALLERGIES + Copy | ADM date. It adds no
+  // height and covers nothing (the tall card and the floated card both
+  // failed him — one stretched the header, the other covered the admission
+  // block). The resident name is NOT repeated: PCC shows it big just above.
   function addInfoTable(doc, afterEl){
     var rows = infoRows(doc);
-    var name = residentLastFirst(doc);
+    var byLabel = {};
+    rows.forEach(function (r) { byLabel[r.label] = r.value; });
     var room = roomBedNumber(doc, isCrownHeights(doc));
     var adm = admissionDate(doc);
     var old = doc.getElementById('copyInfoTable');
-    if (!rows.length && !name){ if (old && old.parentNode) old.parentNode.removeChild(old); return; }
-    var sig = name + '|' + room + '|' + rows.map(function(r){ return r.label + '=' + r.value; }).join('|') +
+    if (!rows.length && !room && !adm){ if (old && old.parentNode) old.parentNode.removeChild(old); return; }
+    var sig = room + '|' + rows.map(function(r){ return r.label + '=' + r.value; }).join('|') +
       '|' + (adm ? adm.date + adm.kind : '');
     if (old && old.getAttribute('data-sig') === sig) return;
     if (old && old.parentNode) old.parentNode.removeChild(old);
 
-    // Grab-all's G badge, glass-styled when it lands inside this card.
     if (!doc.getElementById('pccHdrCardStyle')) {
       var st = doc.createElement('style');
       st.id = 'pccHdrCardStyle';
       st.textContent = '#copyInfoTable .pcc-g-badge{background:rgba(255,255,255,.08)!important;' +
-        'border:1px solid rgba(255,255,255,.25)!important;border-bottom-width:2px!important;color:#cbd5e1!important;}';
+        'border:1px solid rgba(255,255,255,.25)!important;border-bottom-width:2px!important;color:#cbd5e1!important;' +
+        'width:20px!important;height:20px!important;font-size:10px!important;border-radius:5px!important;}';
       (doc.head || doc.documentElement).appendChild(st);
     }
 
     var wrap = doc.createElement('span');
     wrap.id = 'copyInfoTable';
     wrap.setAttribute('data-sig', sig);
-    // Floated, not in flow (v1.20, his request): the card hovers at the spot
-    // right after the allergies value without stretching the header — the
-    // space before/after the Allergies section keeps its original size.
-    wrap.style.cssText = 'position:absolute;z-index:60;margin-left:12px;' +
-      'background:linear-gradient(135deg,#263449,#131c2b);border-radius:16px;' +
-      'box-shadow:0 10px 28px rgba(2,6,23,.35);padding:14px 18px 8px;min-width:430px;max-width:640px;' +
+    wrap.style.cssText = 'display:inline-flex;align-items:center;gap:10px;vertical-align:middle;margin-left:14px;' +
+      'background:linear-gradient(135deg,#263449,#131c2b);border-radius:12px;' +
+      'box-shadow:0 6px 18px rgba(2,6,23,.28);padding:6px 12px;white-space:nowrap;' +
       'font-family:-apple-system,Helvetica,Arial,sans-serif;color:#f8fafc;';
 
-    if (name) {
-      var title = doc.createElement('div');
-      title.style.cssText = 'display:flex;align-items:center;gap:12px;padding-bottom:10px;';
-      var nm = doc.createElement('span');
-      nm.textContent = name;
-      nm.style.cssText = 'font-size:23px;font-weight:700;letter-spacing:.01em;color:#f8fafc;flex:1;min-width:0;';
-      title.appendChild(nm);
-      if (room) {
-        var pill = doc.createElement('span');
-        pill.style.cssText = 'flex:none;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);' +
-          'color:#dbe7f5;font-size:14.5px;font-weight:600;padding:5px 13px;border-radius:999px;white-space:nowrap;';
-        var rl = doc.createElement('span');
-        rl.textContent = 'ROOM ';
-        rl.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:.08em;color:#8fa3bd;';
-        pill.appendChild(rl);
-        pill.appendChild(doc.createTextNode(room));
-        title.appendChild(pill);
-      }
-      wrap.appendChild(title);
+    function microLabel(txt) {
+      var s = doc.createElement('span');
+      s.textContent = txt;
+      s.style.cssText = 'font-size:9.5px;font-weight:700;letter-spacing:.07em;color:#8fa3bd;text-transform:uppercase;';
+      return s;
     }
-
-    function dataRow(label, value, valueColor, btn) {
-      var row = doc.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.09);';
-      var lb = doc.createElement('span');
-      lb.textContent = label;
-      lb.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8fa3bd;width:88px;flex:none;';
-      var vl = doc.createElement('span');
-      vl.style.cssText = 'font-size:19px;font-weight:600;color:' + valueColor + ';flex:1;min-width:0;';
-      if (typeof value === 'string') vl.textContent = value; else vl.appendChild(value);
-      row.appendChild(lb); row.appendChild(vl);
-      if (btn) row.appendChild(btn);
-      return row;
+    function group() {
+      var g = doc.createElement('span');
+      g.style.cssText = 'display:inline-flex;align-items:center;gap:7px;white-space:nowrap;';
+      return g;
     }
-
-    for (var i = 0; i < rows.length; i++){
-      var isAlg = rows[i].label === 'Allergies';
-      wrap.appendChild(dataRow(rows[i].label, rows[i].value, isAlg ? '#fda4af' : '#f8fafc',
-        smallCopyBtn(doc, rows[i].value, rows[i].label)));
+    function sep() {
+      var s = doc.createElement('span');
+      s.style.cssText = 'width:1px;height:20px;background:rgba(255,255,255,.14);flex:none;';
+      return s;
+    }
+    function valSpan(txt) {
+      var s = doc.createElement('span');
+      s.textContent = txt;
+      s.style.cssText = 'font-size:15.5px;font-weight:600;color:#f8fafc;';
+      return s;
+    }
+    var parts = [];
+    if (room) {
+      var pill = doc.createElement('span');
+      pill.style.cssText = 'background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);' +
+        'color:#dbe7f5;font-size:12.5px;font-weight:600;padding:3px 10px;border-radius:999px;white-space:nowrap;';
+      var rl = doc.createElement('span');
+      rl.textContent = 'ROOM ';
+      rl.style.cssText = 'font-size:9px;font-weight:700;letter-spacing:.08em;color:#8fa3bd;';
+      pill.appendChild(rl);
+      pill.appendChild(doc.createTextNode(room));
+      parts.push(pill);
+    }
+    if (byLabel['Age/Sex']) {
+      var g1 = group();
+      g1.appendChild(valSpan(byLabel['Age/Sex']));
+      g1.appendChild(smallCopyBtn(doc, byLabel['Age/Sex'], 'Age/Sex'));
+      parts.push(g1);
+    }
+    if (byLabel['Allergies']) {
+      var g2 = group();
+      g2.appendChild(microLabel('Allergies'));
+      g2.appendChild(smallCopyBtn(doc, byLabel['Allergies'], 'Allergies'));
+      parts.push(g2);
+    }
+    if (byLabel['Psych meds']) {
+      var g3 = group();
+      g3.appendChild(microLabel('Psych meds'));
+      g3.appendChild(smallCopyBtn(doc, byLabel['Psych meds'], 'Psych meds'));
+      parts.push(g3);
     }
     if (adm) {
-      var admVal = doc.createElement('span');
-      admVal.appendChild(doc.createTextNode(adm.date + ' '));
+      var g4 = group();
+      g4.appendChild(microLabel('Adm'));
+      g4.appendChild(valSpan(adm.date));
       var kind = doc.createElement('span');
       kind.textContent = '(' + adm.kind + ')';
-      kind.style.cssText = 'font-size:13px;font-weight:500;color:#8fa3bd;';
-      admVal.appendChild(kind);
-      wrap.appendChild(dataRow('Admission', admVal, '#f8fafc', null));
+      kind.style.cssText = 'font-size:11px;font-weight:500;color:#8fa3bd;';
+      g4.appendChild(kind);
+      parts.push(g4);
     }
+    parts.forEach(function (p, i) { if (i > 0) wrap.appendChild(sep()); wrap.appendChild(p); });
     afterEl.parentNode.insertBefore(wrap, afterEl.nextSibling);
   }
 
