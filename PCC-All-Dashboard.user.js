@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.11
+// @version      2.12
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -557,7 +557,7 @@
     if (/\bfour times a day\b|\bq\.i\.d\.?|\bqid\b|\b4 times a day\b/.test(l)) return 'QID';
     if (/\bevery morning\b|\beach morning\b|\bin the morning\b|\bqam\b/.test(l)) return 'QAM';
     if (/\bevery evening\b|\bqpm\b/.test(l)) return 'QPM';
-    if (/\bone[ -]time only\b|\bone[ -]time dose\b|\bsingle dose\b/.test(l)) return 'QD';  // one-time order -> QD (his ruling, 2026-10-14: "the review Ativan is 2mg QD")
+    if (/\bone[ -]time only\b|\bone[ -]time dose\b|\bsingle dose\b/.test(l)) return 'ONCE';  // one-time = STAT (his ruling, 2026-10-14 15:04): excluded from the med list entirely — buildMedList drops ONCE rows. Sits AFTER the standing-frequency rules on purpose: a compound sig ('...two times a day... AND ...one time only...') still resolves to its standing frequency.
     if (/\bone time a day\b|\bonce a day\b|\bonce daily\b|\bevery day\b|\bdaily\b|\bq\.d\.?|\bqd\b|\bq day\b|\b1 time a day\b/.test(l)) return 'QD';
     return '';
   }
@@ -649,6 +649,7 @@
       var rt = routeOf(instr);
       var disp = med.name + ((isLiquid(hdr) && rt === '') ? ' liquid' : '');
       var fr = freqOf(instr);
+      if (fr === 'ONCE') return; // one-time/STAT order — not a standing med, never listed
       var ind = indicationOf(instr, med.ind);
       if (FORCED_IND.hasOwnProperty(med.name)) ind = FORCED_IND[med.name];
       var raw = instr.replace(/\s+/g, ' ').trim();
