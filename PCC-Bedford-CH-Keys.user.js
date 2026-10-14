@@ -582,6 +582,22 @@
     } catch (e) {}
     return null;
   }
+  // Resident Profile link (blue name at top of Progress Notes - View All page)
+  // Ported from Boro Park / CNR Keys at his ask, 2026-10-14.
+  function findResidentProfileLink() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var links = docs[d].querySelectorAll('a');
+        for (var i = 0; i < links.length; i++) {
+          var tx = (links[i].textContent || '').toLowerCase().trim();
+          if (tx.indexOf('resident profile') !== -1 && visible(links[i])) return links[i];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
+
   // Resident census/search list — no F badges here at all
   function isResidentListPage() {
     try {
@@ -703,10 +719,13 @@
       var lk = findLockButton();
       if (lk) { fireClick(lk); return true; }
     }
-    // Progress Notes: F clicks VIEW ALL
+    // Progress Notes: F clicks VIEW ALL (on tab) or Resident Profile link (on View All page)
     if (isProgressNotesPage()) {
       var va = findViewAllButton();
       if (va) { fireClick(va); return true; }
+      // On the View All page (no VIEW ALL button), F goes to Resident Profile
+      var rp = findResidentProfileLink();
+      if (rp) { fireClick(rp); return true; }
     }
     // Form sections page: F clicks the view link — all facilities (not on resident list or progress notes)
     var vw = null;
@@ -808,6 +827,20 @@
       var badgeCls = FBTN_CLASS + '-viewall';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge('View All (same as F key)', function() { doFAction(); });
+      badge.classList.add(badgeCls);
+      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
+      else target.parentNode.appendChild(badge);
+    } catch (e) {}
+  }
+  // Progress Notes - View All: F badge on the patient's name (Resident Profile link)
+  function applyFResidentProfileBadge() {
+    try {
+      if (!shouldRun()) return;
+      var target = findResidentProfileLink();
+      if (!target || !target.parentNode) return;
+      var badgeCls = FBTN_CLASS + '-resprofile';
+      if (target.parentNode.querySelector('.' + badgeCls)) return;
+      var badge = makeFBadge('Resident Profile (same as F key)', function() { doFAction(); });
       badge.classList.add(badgeCls);
       if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
       else target.parentNode.appendChild(badge);
@@ -958,6 +991,9 @@
   applyFViewAllBadge();
   setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
+  applyFResidentProfileBadge();
+  setTimeout(applyFResidentProfileBadge, 1500);
+  setTimeout(applyFResidentProfileBadge, 4000);
   applyFLockBadge();
   setTimeout(applyFLockBadge, 1500);
   setTimeout(applyFLockBadge, 4000);
