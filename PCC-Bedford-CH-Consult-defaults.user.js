@@ -154,7 +154,10 @@
     dPlanted = true;
     var heIsEditing = false;
     document.addEventListener('input', function() { heIsEditing = true; }, true);
-    document.addEventListener('mousedown', function() { heIsEditing = true; }, true);
+    document.addEventListener('mousedown', function(ev) {
+      var tg = ev.target;
+      if (tg && (tg.tagName === 'TEXTAREA' || (tg.tagName === 'INPUT' && (tg.type === 'text' || tg.type === 'password')))) heIsEditing = true;
+    }, true);
     document.addEventListener('keydown', function(e) {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key !== 'd' && e.key !== 'D') return;
