@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.18
+// @version 1.19
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -118,6 +118,17 @@
       if (/^[A-Z]\d{1,3}(?:\.\d+)?\b/.test(s)) return;   // "Dx: G30.9 ..." code-first lines aren't prose lists
       if (s.length < 3) return;
       dxLists.push(s);
+    });
+    // "The resident is post admission to the facility with diagnoses
+    // of: A, B, C." (his CH wound note, 2026-10-14) is the same kind
+    // of canonical list — verbatim, and prose mining is skipped. The
+    // extractor missed it and mined AUD/tobacco fragments from other
+    // notes instead (his screenshot: "HTN, HLD, AUD, tobacco use
+    // disorder" for a chart whose answer was the admission list).
+    grab(text, /\bwith\s+diagnoses\s+of\s*:\s*([A-Z][^\n]+?)(?=\.\s+[A-Z0-9]|\.\s*$|\n|$)/gm).forEach(function (s) {
+      s = s.trim();
+      if (s.length < 3) return;
+      if (dxLists.indexOf(s) < 0) dxLists.push(s);
     });
     var verbatimOnly = dxLists.length > 0;
     // When a prose h/o list exists, it IS the answer (his CNR chart,
