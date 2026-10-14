@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.5
+// @version      3.6
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -397,41 +397,83 @@
     });
     try { el.click(); } catch (e) {}
   }
-  function findWtsTab(doc) {
-    // Case-insensitive throughout: PCC may keep the tab labels in
-    // mixed case in the DOM and uppercase them only visually (CSS) -
-    // the exact-case match missed them (his captures, 2026-10-14).
-    var bodyTxt = ((doc.body && doc.body.textContent) || '').toUpperCase();
-    var LABELS = ['DASH', 'PROFILE', 'ORDERS', 'RESULTS', 'FORMS', 'PROG NOTES'];
-    var others = 0;
-    LABELS.forEach(function (L) { if (bodyTxt.indexOf(L) !== -1) others++; });
-    if (others < 4) return null; // not the tab-bar frame
-    var els = doc.querySelectorAll('a,button,[role="tab"],li,td,span,div');
-    var best = null, bestSize = 1e9;
-    for (var i = 0; i < els.length; i++) {
-      var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
-      if (tx !== 'WTS/VITALS') continue;
-      var size = els[i].querySelectorAll('*').length;
-      if (size < bestSize) { bestSize = size; best = els[i]; }
+  // Tab finding + activation PORTED from his old Tab Shortcuts
+  // script (2026-10-02, v1.48 - 'the tabs were labeled qwerty and
+  // they all worked. use that code'). Its method differs from my
+  // failed finder in three ways that matter: (1) it first locates
+  // the tab STRIP - the deepest visible container holding at least
+  // 8 known tab labels as whole words; (2) inside the strip it
+  // takes the deepest VISIBLE element whose normalized text is
+  // exactly the label; (3) activation is click + an ENTER
+  // keystroke - some PCC tabs only respond to Enter.
+  var ALL_TAB_LABELS = ['DASH', 'PROFILE', 'CENSUS', 'MED DIAG', 'PROBLEMS',
+    'ALLERGIES', 'IMMUN', 'ORDERS', 'WTS/VITALS', 'RESULTS', 'MDS', 'FORMS',
+    'THERAPY', 'PROG NOTES', 'CARE PLAN', 'TASKS', 'MISC', 'ASSMNTS', 'ASSESSMENTS'];
+  function tabNorm(s) { return (s || '').replace(/\s+/g, ' ').trim().toUpperCase(); }
+  function tabVisible(el) { return !!(el.getClientRects && el.getClientRects().length); }
+  function tabDepth(el, doc) {
+    var d = 0, p = el;
+    while (p && p !== doc.body && d < 60) { d++; p = p.parentNode; }
+    return d;
+  }
+  function findTabStrip(doc) {
+    var cands = doc.querySelectorAll('div, table, ul, nav, section, td, tr, tbody, header');
+    var best = null, bestDepth = -1;
+    for (var i = 0; i < cands.length; i++) {
+      var el = cands[i];
+      if (!tabVisible(el)) continue;
+      var tx = ' ' + tabNorm(el.textContent) + ' ';
+      var count = 0;
+      for (var j = 0; j < ALL_TAB_LABELS.length; j++) {
+        if (tx.indexOf(' ' + ALL_TAB_LABELS[j] + ' ') !== -1) count++;
+      }
+      if (count >= 8) {
+        var d = tabDepth(el, doc);
+        if (d > bestDepth) { bestDepth = d; best = el; }
+      }
     }
-    if (!best) return null;
-    return best.querySelector('a') || best;
+    return best;
+  }
+  function findTabInDoc(doc, label) {
+    var scope = findTabStrip(doc) || doc;
+    var els = scope.querySelectorAll('a, button, td, li, span, div, th');
+    var best = null, bestDepth = -1;
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (tabNorm(el.textContent) !== label) continue;
+      if (!tabVisible(el)) continue;
+      var d = tabDepth(el, doc);
+      if (d > bestDepth) { bestDepth = d; best = el; }
+    }
+    return best;
+  }
+  function activateTab(el) {
+    var W = (el.ownerDocument && el.ownerDocument.defaultView) || window;
+    try { el.click(); } catch (e) {}
+    try {
+      var init = { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true };
+      el.dispatchEvent(new W.KeyboardEvent('keydown', init));
+      el.dispatchEvent(new W.KeyboardEvent('keypress', init));
+    } catch (e2) {}
+    // Belt and braces: the mouse sequence too.
+    try {
+      ['mousedown', 'mouseup', 'click'].forEach(function (type) {
+        el.dispatchEvent(new W.MouseEvent(type, { bubbles: true, cancelable: true, view: W }));
+      });
+    } catch (e3) {}
   }
   function goWtsVitals() {
-    // Try locally across every reachable frame, AND broadcast: the
-    // instance living in the tab bar's own frame hears the signal
-    // and clicks there, in its own realm - the route that provably
-    // works in this suite (same pattern as Grab-all).
     try { localStorage.setItem('tmGoWts', String(Date.now())); } catch (e) {}
-    var docs = [];
-    (function walk(w) {
-      try { docs.push(w.document); } catch (e) { return; }
-      for (var i = 0; i < w.frames.length; i++) walk(w.frames[i]);
+    var found = null;
+    (function search(w) {
+      if (found) return;
+      try {
+        found = findTabInDoc(w.document, 'WTS/VITALS');
+        if (found) return;
+        for (var i = 0; i < w.frames.length && !found; i++) search(w.frames[i]);
+      } catch (e) { /* cross-origin frame: skip */ }
     })(window.top || window);
-    for (var d = 0; d < docs.length; d++) {
-      var target = findWtsTab(docs[d]);
-      if (target) { fireClick(target); return true; }
-    }
+    if (found) { activateTab(found); return true; }
     return false;
   }
 
@@ -670,8 +712,8 @@
   }, true);
   window.addEventListener('storage', function (e) {
     if (e.key === 'tmGoWts' && e.newValue) {
-      var mine = findWtsTab(document);
-      if (mine) fireClick(mine);
+      var mine = findTabInDoc(document, 'WTS/VITALS');
+      if (mine) activateTab(mine);
       return;
     }
     if (e.key === 'tmGPress') { if (e.newValue) hlAllTiles(); else hlRestoreAll(); return; }
