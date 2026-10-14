@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.13
+// @version      1.14
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -181,6 +181,27 @@
     });
   }
 
+  // COPY mode + READMISSION (his rule, 2026-10-14 15:07): when the
+  // resident was readmitted, the copied form starts a new episode —
+  // Type must be Initial, not the Follow Up PCC pre-sets. Detected
+  // from the chart behind the popup (the READMISSION banner, or
+  // PCC's own "Admission (re-entry)" header line). Set ONCE at open.
+  var copyTypeDone = false;
+  function openerHasReadmission() {
+    try {
+      var od = window.opener && window.opener.document;
+      var txt = (od && od.body ? od.body.innerText : '');
+      return /readmission/i.test(txt) || /admission \(re-entry\)/i.test(txt);
+    } catch (e) { return false; }
+  }
+  function runCopyType() {
+    if (copyTypeDone || !popupFacilityOk()) return;
+    var typeSel = document.querySelector('select[name="assessment_type"]');
+    if (!typeSel) return;
+    copyTypeDone = true; // one decision per popup, whatever the state
+    if (openerHasReadmission()) setSelectOption(typeSel, 'Initial');
+  }
+
   // NEW mode: plant the D, and autofill Form = Consult-Psychiatry 1.0,
   // Type = Initial. (Live-confirmed 2026-10-14: the popup opens with
   // both already set.)
@@ -208,7 +229,7 @@
     });
     (function waitPopup() {
       if (!interacted && tries < 8) { try { window.focus(); } catch (e) {} }
-      if (popupMode() === 'C') plantD();
+      if (popupMode() === 'C') { plantD(); runCopyType(); }
       else runNewPopup();
       if (++tries < 20) setTimeout(waitPopup, 250);
     })();
