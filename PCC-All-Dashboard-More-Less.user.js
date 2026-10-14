@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.1
+// @version      2.2
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -412,6 +412,34 @@
     });
   }
 
+  // READMISSION chip beside the G button (his ask, 2026-10-14: he
+  // loves the warning — move it next to G). The flag script keeps
+  // its own box (the consult defaults read that box), and publishes
+  // a note keyed to resident + re-entry date; when the note matches
+  // THIS resident, the same bright-red warning shows here.
+  function renderReadmitChip() {
+    var g = document.getElementById('tmGBtn');
+    var old = document.getElementById('tmReadmitChip');
+    var note = null;
+    try { note = JSON.parse(localStorage.getItem('tmReadmitNote') || 'null'); } catch (e) {}
+    var show = false;
+    if (note && note.id && g) {
+      var idm = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+      var adm = selfData().admission || '';
+      var curDate = adm.replace(/\s*\((re-entry|initial)\)/i, '');
+      show = !!idm && idm[1] === note.id && curDate === note.date;
+    }
+    if (!show) { if (old) old.remove(); return; }
+    if (old) return;
+    var chip = document.createElement('span');
+    chip.id = 'tmReadmitChip';
+    chip.textContent = 'READMISSION';
+    chip.style.cssText = 'display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;' +
+      'border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;' +
+      'font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;';
+    g.parentNode.insertBefore(chip, g.nextSibling);
+  }
+
   function run() {
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar) return;
@@ -450,6 +478,7 @@
     while ((stray = document.getElementById('tmRelRow') || document.getElementById('tmBimsRow'))) stray.remove();
     apply();
     buildCards();
+    renderReadmitChip();
   }
 
   var lastPing = 0;
@@ -458,13 +487,13 @@
     if (now - lastPing < 1500) return;
     lastPing = now;
     try { localStorage.setItem('tmRowPing', String(now)); } catch (e) {}
-    setTimeout(buildCards, 700);
+    setTimeout(function () { buildCards(); renderReadmitChip(); }, 700);
   }, true);
   window.addEventListener('storage', function (e) {
     if (e.key !== 'tmRowPing' || !e.newValue) return;
     var ts = parseInt(e.newValue, 10);
     if (!ts || Date.now() - ts > 5000) return;
-    setTimeout(buildCards, 700);
+    setTimeout(function () { buildCards(); renderReadmitChip(); }, 700);
   });
 
   // Bounded staggered passes (the Connect button is built late by PCC's
