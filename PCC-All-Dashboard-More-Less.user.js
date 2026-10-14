@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.1
+// @version      3.2
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -352,8 +352,8 @@
       d.title = 'Click to copy';
       d.addEventListener('mousedown', function () { hlTile(d, false); });
       d.addEventListener('click', function () {
-        var b = document.getElementById('copyMedListBtn');
-        if (b) { fireClick(b); flashLabel(ls, d); }
+        var p = medsPanel();
+        if (p && p.btn) { fireClick(p.btn); flashLabel(ls, d); }
       });
     }
     if (opts.click) {
@@ -422,11 +422,25 @@
   // learns its fill value when clicked, so the tile reads the panel
   // for display and DELEGATES its click to the real button — the
   // transfer text (incl. the methadone rule) stays the button's own.
+  // The meds panel does NOT live in the header's document - the
+  // dashboard's widgets are child frames (proven by his captures:
+  // the header doc has residentHeaderButtons but no medListBox).
+  // The first meds tile versions only looked in this document and
+  // so never appeared. Search every frame, like BIMS/Relationships.
+  function medsPanel() {
+    var docs = allDocs();
+    for (var i = 0; i < docs.length; i++) {
+      var box = docs[i].getElementById('medListBox');
+      var btn = docs[i].getElementById('copyMedListBtn');
+      if (box || btn) return { doc: docs[i], box: box, btn: btn };
+    }
+    return null;
+  }
   function medsDisplay() {
-    var box = document.getElementById('medListBox');
-    if (!box && !document.getElementById('copyMedListBtn')) return '';
-    if (!box) return '- none';
-    var divs = box.querySelectorAll('div');
+    var p = medsPanel();
+    if (!p) return '';
+    if (!p.box) return '- none';
+    var divs = p.box.querySelectorAll('div');
     var lines = [];
     for (var i = 1; i < divs.length; i++) {
       var tx = (divs[i].textContent || '').trim();
@@ -443,8 +457,8 @@
     if (d) {
       d.weight = weightValue();
       d.meds = medsDisplay();
-      var mb2 = document.getElementById('copyMedListBtn');
-      d.medsFill = (mb2 && mb2.hasAttribute('data-fill-value')) ? mb2.getAttribute('data-fill-value') : null;
+      var mp = medsPanel();
+      d.medsFill = (mp && mp.btn && mp.btn.hasAttribute('data-fill-value')) ? mp.btn.getAttribute('data-fill-value') : null;
       d.bims = bimsValue();
       d.rel = relValue();
     }
