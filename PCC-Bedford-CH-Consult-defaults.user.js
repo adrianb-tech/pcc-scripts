@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.7
+// @version      1.8
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -65,26 +65,35 @@
     setChecked(control('checkbox', 'Cust_3_C1', 'e'), true);  // Care coordinated: Nursing
   }
 
-  // ============ NEW-FORM POPUP (his ask, 2026-10-14) ============
-  // Clicking New opens PCC's "Reasons for Form" popup preselected to
-  // the wrong form. Set Form = 'Consult-Psychiatry 1.0' and Type of
-  // Form = 'Initial'. One-shot at open; facility-gated through the
-  // opener (the popup itself carries no facility name).
-  function setSelectByLabel(labelText, optionText) {
-    var labels = document.querySelectorAll('td, div, span, label');
-    for (var i = 0; i < labels.length; i++) {
-      if ((labels[i].textContent || '').trim() !== labelText) continue;
-      var row = labels[i].closest('tr') || labels[i].parentElement;
-      var sel = row ? row.querySelector('select') : null;
-      if (!sel) continue;
-      for (var j = 0; j < sel.options.length; j++) {
-        if ((sel.options[j].text || '').trim() === optionText) {
-          if (sel.selectedIndex !== j) {
-            sel.selectedIndex = j;
-            sel.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-          return true;
+  // ============ REASONS-FOR-FORM POPUP (newassess.jsp) ============
+  // Markup facts (his captured popup, 2026-10-14): the page serves BOTH
+  // modes. COPY mode carries hidden ESOLsave = "C" and NO Form select —
+  // Type (select name "assessment_type") comes pre-set to Follow Up, and
+  // the Save input runs save(document.formSave). NEW mode adds a Form
+  // select. Labels ("Form:", "Type of Form:") sit in their own row; the
+  // select is in the NEXT row — find the first select AFTER the label.
+  function selectAfterLabel(labelText) {
+    var all = document.querySelectorAll('td, div, span, strong, label');
+    var labelEl = null;
+    for (var i = 0; i < all.length; i++) {
+      if ((all[i].textContent || '').trim() === labelText) { labelEl = all[i]; break; }
+    }
+    if (!labelEl) return null;
+    var sels = document.querySelectorAll('select');
+    for (var j = 0; j < sels.length; j++) {
+      if (labelEl.compareDocumentPosition(sels[j]) & Node.DOCUMENT_POSITION_FOLLOWING) return sels[j];
+    }
+    return null;
+  }
+  function setSelectOption(sel, optionText) {
+    if (!sel) return false;
+    for (var j = 0; j < sel.options.length; j++) {
+      if ((sel.options[j].text || '').trim() === optionText) {
+        if (sel.selectedIndex !== j) {
+          sel.selectedIndex = j;
+          sel.dispatchEvent(new Event('change', { bubbles: true }));
         }
+        return true;
       }
     }
     return false;
@@ -96,18 +105,67 @@
       return txt.indexOf('crown heights') !== -1 || txt.indexOf('bedford') !== -1;
     } catch (e) { return false; }
   }
-  function runPopup() {
+  function isCopyPopup() {
+    var h = document.querySelector('input[name="ESOLsave"]');
+    return !!h && h.value === 'C';
+  }
+  function saveButton() {
+    var ins = document.querySelectorAll('input[type="button"], input[type="submit"]');
+    for (var i = 0; i < ins.length; i++) if ((ins[i].value || '') === 'Save') return ins[i];
+    return null;
+  }
+  function fireClick(el) {
+    ['mousedown', 'mouseup', 'click'].forEach(function(type) {
+      el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+    });
+  }
+
+  // NEW mode: autofill Form = Consult-Psychiatry 1.0, Type = Initial.
+  function runNewPopup() {
     if (!popupFacilityOk()) return;
-    if (setSelectByLabel('Form:', 'Consult-Psychiatry 1.0')) {
-      setTimeout(function() { setSelectByLabel('Type of Form:', 'Initial'); }, 350);
+    var formSel = selectAfterLabel('Form:');
+    if (!formSel) return; // not the NEW popup
+    if (setSelectOption(formSel, 'Consult-Psychiatry 1.0')) {
+      setTimeout(function() {
+        var typeSel = document.querySelector('select[name="assessment_type"]') || selectAfterLabel('Type of Form:');
+        setSelectOption(typeSel, 'Initial');
+      }, 350);
     }
+  }
+
+  // COPY mode (his ask, 2026-10-14): an "S" badge on the Save button,
+  // and the S key confirms the follow-up (clicks Save). Keys stay dead
+  // while he's typing in a field or a select has focus; no repeats.
+  var sPlanted = false;
+  function runCopyPopup() {
+    if (sPlanted || !popupFacilityOk()) return;
+    var btn = saveButton();
+    if (!btn) return;
+    var badge = document.createElement('span');
+    badge.textContent = 'S';
+    badge.style.cssText = 'display:inline-block;margin-left:6px;padding:1px 7px;' +
+      'background:#2f6f4f;color:#fff;border-radius:6px;vertical-align:middle;' +
+      'font:600 12px -apple-system,Helvetica,Arial,sans-serif;';
+    btn.parentNode.insertBefore(badge, btn.nextSibling);
+    sPlanted = true;
+    document.addEventListener('keydown', function(e) {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== 's' && e.key !== 'S') return;
+      var a = document.activeElement;
+      if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return;
+      var b = saveButton();
+      if (!b) return;
+      try { if (a && a.blur) a.blur(); } catch (err) {}
+      fireClick(b);
+    });
   }
 
   // ============ RUN — once, patiently ============
   if (/newassess\.jsp/.test(location.pathname)) {
     var tries = 0;
     (function waitPopup() {
-      runPopup();
+      if (isCopyPopup()) { runCopyPopup(); if (sPlanted) return; }
+      else runNewPopup();
       if (++tries < 20) setTimeout(waitPopup, 250);
     })();
     return;
