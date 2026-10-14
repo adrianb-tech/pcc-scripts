@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.18
+// @version      1.19
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -900,16 +900,18 @@
       for (var j = 0; j < targets.length; j++) { try { targets[j].blur(); } catch (e) {} }
     } catch (e) {}
   }
-  // Date of Consult, filled inside the F press (his requirement,
-  // 2026-10-14: the date auto-fill restored AND the F button working
-  // on the form page). Every earlier design filled the date while he
-  // was editing — and that background activity is what fought him
-  // (bad registration, focus trouble, signing errors). So now NOTHING
-  // touches the date while he edits: the field sits empty until he
-  // presses F to save, and filling it is step one of the save itself —
-  // typed character by character like his own typing, committed by
-  // the blur below, then the save click lands. Same order his hands
-  // do it: fill date, leave the field, click Save & Exit.
+  // Date of Consult — STAGGERED (his design, 2026-10-14: "first the
+  // F button is placed instantly and then a moment later the date is
+  // filled out"). The F badges plant on the normal instant passes;
+  // the date fills afterwards, once, at 1500ms (retry 4500ms), so the
+  // two never land in the same instant. The fill is typed character
+  // by character (the input class PCC's widget is built for) WITHOUT
+  // taking focus — focus is never stolen on a form he is editing —
+  // and only into an EMPTY field; a date he set himself always wins.
+  // Backstops at F-press: if the field is still empty, the same typed
+  // fill runs there with focus (his keypress, his moment), and either
+  // way the field gets a real focus/blur cycle so the widget parses
+  // what it holds before the save click lands.
   function todayStrK(){ var d = new Date(); return ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + '/' + d.getFullYear(); }
   function keyEvK(doc, type, ch){
     var w = doc.defaultView || window;
@@ -921,37 +923,66 @@
     } catch (err) {}
     return e;
   }
+  function typeDateInto(doc, input, v){
+    input.value = '';
+    try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e1) {}
+    for (var i = 0; i < v.length; i++) {
+      var ch = v.charAt(i);
+      try { input.dispatchEvent(keyEvK(doc, 'keydown', ch)); } catch (e2) {}
+      input.value = v.slice(0, i + 1);   // the character lands
+      try { input.dispatchEvent(keyEvK(doc, 'keypress', ch)); } catch (e3) {}
+      try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e4) {}
+      try { input.dispatchEvent(keyEvK(doc, 'keyup', ch)); } catch (e5) {}
+    }
+    try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e6) {}
+    // The widget's real (hidden) field, if the form carries one: same value.
+    var els = doc.querySelectorAll('input');
+    for (var j = 0; j < els.length; j++) {
+      var nm = ((els[j].getAttribute && els[j].getAttribute('name')) || '') + ' ' + (els[j].id || '');
+      if (els[j] !== input && nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
+        try { els[j].value = v; els[j].dispatchEvent(new Event('change', { bubbles: true })); } catch (e7) {}
+      }
+    }
+  }
+  function findDateInput(){
+    var docs = allDocs();
+    for (var d = 0; d < docs.length; d++) {
+      var input = docs[d].querySelector('[name="displaydateCust_2_II_9_dummy"]');
+      if (input && visible(input)) return { doc: docs[d], input: input };
+    }
+    return null;
+  }
+  // The staggered fill: a moment after the F badges, no focus taken.
+  function fillConsultDateSoft(){
+    try {
+      var hit = findDateInput();
+      if (!hit) return;
+      if ((hit.input.value || '').trim()) return;   // any content is his — leave it
+      typeDateInto(hit.doc, hit.input, todayStrK());
+      try { hit.input.dispatchEvent(new Event('focusout', { bubbles: true })); } catch (e) {}
+      try { hit.input.dispatchEvent(new Event('blur', { bubbles: true })); } catch (e) {}
+    } catch (e) {}
+  }
+  // The F-press backstop: same typed fill, with focus, if still empty.
   function fillConsultDateNow(){
     try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var doc = docs[d];
-        var input = doc.querySelector('[name="displaydateCust_2_II_9_dummy"]');
-        if (!input || !visible(input)) continue;
-        var v = todayStrK();
-        if ((input.value || '').replace(/\s+/g, '') === v) return false;   // already today — nothing to do
-        try { input.focus(); } catch (e0) {}
-        input.value = '';
-        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e1) {}
-        for (var i = 0; i < v.length; i++) {
-          var ch = v.charAt(i);
-          try { input.dispatchEvent(keyEvK(doc, 'keydown', ch)); } catch (e2) {}
-          input.value = v.slice(0, i + 1);   // the character lands
-          try { input.dispatchEvent(keyEvK(doc, 'keypress', ch)); } catch (e3) {}
-          try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e4) {}
-          try { input.dispatchEvent(keyEvK(doc, 'keyup', ch)); } catch (e5) {}
-        }
-        try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e6) {}
-        // The widget's real (hidden) field, if the form carries one: same value.
-        var els = doc.querySelectorAll('input');
-        for (var j = 0; j < els.length; j++) {
-          var nm = ((els[j].getAttribute && els[j].getAttribute('name')) || '') + ' ' + (els[j].id || '');
-          if (els[j] !== input && nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
-            try { els[j].value = v; els[j].dispatchEvent(new Event('change', { bubbles: true })); } catch (e7) {}
-          }
-        }
-        return true;
-      }
+      var hit = findDateInput();
+      if (!hit) return false;
+      if ((hit.input.value || '').trim()) return false;   // already filled (or his own date) — leave it
+      try { hit.input.focus(); } catch (e0) {}
+      typeDateInto(hit.doc, hit.input, todayStrK());
+      return true;
+    } catch (e) {}
+    return false;
+  }
+  // Give the date field a real focus cycle so the widget parses what
+  // it holds; commitBlur (called right after) supplies the blur.
+  function touchDateField(){
+    try {
+      var hit = findDateInput();
+      if (!hit) return false;
+      hit.input.focus();
+      return true;
     } catch (e) {}
     return false;
   }
@@ -962,8 +993,9 @@
       window.__pccSaveAt = nowS;
     } catch (e) {}
     var filledDate = fillConsultDateNow();
+    var touchedDate = filledDate ? true : touchDateField();
     commitBlur();
-    setTimeout(function(){ fireClick(btn); }, filledDate ? 300 : 120);
+    setTimeout(function(){ fireClick(btn); }, (filledDate || touchedDate) ? 300 : 120);
     return true;
   }
   function doFAction() {
@@ -1397,6 +1429,10 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
+  // The staggered date fill (v1.19, his design): F buttons first,
+  // instantly — the date follows a moment later, once.
+  setTimeout(fillConsultDateSoft, 1500);
+  setTimeout(fillConsultDateSoft, 4500);
   // Runs last: on a both-green section list, no F badge survives (v1.7)
   applyFSectionListCleanup();
   setTimeout(applyFSectionListCleanup, 1500);
