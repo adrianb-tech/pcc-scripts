@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.14
+// @version      1.15
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -56,17 +56,12 @@
 
   function applyForm() {
     setChecked(control('checkbox', 'Cust_1_A', 'a'), true); // Reason: Psychiatric Evaluation (always)
-    // The standard attestations are set on EVERY open (v1.13). They
-    // used to live in the fresh-only branch — but his flow fills the
-    // note (grab first, engine fills on open) BEFORE the defaults'
-    // blank test runs, so a brand-new form read as "already worked"
-    // and 3C/3C1 were skipped (proven by his captured new-patient
-    // form, 2026-10-14: 1A/3D/3F all correct, 3C/3C1 empty). On a
-    // copied form these are already checked from the last visit, so
-    // the guarded clicks are no-ops there.
-    setChecked(control('checkbox', 'Cust_3_C', 'a'), true);  // Chart Reviewed
-    setChecked(control('checkbox', 'Cust_3_C', 'b'), true);  // Labs and Workup Noted
-    setChecked(control('checkbox', 'Cust_3_C1', 'e'), true);  // Care coordinated: Nursing
+    // 3C / 3C1 are NOT set — his rule, stated plainly 2026-10-14
+    // 15:09: "chart reviewed, labs and workup noted, and nursing
+    // ... should not be checked." (They were my inference from his
+    // note prose in v1.6/v1.13 — never his ask. The note text says
+    // those things; the form boxes stay empty.) On a fresh form the
+    // clear below leaves them empty; on a copy they stay as copied.
     setChecked(control('radio', 'Cust_3_D', 'b'), true); // GDR: No
     setChecked(control('radio', 'Cust_3_F', 'b'), true); // New recommendations: No
     var acks = document.querySelectorAll('a.qcheck');
@@ -76,9 +71,6 @@
     var boxes = document.querySelectorAll('input[type="checkbox"][name^="Cust_"]');
     for (var j = 0; j < boxes.length; j++) setChecked(boxes[j], false);
     setChecked(control('checkbox', 'Cust_1_A', 'a'), true);  // Reason: Psychiatric Evaluation
-    setChecked(control('checkbox', 'Cust_3_C', 'a'), true);  // Chart Reviewed
-    setChecked(control('checkbox', 'Cust_3_C', 'b'), true);  // Labs and Workup Noted
-    setChecked(control('checkbox', 'Cust_3_C1', 'e'), true);  // Care coordinated: Nursing
   }
 
   // ============ REASONS-FOR-FORM POPUP (newassess.jsp) ============
