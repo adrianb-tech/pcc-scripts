@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.2
+// @version      1.3
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @name         Bedford + Crown Heights — Consult defaults (Crown Heights)
@@ -17,10 +17,10 @@
   function run() {
     if (done) return;
     done = true;
-    // 1. Set answer defaults.
-    var reasonEval = document.querySelector('input[name="Cust_1_A"][value="a"]');
-    if (reasonEval && !reasonEval.checked) reasonEval.click();
-
+    // 1. Set answer defaults. His rule for this form (2026-10-14):
+    // NO checkboxes get checked — Reason for Consult included (the
+    // 'a. Psychiatric Evaluation' check this script used to set is
+    // gone). The only answers set are the two No radios below.
     var gdrNo = document.querySelector('input[name="Cust_3_D"][value="b"]');
     if (gdrNo && !gdrNo.checked) gdrNo.click();
 
