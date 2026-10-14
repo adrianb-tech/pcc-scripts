@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.16
+// @version      1.17
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -131,13 +131,15 @@
 
   // The D (his asks, 2026-10-14): a "D" badge on the popup's Save
   // button, and the D key clicks Save — on BOTH popup modes. Dia won't
-  // hand the popup keyboard focus on open, so the working rhythm is
-  // Tab (focus lands) then D. Arming: PCC parks focus in the date
-  // field, which would make D read as "typing" — until he types or
-  // clicks into a field himself, auto-parked text-field focus is
-  // handed back to the page body on each arming tick. D fires from
-  // body/select/checkbox/button focus; dead only inside a text field
-  // he is genuinely editing; no repeats, no modifiers.
+  // hand the popup keyboard focus on open, so the rhythm is Tab (focus
+  // lands in the date field) then D. The v1.10 build blurred the date
+  // field on a 2.4s timer so D could fire — timing luck: a later Tab
+  // left focus sitting in the field and D read as "typing" (his
+  // report, 15:41). v1.17: no focus games at all. 'd' is not a date
+  // character, so while he has NOT typed anything yet, D fires Save
+  // even with the date field focused (Tab -> D, any timing). The
+  // moment he types or clicks into a field, D goes dead there — if he
+  // Tabs in and decides to change the date, nothing fights him.
   var dPlanted = false;
   function plantD() {
     if (dPlanted || !popupFacilityOk()) return;
@@ -150,25 +152,18 @@
       'font:600 12px -apple-system,Helvetica,Arial,sans-serif;';
     btn.parentNode.insertBefore(badge, btn.nextSibling);
     dPlanted = true;
-    var heTookFocus = false;
-    document.addEventListener('input', function() { heTookFocus = true; }, true);
-    document.addEventListener('mousedown', function() { heTookFocus = true; }, true);
-    var armTicks = 0;
-    (function arm() {
-      if (!heTookFocus) {
-        var a = document.activeElement;
-        if (a && a.tagName === 'INPUT' && a.type === 'text') { try { a.blur(); } catch (err) {} }
-      }
-      if (++armTicks < 12) setTimeout(arm, 200);
-    })();
+    var heIsEditing = false;
+    document.addEventListener('input', function() { heIsEditing = true; }, true);
+    document.addEventListener('mousedown', function() { heIsEditing = true; }, true);
     document.addEventListener('keydown', function(e) {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key !== 'd' && e.key !== 'D') return;
-      var a = document.activeElement;
-      if (a && a.tagName === 'TEXTAREA') return;
-      if (a && a.tagName === 'INPUT' && (a.type === 'text' || a.type === 'password')) return;
+      if (heIsEditing) return;
       var b = saveButton();
       if (!b) return;
+      e.preventDefault();
+      var a = document.activeElement;
+      if (a && a.blur) { try { a.blur(); } catch (err) {} }
       fireClick(b);
     });
   }
