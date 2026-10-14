@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.12
+// @version      1.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @name         CNR + Saints — Consult form defaults
@@ -55,12 +55,12 @@
     return done;
   }
 
-  // Q9 Date of Consult — OFF (his call, 2026-10-14: "turn off the
-  // date"). The script never touches the date field in any way. After
-  // a morning of variants (original setField, calendar, typing), the
-  // standing rule is: he picks the date himself with PCC's calendar —
-  // the one input class that registers and signs cleanly on current
-  // PCC builds. Checks + consultant name still fill instantly below.
+  // Q9 Date of Consult — this script never touches it while he edits
+  // (comment corrected in v1.13). The date IS auto-filled, but by the
+  // CNR+Saints Keys script (v1.18+), inside his F press: typed in and
+  // committed as step one of the save itself. Filling it during
+  // editing — every variant tried on 2026-10-14 — is what fought him
+  // on the form page. Checks + consultant name still fill instantly.
 
   // v1.3 speed-up (his request, piloted like the tab bar): document-start +
   // a fast bounded burst — retry every 60ms until the form is fully set
