@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.17
+// @version      1.18
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -900,14 +900,70 @@
       for (var j = 0; j < targets.length; j++) { try { targets[j].blur(); } catch (e) {} }
     } catch (e) {}
   }
+  // Date of Consult, filled inside the F press (his requirement,
+  // 2026-10-14: the date auto-fill restored AND the F button working
+  // on the form page). Every earlier design filled the date while he
+  // was editing — and that background activity is what fought him
+  // (bad registration, focus trouble, signing errors). So now NOTHING
+  // touches the date while he edits: the field sits empty until he
+  // presses F to save, and filling it is step one of the save itself —
+  // typed character by character like his own typing, committed by
+  // the blur below, then the save click lands. Same order his hands
+  // do it: fill date, leave the field, click Save & Exit.
+  function todayStrK(){ var d = new Date(); return ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + '/' + d.getFullYear(); }
+  function keyEvK(doc, type, ch){
+    var w = doc.defaultView || window;
+    var e = new w.KeyboardEvent(type, { key: ch, bubbles: true, cancelable: true });
+    try {
+      var code = ch.charCodeAt(0);
+      Object.defineProperty(e, 'keyCode', { get: function(){ return code; } });
+      Object.defineProperty(e, 'which', { get: function(){ return code; } });
+    } catch (err) {}
+    return e;
+  }
+  function fillConsultDateNow(){
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var doc = docs[d];
+        var input = doc.querySelector('[name="displaydateCust_2_II_9_dummy"]');
+        if (!input || !visible(input)) continue;
+        var v = todayStrK();
+        if ((input.value || '').replace(/\s+/g, '') === v) return false;   // already today — nothing to do
+        try { input.focus(); } catch (e0) {}
+        input.value = '';
+        try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e1) {}
+        for (var i = 0; i < v.length; i++) {
+          var ch = v.charAt(i);
+          try { input.dispatchEvent(keyEvK(doc, 'keydown', ch)); } catch (e2) {}
+          input.value = v.slice(0, i + 1);   // the character lands
+          try { input.dispatchEvent(keyEvK(doc, 'keypress', ch)); } catch (e3) {}
+          try { input.dispatchEvent(new Event('input', { bubbles: true })); } catch (e4) {}
+          try { input.dispatchEvent(keyEvK(doc, 'keyup', ch)); } catch (e5) {}
+        }
+        try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e6) {}
+        // The widget's real (hidden) field, if the form carries one: same value.
+        var els = doc.querySelectorAll('input');
+        for (var j = 0; j < els.length; j++) {
+          var nm = ((els[j].getAttribute && els[j].getAttribute('name')) || '') + ' ' + (els[j].id || '');
+          if (els[j] !== input && nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
+            try { els[j].value = v; els[j].dispatchEvent(new Event('change', { bubbles: true })); } catch (e7) {}
+          }
+        }
+        return true;
+      }
+    } catch (e) {}
+    return false;
+  }
   function fireSaveClick(btn){
     try {
       var nowS = Date.now();
       if (window.__pccSaveAt && nowS - window.__pccSaveAt < 1000) return true;
       window.__pccSaveAt = nowS;
     } catch (e) {}
+    var filledDate = fillConsultDateNow();
     commitBlur();
-    setTimeout(function(){ fireClick(btn); }, 120);
+    setTimeout(function(){ fireClick(btn); }, filledDate ? 300 : 120);
     return true;
   }
   function doFAction() {
