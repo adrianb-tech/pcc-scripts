@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — BIMS extractor
-// @version 1.4
+// @version      1.5
 // @description  On the Forms/Assessments list: finds the newest BIMS row, shows its score in a badge with a Copy button; also groups + highlights BIMS / Psych / MD-ack rows. v1.2: permanent 1s interval replaced with bounded staggered runs + re-run on your clicks (no-timers rule).
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-BIMS-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-BIMS-extractor.user.js
@@ -124,7 +124,10 @@
     function makeBadge() {
         var box = document.createElement('span');
         box.id = 'custom-bims-badge';
-        box.style.cssText = 'display:inline-flex;align-items:center;gap:20px;margin-left:16px;padding:8px 22px;border:2px solid #93c5fd;background:#eff6ff;border-radius:16px;font:26px/1.3 -apple-system,sans-serif;vertical-align:middle;';
+        box.style.cssText = 'display:none;align-items:center;gap:20px;margin-left:16px;padding:8px 22px;border:2px solid #93c5fd;background:#eff6ff;border-radius:16px;font:26px/1.3 -apple-system,sans-serif;vertical-align:middle;';
+        // Hidden since the tile row carries this value (his cleanup
+        // ask, 2026-10-14). Box + button stay in the DOM: the tile
+        // reads the button's fill value across frames.
 
         var title = document.createElement('b');
         title.textContent = 'BIMS';
