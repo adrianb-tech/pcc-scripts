@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.9
+// @version      1.10
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -149,19 +149,33 @@
       'font:600 12px -apple-system,Helvetica,Arial,sans-serif;';
     btn.parentNode.insertBefore(badge, btn.nextSibling);
     dPlanted = true;
-    // Arm the key immediately: if PCC left focus sitting in the date
-    // field, D would read as "typing" and stay dead — hand focus to
-    // the page body. Clicking into a field himself re-arms the
-    // typing guard, as always.
-    try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (err) {}
+    // Arm D (his live report on v1.9: "pressing D doesn't register").
+    // PCC parks focus in the date field — sometimes AFTER a first
+    // blur — so D kept reading as "typing". Now: until he actually
+    // types or clicks into a field himself, any auto-parked focus is
+    // handed back to the page body on each arming tick. D is live
+    // whenever focus sits on the body, a select, a checkbox, or a
+    // button (no D-options exist in this popup's selects); it stays
+    // dead only inside a text field he is genuinely editing.
+    var heTookFocus = false;
+    document.addEventListener('input', function() { heTookFocus = true; }, true);
+    document.addEventListener('mousedown', function() { heTookFocus = true; }, true);
+    var armTicks = 0;
+    (function arm() {
+      if (!heTookFocus) {
+        var a = document.activeElement;
+        if (a && a.tagName === 'INPUT' && a.type === 'text') { try { a.blur(); } catch (err) {} }
+      }
+      if (++armTicks < 12) setTimeout(arm, 200);
+    })();
     document.addEventListener('keydown', function(e) {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
       if (e.key !== 'd' && e.key !== 'D') return;
       var a = document.activeElement;
-      if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT')) return;
+      if (a && a.tagName === 'TEXTAREA') return;
+      if (a && a.tagName === 'INPUT' && (a.type === 'text' || a.type === 'password')) return;
       var b = saveButton();
       if (!b) return;
-      try { if (a && a.blur) a.blur(); } catch (err) {}
       fireClick(b);
     });
   }
