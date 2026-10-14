@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.4
+// @version      3.5
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -342,7 +342,17 @@
       d.style.cursor = 'pointer';
       d.title = 'Go to WTS/VITALS';
       d.addEventListener('mousedown', function () { hlTile(d, false); });
-      d.addEventListener('click', function () { goWtsVitals(); });
+      d.addEventListener('click', function () {
+        if (!goWtsVitals()) {
+          // No silent failure: say so on the tile itself.
+          if (!ls.getAttribute('data-tm-orig')) ls.setAttribute('data-tm-orig', ls.textContent);
+          ls.textContent = 'Not found';
+          setTimeout(function () {
+            var o = ls.getAttribute('data-tm-orig');
+            if (o) { ls.textContent = o; ls.removeAttribute('data-tm-orig'); }
+          }, 1400);
+        }
+      });
     }
     if (opts.delegate === 'meds') {
       d.setAttribute('data-tm-copy', '1');
@@ -388,18 +398,24 @@
     try { el.click(); } catch (e) {}
   }
   function findWtsTab(doc) {
-    var bodyTxt = (doc.body && doc.body.textContent) || '';
+    // Case-insensitive throughout: PCC may keep the tab labels in
+    // mixed case in the DOM and uppercase them only visually (CSS) -
+    // the exact-case match missed them (his captures, 2026-10-14).
+    var bodyTxt = ((doc.body && doc.body.textContent) || '').toUpperCase();
     var LABELS = ['DASH', 'PROFILE', 'ORDERS', 'RESULTS', 'FORMS', 'PROG NOTES'];
     var others = 0;
     LABELS.forEach(function (L) { if (bodyTxt.indexOf(L) !== -1) others++; });
     if (others < 4) return null; // not the tab-bar frame
     var els = doc.querySelectorAll('a,button,[role="tab"],li,td,span,div');
+    var best = null, bestSize = 1e9;
     for (var i = 0; i < els.length; i++) {
-      var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+      var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim().toUpperCase();
       if (tx !== 'WTS/VITALS') continue;
-      return els[i].querySelector('a') || els[i];
+      var size = els[i].querySelectorAll('*').length;
+      if (size < bestSize) { bestSize = size; best = els[i]; }
     }
-    return null;
+    if (!best) return null;
+    return best.querySelector('a') || best;
   }
   function goWtsVitals() {
     // Try locally across every reachable frame, AND broadcast: the
@@ -414,8 +430,9 @@
     })(window.top || window);
     for (var d = 0; d < docs.length; d++) {
       var target = findWtsTab(docs[d]);
-      if (target) { fireClick(target); return; }
+      if (target) { fireClick(target); return true; }
     }
+    return false;
   }
 
   // The med list's visible lines (or '- none'). The Copy button only
