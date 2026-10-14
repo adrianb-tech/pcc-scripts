@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.7
+// @version      3.8
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -647,6 +647,45 @@
     g.parentNode.insertBefore(chip, g.nextSibling);
   }
 
+  // HIGH-flag chip beside the G button - same alert as the
+  // readmission chip, same place, same bright red (his call,
+  // 2026-10-14: 'have it alert just like the readmission' instead
+  // of a tile). The Dashboard script publishes tmHighFlags keyed
+  // by the ESOLclientid in the Medications frame's src, which
+  // this document holds - so the alert only ever shows for the
+  // resident on screen.
+  function renderHighChip() {
+    var g = document.getElementById('tmGBtn');
+    var old = document.getElementById('tmHighChip');
+    var note = null;
+    try { note = JSON.parse(localStorage.getItem('tmHighFlags') || 'null'); } catch (e) {}
+    var show = false;
+    if (note && note.highs && note.highs.length && g) {
+      var ifr = document.querySelectorAll('iframe');
+      for (var i = 0; i < ifr.length; i++) {
+        var mm = (ifr[i].getAttribute('src') || '').match(/ESOLclientid=(\d+)/);
+        if (mm) { show = (mm[1] === note.id); break; }
+      }
+    }
+    if (!show) { if (old) old.remove(); return; }
+    var txt = note.highs.length === 1 ? 'HIGH: ' + note.highs[0] : note.highs.length + ' HIGH FLAGS';
+    if (old) {
+      if (old.textContent !== txt) old.textContent = txt;
+      old.title = note.highs.join(' \u00B7 ');
+      return;
+    }
+    var chip = document.createElement('span');
+    chip.id = 'tmHighChip';
+    chip.textContent = txt;
+    chip.title = note.highs.join(' \u00B7 ');
+    chip.style.cssText = 'display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;' +
+      'border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;' +
+      'font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;';
+    var rc = document.getElementById('tmReadmitChip');
+    var anchorEl = rc || g;
+    anchorEl.parentNode.insertBefore(chip, anchorEl.nextSibling);
+  }
+
   function run() {
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar) return;
@@ -699,7 +738,7 @@
     while ((stray = document.getElementById('tmRelRow') || document.getElementById('tmBimsRow'))) stray.remove();
     apply();
     buildCards();
-    renderReadmitChip();
+    renderReadmitChip(); renderHighChip();
   }
 
   var lastPing = 0;
@@ -708,7 +747,7 @@
     if (now - lastPing < 1500) return;
     lastPing = now;
     try { localStorage.setItem('tmRowPing', String(now)); } catch (e) {}
-    setTimeout(function () { buildCards(); renderReadmitChip(); }, 700);
+    setTimeout(function () { buildCards(); renderReadmitChip(); renderHighChip(); }, 700);
   }, true);
   window.addEventListener('storage', function (e) {
     if (e.key === 'tmGoWts' && e.newValue) {
@@ -720,7 +759,7 @@
     if (e.key !== 'tmRowPing' || !e.newValue) return;
     var ts = parseInt(e.newValue, 10);
     if (!ts || Date.now() - ts > 5000) return;
-    setTimeout(function () { buildCards(); renderReadmitChip(); }, 700);
+    setTimeout(function () { buildCards(); renderReadmitChip(); renderHighChip(); }, 700);
   });
 
   // The G KEY gets the same press feedback as the G button (his ask,
