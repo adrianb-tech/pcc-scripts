@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.1
+// @version 1.2
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
 // @name         Every facility — Vitals: open expanded
@@ -28,16 +28,21 @@
     return false;
   }
 
-  function findExpanded(){
-    // prefer clickable elements, then fall back to plain elements
+  function findCompact(){
+    // Flipped 2026-10-14 (his call): the tile row pulls everything he
+    // needs out of Compact view, so this script now opens COMPACT.
+    // (It used to open Expanded — that is what had moved his setting
+    // from Standard to Expanded.) Same finder shape, new target:
+    // the toggle option whose text is 'compact', in the group that
+    // also offers Expanded + Standard.
     var lists = [document.querySelectorAll('a,button'), document.querySelectorAll('span,td,div,label')];
     for (var l = 0; l < lists.length; l++){
       var els = lists[l];
       for (var i = 0; i < els.length; i++){
         var el = els[i];
-        if ((el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() !== 'expanded') continue;
-        var ctx = ctxText(el);                                  // must be the vitals toggle
-        if (/compact/i.test(ctx) && /standard/i.test(ctx)) return el;
+        if ((el.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase() !== 'compact') continue;
+        var ctx = ctxText(el);                                  // must be the view toggle
+        if (/expanded/i.test(ctx) && /standard/i.test(ctx)) return el;
       }
     }
     return null;
@@ -45,12 +50,12 @@
 
   function run(){
     if (done) return;
-    var el = findExpanded();
+    var el = findCompact();
     if (!el) return;
-    if (isSelected(el)){ done = true; return; }                 // already Expanded — leave it
-    var last = +(sessionStorage.getItem('pccExpanded') || 0);
+    if (isSelected(el)){ done = true; return; }                 // already Compact — leave it
+    var last = +(sessionStorage.getItem('pccCompactView') || 0);
     if (Date.now() - last < 6000){ done = true; return; }       // just clicked — don't loop
-    sessionStorage.setItem('pccExpanded', Date.now());
+    sessionStorage.setItem('pccCompactView', Date.now());
     el.click();
     done = true;
   }
