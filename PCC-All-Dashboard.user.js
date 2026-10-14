@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.9
+// @version      2.10
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -541,6 +541,15 @@
     if (/\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(l)) return 'PRN';
     if (/\bbefore meals?\b|\bante cibum\b|\ba\.c\.?|\bac\b/.test(l)) return 'AC';
     if (/\bafter meals?\b|\bpost cibum\b|\bp\.c\.?|\bpc\b/.test(l)) return 'PC';
+    // Morning + night in ONE sig = twice daily (his ruling, 2026-10-14:
+    // "every morning and at bedtime ... means it is q12h"). PCC phrases
+    // it many ways — morning and night, morning and evening, every day
+    // and every night — so judge the PAIR, not the phrase. Without
+    // this, the bedtime rule below steals the whole sig as QHS and the
+    // morning dose vanishes (his Depakote: '250mg QHS' for a q12h order).
+    var hasAM = /\bmorning\b|\bqam\b|\bevery day\b|\bdaily\b/.test(l);
+    var hasPM = /\bbedtime\b|\bnight\b|\bevening\b|\bqhs\b/.test(l);
+    if (hasAM && hasPM && !/\bonce\b/.test(l)) return 'BID';
     if (/\bbedtime\b|\bat night\b|\bnightly\b|\bevery night\b|\bone time a night\b|\b1 time a night\b|\bonce nightly\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return 'QHS';
     if (/\bevery other day\b|\bqod\b/.test(l)) return 'QOD';
     if (/\btwo times a day\b|\btwice a day\b|\btwice daily\b|\bb\.i\.d\.?|\bbid\b|\b2 times a day\b/.test(l)) return 'BID';
