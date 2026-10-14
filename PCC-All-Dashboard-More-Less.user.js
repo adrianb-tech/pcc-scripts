@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.8
+// @version      2.9
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -435,8 +435,8 @@
     if (d.room) row.appendChild(tile('Room', d.room, {}));
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
-    if (d.bims) row.appendChild(tile('BIMS', d.bims, { click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
-    if (d.rel) row.appendChild(tile('Relationships', d.rel, { multi: true, size: 13, weight: 600, maxw: '560px', click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
+    if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 340, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
+    if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 340, fit: true, click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
     if (d.meds) row.appendChild(tile('Psych meds', d.meds, { multi: true, size: 13, weight: 600, maxw: '760px', delegate: 'meds' }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
@@ -447,15 +447,17 @@
   // Starts from the shared value size (21px, same as every other
   // tile) and steps down only as far as needed.
   function fitAllergies(row) {
-    var el = row.querySelector('[data-fit="1"]');
-    if (!el) return;
-    var size = 21;
-    el.style.fontSize = size + 'px';
-    var guard = 0;
-    while (guard < 14 && size > 10 && (el.scrollHeight > 56 || el.scrollWidth > el.clientWidth)) {
-      size -= 1;
+    var els = row.querySelectorAll('[data-fit="1"]');
+    for (var k = 0; k < els.length; k++) {
+      var el = els[k];
+      var size = 21;
       el.style.fontSize = size + 'px';
-      guard++;
+      var guard = 0;
+      while (guard < 14 && size > 10 && (el.scrollHeight > 56 || el.scrollWidth > el.clientWidth)) {
+        size -= 1;
+        el.style.fontSize = size + 'px';
+        guard++;
+      }
     }
   }
 
