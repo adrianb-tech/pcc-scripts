@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Header copy table
-// @version 1.22
+// @version 1.23
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @match        https://*.pointclickcare.com/*
@@ -330,11 +330,12 @@
     function cell(label, valueText, opts) {
       opts = opts || {};
       var c = doc.createElement('span');
-      c.style.cssText = 'display:flex;flex-direction:column;justify-content:center;padding:8px 16px 9px;' +
-        (opts.flex ? 'flex:1;min-width:200px;' : '');
+      c.style.cssText = 'display:flex;flex-direction:column;justify-content:flex-start;padding:9px 16px 10px;' +
+        (opts.flex ? 'flex:1;min-width:200px;' : '') + (opts.center ? 'align-items:center;' : '');
       var lab = doc.createElement('span');
-      lab.style.cssText = 'display:flex;align-items:center;gap:7px;font-size:10px;font-weight:700;' +
-        'letter-spacing:.09em;text-transform:uppercase;color:#7a8494;margin-bottom:2px;white-space:nowrap;';
+      lab.style.cssText = 'display:flex;align-items:center;gap:7px;height:18px;font-size:10px;font-weight:700;' +
+        'letter-spacing:.09em;text-transform:uppercase;color:#7a8494;margin-bottom:3px;white-space:nowrap;' +
+        (opts.center ? 'justify-content:center;' : '');
       lab.appendChild(doc.createTextNode(label));
       if (opts.btn) lab.appendChild(opts.btn);
       var val = doc.createElement('span');
@@ -350,8 +351,8 @@
       return d;
     }
     var cells = [];
+    if (byLabel['Age/Sex']) cells.push(cell('Age / Sex', byLabel['Age/Sex'], { size: 23, center: true, btn: smallCopyBtn(doc, byLabel['Age/Sex'], 'Age/Sex') }));
     if (room) cells.push(cell('Room', room, {}));
-    if (byLabel['Age/Sex']) cells.push(cell('Age / Sex', byLabel['Age/Sex'], { size: 23, btn: smallCopyBtn(doc, byLabel['Age/Sex'], 'Age/Sex') }));
     if (byLabel['Allergies']) cells.push(cell('Allergies', byLabel['Allergies'], { size: 17.5, color: '#b42318', flex: true, btn: smallCopyBtn(doc, byLabel['Allergies'], 'Allergies') }));
     if (byLabel['Psych meds']) cells.push(cell('Psych meds', byLabel['Psych meds'], { size: 15, btn: smallCopyBtn(doc, byLabel['Psych meds'], 'Psych meds') }));
     if (adm) {
