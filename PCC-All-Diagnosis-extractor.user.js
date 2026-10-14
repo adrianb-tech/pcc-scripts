@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.17
+// @version 1.18
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -96,8 +96,16 @@
     // Read PMH sections
     grab(text, /(?:past\s+)?(?:medical|psychiatric)\s+history\s*(?:of|significant\s+for|includes?|notable\s+for|:|\/psh)\s*([^\n]+?)(?=\.\s+[A-Z]|\n|$)/gi).forEach(push);
     grab(text, /\bPMHx?\b\s*:?\s*(?:significant for\s*)?([^\n]+?)(?=\.\s+[A-Z]|\n|$)/gi).forEach(push);
-    // "The patient with h/o CHF, Asthma, ... was seen" carries the whole list (CNR note, 2026-10-13)
-    grab(text, /\b(?:patient|pt)\s+with\s+(?:h\/o|history\s+of)\s+(.+?)\s+was\s+seen\b/gi).forEach(push);
+    // "The patient with h/o CHF, Asthma, ... was seen" carries the whole
+    // list (CNR note, 2026-10-13). The capture must span line breaks:
+    // PCC wraps the sentence across lines ("...response post\nPPM..."),
+    // and a single-line capture silently loses the list — the all-caps
+    // PMH dump then wins by default and fragments like "SUBSEQUENT
+    // ENCOUNTER" become diagnoses (his CNR chart, 2026-10-14).
+    var hoLists = [];
+    grab(text, /\b(?:patient|pt)\s+with\s+(?:h\/o|history\s+of)\s+([\s\S]+?)\s+was\s+seen\b/gi).forEach(function (s) {
+      hoLists.push(s.replace(/\s*\n\s*/g, ' '));
+    });
 
     // Nursing notes carry the facility's canonical list as "Dx- A, B, C."
     // (his Saints chart, 2026-10-14). That list IS the answer when present:
@@ -112,6 +120,10 @@
       dxLists.push(s);
     });
     var verbatimOnly = dxLists.length > 0;
+    // When a prose h/o list exists, it IS the answer (his CNR chart,
+    // 2026-10-14: the physician's "patient with h/o ..." list, not the
+    // admission note's coded PMH dump). The coded grabs don't compete.
+    if (hoLists.length) raw = hoLists;
 
     // "Additional Diagnosis:" / "Secondary diagnosis:" — capture verbatim
     // (explicit clinician statements, bypass condensing filters)
@@ -231,6 +243,8 @@
                .replace(/^\/PSH\s*/i, '');
 
         if (/^(?:c|diff)$/i.test(it)) return;   // split "c. diff" debris is not a diagnosis
+        if (/^post\s+(?:fall|falls|falling)\b/i.test(it)) return;   // "post fall due to ..." is the tail of the previous item, not a diagnosis (his CNR chart, 2026-10-14)
+        if (/^(?:(?:subsequent|initial)\s+encounter|site not specified|not elsewhere classified|unspecified severity|stage\s+\d+\s+unspecified)$/i.test(it)) return;   // ICD description fragments, not diagnoses
         if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it) || isWeaknessItem(it)) return;
         if (/\d+\.\d+/.test(it)) return;
         // Reject fragments and narrative leftovers
