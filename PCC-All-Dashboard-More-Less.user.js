@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.0
+// @version      3.1
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -341,6 +341,7 @@
     if (opts.nav) {
       d.style.cursor = 'pointer';
       d.title = 'Go to WTS/VITALS';
+      d.addEventListener('mousedown', function () { hlTile(d, false); });
       d.addEventListener('click', function () { goWtsVitals(); });
     }
     if (opts.delegate === 'meds') {
@@ -376,31 +377,44 @@
   // preferring a bar that also holds the other chart tabs — and
   // fires a real click sequence (PCC ignores synthetic .click()).
   function fireClick(el) {
+    // Events are built with the TARGET document's own constructor:
+    // a click event created in another frame's realm can be ignored
+    // by the target frame's handlers (the Weight tile's first
+    // version failed exactly like this - his report, 2026-10-14).
+    var W = (el.ownerDocument && el.ownerDocument.defaultView) || window;
     ['mousedown', 'mouseup', 'click'].forEach(function (type) {
-      el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      el.dispatchEvent(new W.MouseEvent(type, { bubbles: true, cancelable: true, view: W }));
     });
+    try { el.click(); } catch (e) {}
+  }
+  function findWtsTab(doc) {
+    var bodyTxt = (doc.body && doc.body.textContent) || '';
+    var LABELS = ['DASH', 'PROFILE', 'ORDERS', 'RESULTS', 'FORMS', 'PROG NOTES'];
+    var others = 0;
+    LABELS.forEach(function (L) { if (bodyTxt.indexOf(L) !== -1) others++; });
+    if (others < 4) return null; // not the tab-bar frame
+    var els = doc.querySelectorAll('a,button,[role="tab"],li,td,span,div');
+    for (var i = 0; i < els.length; i++) {
+      var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (tx !== 'WTS/VITALS') continue;
+      return els[i].querySelector('a') || els[i];
+    }
+    return null;
   }
   function goWtsVitals() {
+    // Try locally across every reachable frame, AND broadcast: the
+    // instance living in the tab bar's own frame hears the signal
+    // and clicks there, in its own realm - the route that provably
+    // works in this suite (same pattern as Grab-all).
+    try { localStorage.setItem('tmGoWts', String(Date.now())); } catch (e) {}
     var docs = [];
     (function walk(w) {
       try { docs.push(w.document); } catch (e) { return; }
       for (var i = 0; i < w.frames.length; i++) walk(w.frames[i]);
     })(window.top || window);
-    var LABELS = ['DASH', 'PROFILE', 'ORDERS', 'RESULTS', 'FORMS', 'PROG NOTES'];
     for (var d = 0; d < docs.length; d++) {
-      var doc = docs[d];
-      var bodyTxt = (doc.body && doc.body.textContent) || '';
-      var others = 0;
-      LABELS.forEach(function (L) { if (bodyTxt.indexOf(L) !== -1) others++; });
-      if (others < 4) continue; // not the tab-bar frame
-      var els = doc.querySelectorAll('a,button,[role="tab"],li,td,span,div');
-      for (var i = 0; i < els.length; i++) {
-        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
-        if (tx !== 'WTS/VITALS') continue;
-        var target = els[i].querySelector('a') || els[i];
-        fireClick(target);
-        return;
-      }
+      var target = findWtsTab(docs[d]);
+      if (target) { fireClick(target); return; }
     }
   }
 
@@ -618,6 +632,11 @@
     setTimeout(function () { buildCards(); renderReadmitChip(); }, 700);
   }, true);
   window.addEventListener('storage', function (e) {
+    if (e.key === 'tmGoWts' && e.newValue) {
+      var mine = findWtsTab(document);
+      if (mine) fireClick(mine);
+      return;
+    }
     if (e.key === 'tmGPress') { if (e.newValue) hlAllTiles(); else hlRestoreAll(); return; }
     if (e.key !== 'tmRowPing' || !e.newValue) return;
     var ts = parseInt(e.newValue, 10);
