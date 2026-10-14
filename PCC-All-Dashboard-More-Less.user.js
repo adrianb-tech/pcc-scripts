@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.3
+// @version      3.4
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -480,6 +480,12 @@
     if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', click: { label: 'Age/Sex', value: d.ageSex }, fill: { label: 'Age/Sex', value: d.ageSex } }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
     if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
+    function medCountChip(txt) {
+      var c = document.createElement('span');
+      c.textContent = txt;
+      c.style.cssText = 'font-size:16px;font-weight:800;color:#2563eb;';
+      return c;
+    }
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
     if (d.meds) {
       // Design A in the row, right after Weight (his pick): a wide
@@ -488,9 +494,9 @@
       // Dashboard stamps at render; the delegate proxy remains only
       // as a fallback for older Dashboard installs.
       if (d.medsFill !== null && d.medsFill !== undefined) {
-        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }));
+        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', btn: medCountChip(String(d.meds === '- none' ? 0 : d.meds.split('\n').length)), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }));
       } else {
-        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', delegate: 'meds' }));
+        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', btn: medCountChip(String(d.meds === '- none' ? 0 : d.meds.split('\n').length)), delegate: 'meds' }));
       }
     }
     if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 340, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
