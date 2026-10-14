@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.19
+// @version      1.20
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -903,7 +903,7 @@
   // Date of Consult — STAGGERED (his design, 2026-10-14: "first the
   // F button is placed instantly and then a moment later the date is
   // filled out"). The F badges plant on the normal instant passes;
-  // the date fills afterwards, once, at 1500ms (retry 4500ms), so the
+  // the date fills afterwards, once, at 4000ms (retry 9000ms), so the
   // two never land in the same instant. The fill is typed character
   // by character (the input class PCC's widget is built for) WITHOUT
   // taking focus — focus is never stolen on a form he is editing —
@@ -1429,10 +1429,11 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // The staggered date fill (v1.19, his design): F buttons first,
-  // instantly — the date follows a moment later, once.
-  setTimeout(fillConsultDateSoft, 1500);
-  setTimeout(fillConsultDateSoft, 4500);
+  // The staggered date fill (v1.19, his design; v1.20: a little
+  // longer, his tuning): F buttons first, instantly — the date
+  // follows a few seconds later, once.
+  setTimeout(fillConsultDateSoft, 4000);
+  setTimeout(fillConsultDateSoft, 9000);
   // Runs last: on a both-green section list, no F badge survives (v1.7)
   applyFSectionListCleanup();
   setTimeout(applyFSectionListCleanup, 1500);
