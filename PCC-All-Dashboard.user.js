@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.16
+// @version      2.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -849,6 +849,41 @@
     try { localStorage.setItem(key, v ? 'on' : 'off'); } catch (e) {}
   }
 
+  // ---- Two dashboard views (his ask, 2026-10-14) ----
+  // A button beside PCC's own "Views: Main" picker flips the DASH
+  // tab between the current layout ('main', the default - nothing
+  // changed, nothing hidden) and the reorganized layout from the
+  // mock he approved ('mica'): flags + labs + black box in one
+  // Watch stack, non-psych orders compacted to one line each,
+  // non-psych diagnoses behind a show-all bar. His click only;
+  // Main is always one click away and restores everything.
+  function dashView() {
+    try { return localStorage.getItem('tmDashView') === 'mica' ? 'mica' : 'main'; } catch (e) { return 'main'; }
+  }
+  function plantViewToggle() {
+    if (document.getElementById('tmViewBtn')) return;
+    var tds = document.querySelectorAll('td');
+    var cell = null;
+    for (var i = 0; i < tds.length; i++) {
+      var tx = (tds[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (/^Views:/.test(tx) && tx.length < 40) { cell = tds[i]; break; }
+    }
+    if (!cell) return;
+    var b = document.createElement('button');
+    b.id = 'tmViewBtn';
+    b.type = 'button';
+    b.textContent = dashView() === 'mica' ? 'View: Main' : 'View: Mica';
+    b.style.cssText = 'margin-left:12px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;' +
+      'border:1px solid #7d8f69;border-radius:6px;background:#eef2e6;color:#334155;';
+    b.onclick = function () {
+      var next = dashView() === 'mica' ? 'main' : 'mica';
+      try { localStorage.setItem('tmDashView', next); } catch (e) {}
+      b.textContent = next === 'mica' ? 'View: Main' : 'View: Mica';
+      fit();
+    };
+    cell.appendChild(b);
+  }
+
   function setButton(doc, id, text, onclick) {
     var b = doc.getElementById(id);
     if (!b) {
@@ -1512,6 +1547,91 @@
       labsRow.appendChild(warnBox);
     }
     warnBox.innerHTML = buildWarningsHtml(warnData);
+    applyMedsView(doc, groups);
+  }
+
+  var LAB_BOX_CSS = 'flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #1d4ed8;background:#eff6ff;overflow-wrap:anywhere;';
+  var WARN_BOX_CSS = 'flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #991b1b;background:#fef2f2;overflow-wrap:anywhere;';
+
+  function watchCollapse(doc, box, label) {
+    if (!box || box.querySelector('.tmWatchBody')) return;
+    var body = doc.createElement('div');
+    body.className = 'tmWatchBody';
+    while (box.firstChild) body.appendChild(box.firstChild);
+    body.style.display = 'none';
+    var names = [];
+    body.querySelectorAll('b, strong').forEach(function (b) {
+      var w = (b.textContent || '').trim().split(/\s+/)[0].replace(/[^A-Za-z\-]/g, '');
+      if (w && w.length > 2 && names.indexOf(w) === -1 && names.length < 6) names.push(w);
+    });
+    var bar = doc.createElement('div');
+    bar.className = 'tmWatchBar';
+    bar.style.cssText = 'cursor:pointer;font-weight:600;padding:2px 0;';
+    var suffix = names.length ? ' \u2014 ' + names.join(' \u00B7 ') : '';
+    bar.textContent = '\u25B8 ' + label + suffix;
+    bar.onclick = function () {
+      var open = body.style.display !== 'none';
+      body.style.display = open ? 'none' : 'block';
+      bar.textContent = (open ? '\u25B8 ' : '\u25BE ') + label + suffix;
+    };
+    box.appendChild(bar);
+    box.appendChild(body);
+  }
+
+  function applyMedsView(doc, groups) {
+    var mica = dashView() === 'mica';
+    var flags = doc.getElementById('interactionPanel');
+    var labs = doc.getElementById('labsBox');
+    var warn = doc.getElementById('warnBox');
+    var topRow = doc.getElementById('pccTopRow');
+    var labsRow = doc.getElementById('pccLabsRow');
+    // Order detail rows: compact in Mica view (one line per med
+    // for everything except psych and pain, which stay full).
+    (groups || []).forEach(function (g) {
+      var other = g.tier > 1 && g.tier !== 3;
+      g.rows.forEach(function (r, i) {
+        if (i === 0) return;
+        if (mica && other) { r.style.display = 'none'; r.setAttribute('data-tm-compact', '1'); }
+        else if (r.getAttribute('data-tm-compact') === '1') { r.style.display = ''; r.removeAttribute('data-tm-compact'); }
+      });
+    });
+    var watch = doc.getElementById('tmWatchBox');
+    if (mica) {
+      if (!watch && topRow && topRow.parentNode) {
+        watch = doc.createElement('div');
+        watch.id = 'tmWatchBox';
+        watch.style.cssText = 'display:block;width:100%;box-sizing:border-box;margin:0 0 6px 0;';
+        topRow.parentNode.insertBefore(watch, topRow);
+      }
+      if (watch) {
+        [flags, labs, warn].forEach(function (b) {
+          if (!b) return;
+          watch.appendChild(b);
+          b.style.flex = 'none';
+          b.style.width = '100%';
+          b.style.marginLeft = '0';
+          b.style.marginBottom = '8px';
+          b.style.display = 'block';
+        });
+        watchCollapse(doc, labs, 'Labs to monitor');
+        watchCollapse(doc, warn, 'Black box');
+      }
+      if (topRow) topRow.style.display = 'none';
+      if (labsRow) labsRow.style.display = 'none';
+    } else if (watch) {
+      // Only restore when a Mica pass actually moved things -
+      // otherwise leave his own hide/show choices untouched.
+      watch.remove();
+      if (topRow) {
+        topRow.style.display = '';
+        if (flags) { topRow.appendChild(flags); flags.style.cssText = FLAG_BOX_CSS; }
+      }
+      if (labsRow) {
+        labsRow.style.display = '';
+        if (labs) { labsRow.appendChild(labs); labs.style.cssText = LAB_BOX_CSS; }
+        if (warn) { labsRow.appendChild(warn); warn.style.cssText = WARN_BOX_CSS; }
+      }
+    }
   }
 
   function codesIn(r) {
@@ -1599,6 +1719,40 @@
     setButton(doc, 'dxToggle',
       'Psych dx first: ' + (on ? 'ON' : 'OFF') + ' (F: ' + fCount + ', G: ' + gCount + ', R: ' + rCount + ', of ' + groups.length + ' dx)',
       function() { setOn('pccDxFirst', !isOn('pccDxFirst')); sortDx(doc); });
+    applyDxView(doc, groups, tbody);
+  }
+
+  // Mica view: the psych block (tiers 0-1, the boxed diagnoses)
+  // stays; every other diagnosis hides behind one bar that brings
+  // them all back. Main view restores every row.
+  function applyDxView(doc, groups, tbody) {
+    var mica = dashView() === 'mica';
+    var bar = doc.getElementById('tmDxBar');
+    var hidden = 0;
+    groups.forEach(function (g) {
+      var other = g.tier > 1;
+      g.rows.forEach(function (r) {
+        if (mica && other) { r.style.display = 'none'; r.setAttribute('data-tm-dxhide', '1'); hidden++; }
+        else if (r.getAttribute('data-tm-dxhide') === '1') { r.style.display = ''; r.removeAttribute('data-tm-dxhide'); }
+      });
+    });
+    if (bar) bar.remove();
+    if (mica && hidden > 0) {
+      var tr = doc.createElement('tr');
+      tr.id = 'tmDxBar';
+      var td = doc.createElement('td');
+      td.colSpan = 4;
+      td.style.cssText = 'padding:7px 10px;font-size:13px;font-weight:600;color:#334155;cursor:pointer;background:#f1f5f9;';
+      td.textContent = '\u25B8 ' + hidden + ' more diagnoses \u2014 click to show all';
+      td.onclick = function () {
+        tbody.querySelectorAll('[data-tm-dxhide="1"]').forEach(function (r) {
+          r.style.display = ''; r.removeAttribute('data-tm-dxhide');
+        });
+        tr.remove();
+      };
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+    }
   }
 
   function expand(doc) {
@@ -1639,6 +1793,7 @@
   }
 
   function fit() {
+    plantViewToggle();
     document.querySelectorAll('iframe[id^="iFramePanel_"]').forEach(function(f) {
       try {
         var doc = f.contentDocument || f.contentWindow.document;
