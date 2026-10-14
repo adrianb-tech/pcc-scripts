@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.7
+// @version      1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -199,16 +199,39 @@
     });
     return btn;
   }
+  // All visible buttons in the winning save-exit tier (the CNR/Saints form
+  // repeats its toolbar top and bottom — his rule, 2026-10-14: F badges on
+  // BOTH Save & Exit buttons so he can click F from the top or the bottom).
+  function findAllSaveExitChain() {
+    var tiers = [
+      /^save\s*&\s*sign\s*&\s*lock\s*&\s*exit$/i,
+      /^save\s*&\s*sign\s*&\s*exit$/i,
+      /^save\s*&\s*exit$/i
+    ];
+    try {
+      var els = document.querySelectorAll('input[type="button"], input[type="submit"], button');
+      for (var ti = 0; ti < tiers.length; ti++) {
+        var out = [];
+        for (var i = 0; i < els.length; i++) {
+          var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim();
+          if (tiers[ti].test(label) && visible(els[i])) out.push(els[i]);
+        }
+        if (out.length) return out;
+      }
+    } catch (e) {}
+    return [];
+  }
   function applyFButton() {
     try {
       if (!shouldRun()) return;
-      // CNR/Saints: ONE F badge on the form's save-exit button, priority:
-      // Save & Sign & Lock & Exit -> Save & Sign & Exit -> Save & Exit
-      var target = findSaveSignLockExit() || findSaveSignExit() || findSaveExit();
-      if (!target || !target.parentNode) return;
-      if (target.parentNode.querySelector('.' + FBTN_CLASS)) return;
-      var doc = target.ownerDocument || document;
-      var btn = doc.createElement('button');
+      var targets = findAllSaveExitChain();
+      for (var ti = 0; ti < targets.length; ti++) {
+        var target = targets[ti];
+        if (!target || !target.parentNode) continue;
+        var nxt = target.nextSibling;
+        if (nxt && nxt.classList && nxt.classList.contains(FBTN_CLASS)) continue;
+        var doc = target.ownerDocument || document;
+        var btn = doc.createElement('button');
       btn.type = 'button';
       btn.className = FBTN_CLASS;
       btn.textContent = 'F';
@@ -220,13 +243,14 @@
         'border:none;border-radius:999px;width:28px;height:28px;' +
         'box-shadow:0 2px 8px rgba(220,38,38,.35);' +
         'margin-left:8px;cursor:pointer;vertical-align:middle;');
-      btn.addEventListener('click', function(ev) {
-        ev.preventDefault();
-        ev.stopPropagation();
-        doFAction();
-      });
-      if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
-      else target.parentNode.appendChild(btn);
+        btn.addEventListener('click', function(ev) {
+          ev.preventDefault();
+          ev.stopPropagation();
+          doFAction();
+        });
+        if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
+        else target.parentNode.appendChild(btn);
+      }
     } catch (e) {}
   }
   function elText(el) {
