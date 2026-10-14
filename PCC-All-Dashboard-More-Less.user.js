@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      1.6
+// @version      1.7
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -133,6 +133,12 @@
     return null;
   }
 
+  function queueCopy(label, value) {
+    try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value); } catch (err) {}
+    var key = label === 'Age/Sex' ? 'pccFillAgeSex' : (label === 'Allergies' ? 'pccFillAllergies' : null);
+    if (key) { try { localStorage.setItem(key, JSON.stringify({ value: value, ts: Date.now() })); } catch (err) {} }
+  }
+
   function copyBtn(label, value) {
     var b = document.createElement('button');
     b.type = 'button';
@@ -147,9 +153,7 @@
       'border:1px solid #dbe2ec;border-radius:999px;padding:2px 9px;background:#f4f6f9;cursor:pointer;flex:none;';
     b.addEventListener('click', function (e) {
       e.preventDefault(); e.stopPropagation();
-      try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value); } catch (err) {}
-      var key = label === 'Age/Sex' ? 'pccFillAgeSex' : (label === 'Allergies' ? 'pccFillAllergies' : null);
-      if (key) { try { localStorage.setItem(key, JSON.stringify({ value: value, ts: Date.now() })); } catch (err) {} }
+      queueCopy(label, value);
       var o = b.textContent; b.textContent = 'Copied';
       setTimeout(function () { b.textContent = o; }, 1000);
     });
@@ -161,7 +165,7 @@
     var d = document.createElement('div');
     d.style.cssText = 'background:' + (opts.rose ? '#fdf3f2' : '#fff') + ';border:1px solid ' +
       (opts.rose ? '#f0c8c2' : '#e2e8f0') + ';border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);' +
-      'padding:12px 16px 14px;' + (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;');
+      'padding:' + (opts.pad || '12px 16px 14px') + ';' + (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;');
     var lab = document.createElement('div');
     lab.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;';
     var ls = document.createElement('span');
@@ -176,6 +180,18 @@
       ';line-height:1.3;color:' + (opts.color || '#131c2b') + ';';
     if (opts.fit) v.setAttribute('data-fit', '1');
     d.appendChild(lab); d.appendChild(v);
+    if (opts.click) {
+      // The whole tile is the button (his ask, 2026-10-14): click
+      // anywhere on it does exactly what its Copy button did; the
+      // label flashes 'Copied' as the confirmation.
+      d.style.cursor = 'pointer';
+      d.title = 'Click to copy';
+      d.addEventListener('click', function () {
+        queueCopy(opts.click.label, opts.click.value);
+        var o = ls.textContent; ls.textContent = 'Copied';
+        setTimeout(function () { ls.textContent = o; }, 1000);
+      });
+    }
     return d;
   }
 
@@ -199,9 +215,9 @@
       var kind = m && m[3] ? m[3].toLowerCase() : '';
       row.appendChild(tile(kind ? 'Admission (' + kind + ')' : 'Admission', m ? m[1] : d.admission, {}));
     }
-    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { btn: copyBtn('Age/Sex', d.ageSex) }));
+    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', click: { label: 'Age/Sex', value: d.ageSex } }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
-    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, btn: copyBtn('Allergies', d.allergies) }));
+    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies } }));
     if (d.weight) row.appendChild(tile('Weight', d.weight, {}));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
