@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.5
+// @version      2.6
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -275,6 +275,7 @@
       d.addEventListener('click', function () { goWtsVitals(); });
     }
     if (opts.delegate === 'meds') {
+      d.setAttribute('data-tm-copy', '1');
       // The tile's click presses the panel's real Copy button, so the
       // transferred text (methadone rule included) is the button's own.
       d.style.cursor = 'pointer';
@@ -504,6 +505,39 @@
       // release (his spec, 2026-10-14) — the :active rule below.
       g.style.background = '#dbeafe';
       g.textContent = 'G';
+      // While G is held down, every tile G can grab lights up light
+      // blue and says 'Copied'; release restores them (his spec,
+      // 2026-10-14). The grab itself still fires on the click.
+      g.addEventListener('mousedown', function () {
+        var row = document.getElementById('tmCardsRow');
+        if (!row) return;
+        var tiles = row.querySelectorAll('.pcc-fill-copy, [data-tm-copy="1"]');
+        for (var i = 0; i < tiles.length; i++) {
+          var tl = tiles[i];
+          tl.setAttribute('data-tm-hl', '1');
+          tl.style.background = '#dbeafe';
+          tl.style.borderColor = '#93c5fd';
+          var ls = tl.querySelector('span');
+          if (ls && !ls.getAttribute('data-tm-orig')) {
+            ls.setAttribute('data-tm-orig', ls.textContent);
+            ls.textContent = 'Copied';
+          }
+        }
+      });
+      window.addEventListener('mouseup', function () {
+        var lit = document.querySelectorAll('#tmCardsRow [data-tm-hl="1"]');
+        for (var i = 0; i < lit.length; i++) {
+          var tl = lit[i];
+          tl.removeAttribute('data-tm-hl');
+          tl.style.background = '';
+          tl.style.borderColor = '';
+          var ls = tl.querySelector('span');
+          if (ls && ls.getAttribute('data-tm-orig')) {
+            ls.textContent = ls.getAttribute('data-tm-orig');
+            ls.removeAttribute('data-tm-orig');
+          }
+        }
+      });
       g.title = 'Grab all — queue everything on screen (same as the G key)';
       g.addEventListener('click', triggerG);
       var sBtn = document.getElementById('tmSBtn');
