@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.23
+// @version      1.24
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -223,6 +223,12 @@
   }
   function applyFButton() {
     try {
+      // ALL FORM-PAGE F BADGES OFF (his bisect step 2, 2026-10-14):
+      // top-only (v1.23) didn't cure the form's misread, so no F badge
+      // is planted next to the Save & Exit buttons at all. The F KEY is
+      // unchanged — it resolves its target at press time; the badges
+      // were only signs. Restore planting only on his verdict.
+      return;
       if (!shouldRun()) return;
       var targets = findAllSaveExitChain();
       for (var ti = 0; ti < targets.length; ti++) {
