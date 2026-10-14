@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.25
+// @version      1.26
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -351,18 +351,31 @@
     return null;
   }
   function pickTypeOption(sel, kind) {
+    // Within a tier: a live (non-retired) option wins. If the tier is
+    // ALL retired, the NEWEST retired version wins instead of giving
+    // up — at Crown Heights every BIMS type is retired (V10/V9/V4),
+    // and filtering to V10 is exactly how the BIMS forms are found
+    // (his diagnosis, 2026-10-14; the old skip-retired rule made the
+    // 2 key silently do nothing there).
+    function tier(tests) {
+      var opts = sel.options, i, t, m, bestRetired = null, bestV = -1;
+      for (i = 0; i < opts.length; i++) {
+        t = opts[i].text || '';
+        var ok = tests.every(function (re) { return re.test(t); });
+        if (!ok) continue;
+        if (!/retired/i.test(t)) return opts[i];
+        m = t.match(/\bV\s*(\d+)/i);
+        var v = m ? +m[1] : 0;
+        if (v > bestV) { bestV = v; bestRetired = opts[i]; }
+      }
+      return bestRetired;
+    }
     try {
-      var opts = sel.options, i, t;
       if (kind === 'psych') {
-        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /^psych\s*:\s*consult/i.test(t)) return opts[i]; }
-        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /consult form/i.test(t) && /psych/i.test(t)) return opts[i]; }
-        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /psych/i.test(t)) return opts[i]; }
-        return null;
+        return tier([/^psych\s*:\s*consult/i]) || tier([/consult form/i, /psych/i]) || tier([/psych/i]);
       }
       if (kind === 'bims') {
-        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /bims/i.test(t)) return opts[i]; }
-        for (i = 0; i < opts.length; i++) { t = opts[i].text || ''; if (!/retired/i.test(t) && /social service assessment/i.test(t)) return opts[i]; }
-        return null;
+        return tier([/bims/i]) || tier([/social service assessment/i]);
       }
     } catch (e) {}
     return null;
