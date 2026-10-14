@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.7
+// @version      2.8
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -237,6 +237,59 @@
     return b;
   }
 
+  // Press feedback (his spec, 2026-10-14): while G — button OR key —
+  // is held, every grabbable tile lights light blue and says
+  // 'Copied'; release restores. A single tile pressed on its own
+  // lights the same way (color only). One shared save/restore so the
+  // paths can't fight over a tile's colors or label.
+  function hlTile(tl, withLabel) {
+    if (tl.hasAttribute('data-tm-hl')) return;
+    tl.setAttribute('data-tm-hl', '1');
+    tl.setAttribute('data-tm-bg', tl.style.background || '');
+    tl.setAttribute('data-tm-bd', tl.style.borderColor || '');
+    tl.style.background = '#dbeafe';
+    tl.style.borderColor = '#93c5fd';
+    if (withLabel) {
+      var ls = tl.querySelector('span');
+      if (ls && !ls.getAttribute('data-tm-orig')) {
+        ls.setAttribute('data-tm-orig', ls.textContent);
+        ls.textContent = 'Copied';
+      }
+    }
+  }
+  function hlAllTiles() {
+    var row = document.getElementById('tmCardsRow');
+    if (!row) return;
+    var tiles = row.querySelectorAll('.pcc-fill-copy, [data-tm-copy="1"]');
+    for (var i = 0; i < tiles.length; i++) hlTile(tiles[i], true);
+  }
+  function hlRestoreAll() {
+    var lit = document.querySelectorAll('#tmCardsRow [data-tm-hl="1"]');
+    for (var i = 0; i < lit.length; i++) {
+      var tl = lit[i];
+      tl.removeAttribute('data-tm-hl');
+      tl.style.background = tl.getAttribute('data-tm-bg') || '';
+      tl.style.borderColor = tl.getAttribute('data-tm-bd') || '';
+      tl.removeAttribute('data-tm-bg');
+      tl.removeAttribute('data-tm-bd');
+      var ls = tl.querySelector('span');
+      if (ls && ls.getAttribute('data-tm-orig')) {
+        ls.textContent = ls.getAttribute('data-tm-orig');
+        ls.removeAttribute('data-tm-orig');
+      }
+    }
+  }
+  function flashLabel(ls, tl) {
+    if (!ls.getAttribute('data-tm-orig')) ls.setAttribute('data-tm-orig', ls.textContent);
+    ls.textContent = 'Copied';
+    setTimeout(function () {
+      if (tl.hasAttribute('data-tm-hl')) return; // a press restore owns it
+      var o = ls.getAttribute('data-tm-orig');
+      if (o) { ls.textContent = o; ls.removeAttribute('data-tm-orig'); }
+    }, 1000);
+  }
+  window.addEventListener('mouseup', hlRestoreAll);
+
   function tile(labelText, valueText, opts) {
     opts = opts || {};
     var d = document.createElement('div');
@@ -280,13 +333,10 @@
       // transferred text (methadone rule included) is the button's own.
       d.style.cursor = 'pointer';
       d.title = 'Click to copy';
+      d.addEventListener('mousedown', function () { hlTile(d, false); });
       d.addEventListener('click', function () {
         var b = document.getElementById('copyMedListBtn');
-        if (b) {
-          fireClick(b);
-          var o = ls.textContent; ls.textContent = 'Copied';
-          setTimeout(function () { ls.textContent = o; }, 1000);
-        }
+        if (b) { fireClick(b); flashLabel(ls, d); }
       });
     }
     if (opts.click) {
@@ -295,10 +345,10 @@
       // label flashes 'Copied' as the confirmation.
       d.style.cursor = 'pointer';
       d.title = 'Click to copy';
+      d.addEventListener('mousedown', function () { hlTile(d, false); });
       d.addEventListener('click', function () {
         queueCopy(opts.click.label, opts.click.value);
-        var o = ls.textContent; ls.textContent = 'Copied';
-        setTimeout(function () { ls.textContent = o; }, 1000);
+        flashLabel(ls, d);
       });
     }
     return d;
@@ -507,41 +557,9 @@
       g.textContent = 'G';
       // While G is held down, every tile G can grab lights up light
       // blue and says 'Copied'; release restores them (his spec,
-      // 2026-10-14). The grab itself still fires on the click.
-      g.addEventListener('mousedown', function () {
-        var row = document.getElementById('tmCardsRow');
-        if (!row) return;
-        var tiles = row.querySelectorAll('.pcc-fill-copy, [data-tm-copy="1"]');
-        for (var i = 0; i < tiles.length; i++) {
-          var tl = tiles[i];
-          tl.setAttribute('data-tm-hl', '1');
-          tl.setAttribute('data-tm-bg', tl.style.background || '');
-          tl.setAttribute('data-tm-bd', tl.style.borderColor || '');
-          tl.style.background = '#dbeafe';
-          tl.style.borderColor = '#93c5fd';
-          var ls = tl.querySelector('span');
-          if (ls && !ls.getAttribute('data-tm-orig')) {
-            ls.setAttribute('data-tm-orig', ls.textContent);
-            ls.textContent = 'Copied';
-          }
-        }
-      });
-      window.addEventListener('mouseup', function () {
-        var lit = document.querySelectorAll('#tmCardsRow [data-tm-hl="1"]');
-        for (var i = 0; i < lit.length; i++) {
-          var tl = lit[i];
-          tl.removeAttribute('data-tm-hl');
-          tl.style.background = tl.getAttribute('data-tm-bg') || '';
-          tl.style.borderColor = tl.getAttribute('data-tm-bd') || '';
-          tl.removeAttribute('data-tm-bg');
-          tl.removeAttribute('data-tm-bd');
-          var ls = tl.querySelector('span');
-          if (ls && ls.getAttribute('data-tm-orig')) {
-            ls.textContent = ls.getAttribute('data-tm-orig');
-            ls.removeAttribute('data-tm-orig');
-          }
-        }
-      });
+      // 2026-10-14). The grab itself still fires on the click. The
+      // window mouseup restore lives with the shared helpers.
+      g.addEventListener('mousedown', hlAllTiles);
       g.title = 'Grab all — queue everything on screen (same as the G key)';
       g.addEventListener('click', triggerG);
       var sBtn = document.getElementById('tmSBtn');
@@ -569,10 +587,34 @@
     setTimeout(function () { buildCards(); renderReadmitChip(); }, 700);
   }, true);
   window.addEventListener('storage', function (e) {
+    if (e.key === 'tmGPress') { if (e.newValue) hlAllTiles(); else hlRestoreAll(); return; }
     if (e.key !== 'tmRowPing' || !e.newValue) return;
     var ts = parseInt(e.newValue, 10);
     if (!ts || Date.now() - ts > 5000) return;
     setTimeout(function () { buildCards(); renderReadmitChip(); }, 700);
+  });
+
+  // The G KEY gets the same press feedback as the G button (his ask,
+  // 2026-10-14): key down lights the grabbable tiles, key up
+  // restores. The key is usually pressed in another frame, so the
+  // press/release travels by the same storage broadcast as the pings.
+  // The grab itself is Grab-all's, untouched.
+  function gKeyTyping(e) {
+    var t = e.target;
+    if (!t) return false;
+    var tag = (t.tagName || '').toUpperCase();
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t.isContentEditable === true;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    if ((e.key || '').toLowerCase() !== 'g' || gKeyTyping(e)) return;
+    try { localStorage.setItem('tmGPress', String(Date.now())); } catch (err) {}
+    hlAllTiles();
+  });
+  document.addEventListener('keyup', function (e) {
+    if ((e.key || '').toLowerCase() !== 'g') return;
+    try { localStorage.setItem('tmGPress', ''); } catch (err) {}
+    hlRestoreAll();
   });
 
   // Bounded staggered passes (the Connect button is built late by PCC's
