@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.3
+// @version      2.4
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -349,7 +349,7 @@
     var lines = [];
     for (var i = 1; i < divs.length; i++) {
       var tx = (divs[i].textContent || '').trim();
-      if (tx.indexOf('REVIEW') === 1) break;
+      if (tx.indexOf('\u26A0 REVIEW') === 0) break;
       if (tx) lines.push(tx);
     }
     return lines.length ? lines.join('\n') : '- none';
