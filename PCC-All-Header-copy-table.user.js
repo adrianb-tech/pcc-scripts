@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Header copy table
-// @version 1.18
+// @version 1.19
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @match        https://*.pointclickcare.com/*
@@ -189,6 +189,11 @@
     return rows;
   }
 
+  // Glass Copy button for the dark slate card (his design pick, 2026-10-13).
+  var GLASS_BTN = 'cursor:pointer;background:rgba(255,255,255,.13);color:#fff;border:1px solid rgba(255,255,255,.28);' +
+    'border-radius:999px;font-weight:600;line-height:1.1;vertical-align:middle;' +
+    'font-family:-apple-system,Helvetica,Arial,sans-serif;text-transform:none;';
+
   function smallCopyBtn(doc, text, label){
     // Mark buttons that can push to the note via G
     var b = doc.createElement('button');
@@ -199,7 +204,7 @@
         b.setAttribute('data-fill-label', label);
     }
     b.type = 'button'; b.textContent = 'Copy';
-    b.style.cssText = BTN_BLUE + 'display:inline-block;font-size:14px;padding:4px 12px;margin-left:6px;';
+    b.style.cssText = GLASS_BTN + 'display:inline-block;font-size:13px;padding:7px 16px;margin-left:6px;flex:none;';
     b.addEventListener('click', function(e){
       e.preventDefault(); e.stopPropagation();
       copyText(text);
@@ -227,40 +232,148 @@
     return b;
   }
 
-  // Compact table right after the allergies Copy button; each row has its own
-  // Copy button. Rebuilt only when the data changes; removed when empty.
+  // ---------- NAME / ROOM (same finders as the S key) ----------
+  function residentLastFirst(doc){
+    try {
+      var txt = doc.body ? (doc.body.textContent || '') : '';
+      var m = txt.match(/([A-Za-z][A-Za-z'’.\-]*(?:\s+[A-Za-z][A-Za-z'’.\-]*)*\s*,\s*[A-Za-z][A-Za-z'’.\- ]*?)\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/);
+      if (m) return m[1].replace(/\s+/g, ' ').trim();
+    } catch (e) {}
+    return '';
+  }
+  function isCrownHeights(doc){
+    try {
+      var els = doc.querySelectorAll('select, button, a, span, div, td');
+      for (var i = 0; i < els.length; i++){
+        var tx = (els[i].textContent || '').trim();
+        if (tx.length > 90 || tx.length < 6) continue;
+        if (!/crown\s*heights/i.test(tx)) continue;
+        var r = null;
+        try { r = els[i].getBoundingClientRect(); } catch (e) {}
+        if (r && r.top >= -50 && r.top < 300) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  // "5 East 530-A" -> "530A"; Crown Heights keeps the wing: "6 West 612-B" -> "W612B".
+  function roomBedNumber(doc, withWing){
+    try {
+      var txt = (doc.body && doc.body.textContent) ? doc.body.textContent : '';
+      var v = '';
+      var m = txt.match(/\bLocation\s*:?\s*([^\n]*?)(?=\s*(?:Status|Code Status|Physician|DOB|Admission|Initial Admission|Discharge|Allergies|Special Instructions)\b|\n|$)/);
+      if (m) v = m[1].replace(/\s+/g, ' ').trim();
+      if (!v) {
+        var li = txt.search(/\bLocation\b/i);
+        if (li !== -1) v = txt.substr(li, 40).replace(/\s+/g, ' ').trim();
+      }
+      var rm = v.match(/\b(\d{2,4})\s*-?\s*([A-Za-z])?\b/);
+      if (!rm) return '';
+      var pre = '';
+      if (withWing) {
+        var tok = v.slice(0, rm.index).match(/([A-Za-z]+)\s*$/);
+        if (tok && /^(east|west)$/i.test(tok[1])) pre = tok[1].charAt(0).toUpperCase();
+        else if (tok && tok[1].length === 1 && /[ew]/i.test(tok[1])) pre = tok[1].toUpperCase();
+      }
+      return pre + rm[1] + (rm[2] ? rm[2].toUpperCase() : '');
+    } catch (e) { return ''; }
+  }
+
+  // ---------- ADMISSION DATE ----------
+  // "Admission (re-entry)" first (tagged re-entry); else the MDS initial date.
+  function admissionDate(doc){
+    try {
+      var txt = (doc.body && doc.body.textContent) ? doc.body.textContent : '';
+      var m = txt.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (m) return { date: m[1], kind: 're-entry' };
+      m = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (m) return { date: m[1], kind: 'initial' };
+    } catch (e) {}
+    return null;
+  }
+
+  // ---------- DARK SLATE CARD (his design, 2026-10-13) ----------
+  // Replaces the old white table, same anchor (right after the allergies
+  // value). Title = resident name + room pill; rows = Age/Sex, Allergies
+  // (each with its glass Copy — Grab-all still finds .pcc-fill-copy and adds
+  // its G badge, restyled glass inside this card), then Admission.
   function addInfoTable(doc, afterEl){
     var rows = infoRows(doc);
+    var name = residentLastFirst(doc);
+    var room = roomBedNumber(doc, isCrownHeights(doc));
+    var adm = admissionDate(doc);
     var old = doc.getElementById('copyInfoTable');
-    if (!rows.length){ if (old && old.parentNode) old.parentNode.removeChild(old); return; }
-    var sig = rows.map(function(r){ return r.label + '=' + r.value; }).join('|');
+    if (!rows.length && !name){ if (old && old.parentNode) old.parentNode.removeChild(old); return; }
+    var sig = name + '|' + room + '|' + rows.map(function(r){ return r.label + '=' + r.value; }).join('|') +
+      '|' + (adm ? adm.date + adm.kind : '');
     if (old && old.getAttribute('data-sig') === sig) return;
     if (old && old.parentNode) old.parentNode.removeChild(old);
+
+    // Grab-all's G badge, glass-styled when it lands inside this card.
+    if (!doc.getElementById('pccHdrCardStyle')) {
+      var st = doc.createElement('style');
+      st.id = 'pccHdrCardStyle';
+      st.textContent = '#copyInfoTable .pcc-g-badge{background:rgba(255,255,255,.08)!important;' +
+        'border:1px solid rgba(255,255,255,.25)!important;border-bottom-width:2px!important;color:#cbd5e1!important;}';
+      (doc.head || doc.documentElement).appendChild(st);
+    }
+
     var wrap = doc.createElement('span');
     wrap.id = 'copyInfoTable';
     wrap.setAttribute('data-sig', sig);
     wrap.style.cssText = 'display:inline-block;vertical-align:middle;margin-left:12px;' +
-      'border:1px solid #999;border-radius:6px;padding:8px 10px;background:#fff;' +
-      'font:400 16px -apple-system,Helvetica,Arial,sans-serif;color:#111;';
-    var tbl = doc.createElement('table');
-    tbl.style.cssText = 'border-collapse:collapse;';
-    for (var i = 0; i < rows.length; i++){
-      var tr = doc.createElement('tr');
-      var tdL = doc.createElement('td');
-      tdL.textContent = rows[i].label;
-      tdL.style.cssText = 'font-weight:700;padding:4px 10px 4px 2px;white-space:nowrap;vertical-align:top;';
-      var tdV = doc.createElement('td');
-      tdV.textContent = rows[i].value;
-      var bigVal = (rows[i].label === 'Age/Sex' || rows[i].label === 'Allergies');
-      tdV.style.cssText = 'padding:4px 2px;vertical-align:top;max-width:520px;' +
-        (bigVal ? 'font-size:20px;font-weight:700;' : '');
-      var tdB = doc.createElement('td');
-      tdB.style.cssText = 'padding:4px 2px 4px 6px;vertical-align:top;white-space:nowrap;';
-      tdB.appendChild(smallCopyBtn(doc, rows[i].value, rows[i].label));
-      tr.appendChild(tdL); tr.appendChild(tdV); tr.appendChild(tdB);
-      tbl.appendChild(tr);
+      'background:linear-gradient(135deg,#263449,#131c2b);border-radius:16px;' +
+      'box-shadow:0 10px 28px rgba(2,6,23,.35);padding:14px 18px 8px;min-width:430px;max-width:640px;' +
+      'font-family:-apple-system,Helvetica,Arial,sans-serif;color:#f8fafc;';
+
+    if (name) {
+      var title = doc.createElement('div');
+      title.style.cssText = 'display:flex;align-items:center;gap:12px;padding-bottom:10px;';
+      var nm = doc.createElement('span');
+      nm.textContent = name;
+      nm.style.cssText = 'font-size:23px;font-weight:700;letter-spacing:.01em;color:#f8fafc;flex:1;min-width:0;';
+      title.appendChild(nm);
+      if (room) {
+        var pill = doc.createElement('span');
+        pill.style.cssText = 'flex:none;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.22);' +
+          'color:#dbe7f5;font-size:14.5px;font-weight:600;padding:5px 13px;border-radius:999px;white-space:nowrap;';
+        var rl = doc.createElement('span');
+        rl.textContent = 'ROOM ';
+        rl.style.cssText = 'font-size:10px;font-weight:700;letter-spacing:.08em;color:#8fa3bd;';
+        pill.appendChild(rl);
+        pill.appendChild(doc.createTextNode(room));
+        title.appendChild(pill);
+      }
+      wrap.appendChild(title);
     }
-    wrap.appendChild(tbl);
+
+    function dataRow(label, value, valueColor, btn) {
+      var row = doc.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.09);';
+      var lb = doc.createElement('span');
+      lb.textContent = label;
+      lb.style.cssText = 'font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8fa3bd;width:88px;flex:none;';
+      var vl = doc.createElement('span');
+      vl.style.cssText = 'font-size:19px;font-weight:600;color:' + valueColor + ';flex:1;min-width:0;';
+      if (typeof value === 'string') vl.textContent = value; else vl.appendChild(value);
+      row.appendChild(lb); row.appendChild(vl);
+      if (btn) row.appendChild(btn);
+      return row;
+    }
+
+    for (var i = 0; i < rows.length; i++){
+      var isAlg = rows[i].label === 'Allergies';
+      wrap.appendChild(dataRow(rows[i].label, rows[i].value, isAlg ? '#fda4af' : '#f8fafc',
+        smallCopyBtn(doc, rows[i].value, rows[i].label)));
+    }
+    if (adm) {
+      var admVal = doc.createElement('span');
+      admVal.appendChild(doc.createTextNode(adm.date + ' '));
+      var kind = doc.createElement('span');
+      kind.textContent = '(' + adm.kind + ')';
+      kind.style.cssText = 'font-size:13px;font-weight:500;color:#8fa3bd;';
+      admVal.appendChild(kind);
+      wrap.appendChild(dataRow('Admission', admVal, '#f8fafc', null));
+    }
     afterEl.parentNode.insertBefore(wrap, afterEl.nextSibling);
   }
 
