@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.6
+// @version      2.7
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -515,6 +515,8 @@
         for (var i = 0; i < tiles.length; i++) {
           var tl = tiles[i];
           tl.setAttribute('data-tm-hl', '1');
+          tl.setAttribute('data-tm-bg', tl.style.background || '');
+          tl.setAttribute('data-tm-bd', tl.style.borderColor || '');
           tl.style.background = '#dbeafe';
           tl.style.borderColor = '#93c5fd';
           var ls = tl.querySelector('span');
@@ -529,8 +531,10 @@
         for (var i = 0; i < lit.length; i++) {
           var tl = lit[i];
           tl.removeAttribute('data-tm-hl');
-          tl.style.background = '';
-          tl.style.borderColor = '';
+          tl.style.background = tl.getAttribute('data-tm-bg') || '';
+          tl.style.borderColor = tl.getAttribute('data-tm-bd') || '';
+          tl.removeAttribute('data-tm-bg');
+          tl.removeAttribute('data-tm-bd');
           var ls = tl.querySelector('span');
           if (ls && ls.getAttribute('data-tm-orig')) {
             ls.textContent = ls.getAttribute('data-tm-orig');
