@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.4
+// @version      1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @name         CNR + Saints — Consult form defaults
@@ -42,7 +42,7 @@
     // Done only when EVERY target exists — the form renders in pieces, and
     // marking done early would strand a late-rendering field forever (the
     // old 1.5s-first-run version had that race).
-    var complete = ['Cust_2_I_1', 'Cust_2_II_3', 'Cust_2_II_6', 'Cust_2_II_7', 'Cust_2_II_8', 'displaydateCust_2_II_9_dummy']
+    var complete = ['Cust_2_I_1', 'Cust_2_II_3', 'Cust_2_II_6', 'Cust_2_II_7', 'Cust_2_II_8']
       .every(function (n) { return !!doc.querySelector('[name="' + n + '"]'); });
     if (complete) doc.__consultDone = true;
     return complete;
@@ -55,40 +55,28 @@
     return done;
   }
 
-  // Q9 Date of Consult rides PCC's date WIDGET: the visible dummy field is
-  // only a display — the widget keeps the real date in its own state and
-  // syncs it when its handlers process our events. v1.3's burst fired those
-  // events at ~0ms, BEFORE the widget initialized, so they were lost: the
-  // form SHOWED the date but PCC's real date stayed null, and signing the
-  // form threw the server error '...because "date" is null' (his Saints
-  // report, 2026-10-14). v1.4: the date is set ONLY on the old proven
-  // schedule (>=1.5s, after widget init — the timing that signed fine for
-  // weeks); everything else keeps the instant burst.
-  function runDateIn(doc){
-    if (!doc || doc.__consultDateDone) return;
-    if (!doc.querySelector('input[name="Cust_2_I_1"]')) return;
-    var el = doc.querySelector('[name="displaydateCust_2_II_9_dummy"]');
-    if (!el) return;
-    setField(doc, 'displaydateCust_2_II_9_dummy', todayStr());
-    doc.__consultDateDone = true;
-  }
-  function runDateAll(){
-    runDateIn(document);
-    var ifr = document.querySelectorAll('iframe');
-    for (var i = 0; i < ifr.length; i++){ try { runDateIn(ifr[i].contentDocument); } catch(e){} }
-  }
+  // Q9 Date of Consult is NOT touched by this script (v1.5). Proven by
+  // bisect on 2026-10-14: with this script disabled and the date picked
+  // by hand through PCC's calendar, signing lands on the section list
+  // clean; with ANY version of the script setting the date — v1.2's slow
+  // schedule included, the one that signed fine for weeks — signing the
+  // form throws PCC's server error '...because "date" is null' (the
+  // signature itself lands; the page after it crashes). Writing the
+  // visible dummy field by value evidently leaves PCC's real date null
+  // in current PCC builds. He picks the date himself (one calendar
+  // click); everything else here still auto-fills instantly.
 
   // v1.3 speed-up (his request, piloted like the tab bar): document-start +
   // a fast bounded burst — retry every 60ms until the form is fully set
   // (~3s cap) — so each check lands the moment PCC renders its field,
   // instead of at the old 1.5s/3s/6s/10s waves. The staggered tail remains
   // as a safety net for very late form frames. Not a permanent interval.
-  // (v1.4: the burst covers everything EXCEPT the date — see runDateIn.)
+  // (v1.5: the date is never set by script at all — see the Q9 note.)
   var burstLeft = 50;
   (function burst(){
     if (runAll()) return;
     if (--burstLeft <= 0) return;
     setTimeout(burst, 60);
   })();
-  [1500, 3000, 6000, 10000].forEach(function (ms) { setTimeout(function(){ runAll(); runDateAll(); }, ms); });
+  [1500, 3000, 6000, 10000].forEach(function (ms) { setTimeout(runAll, ms); });
 })();
