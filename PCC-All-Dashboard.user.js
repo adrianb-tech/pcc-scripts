@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.14
+// @version      2.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1427,6 +1427,16 @@
     setButton(doc, 'psychToggle', psychToggleHtml,
       function() { setOn('pccPsychFirst', !isOn('pccPsychFirst')); sortMeds(doc); });
     var copyBtn = doc.getElementById('copyMedListBtn');
+    // His call (2026-10-14): the Psych meds tile in the header tile
+    // row now carries this list, so the panel under the DASH tab is
+    // hidden - display:none, kept in the DOM: the tile reads its
+    // lines and the Copy button's stamped transfer text from here,
+    // and G reaches the meds through the tile. The sort toggle
+    // hides with it (it only ever sorted this panel's display).
+    var mbHide = doc.getElementById('medListBox');
+    if (mbHide) mbHide.style.display = 'none';
+    var ptHide = doc.getElementById('psychToggle');
+    if (ptHide) ptHide.style.display = 'none';
     // Transfer rule (his words, 2026-10-14): in the NOTE, methadone
     // reads '-Methadone managed by medical' - no dose, no indication.
     // The box on screen keeps the full order line; only the
