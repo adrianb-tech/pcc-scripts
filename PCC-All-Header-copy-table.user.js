@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Header copy table
-// @version 1.23
+// @version 1.24
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Header-copy-table.user.js
 // @match        https://*.pointclickcare.com/*
@@ -297,16 +297,41 @@
   // line. White card with a real border (his request). Replaces the
   // one-line slate bar, which he found unscannable: data and buttons were
   // interleaved at one weight on a dark strip.
+  // Weight from the dashboard's vitals details (his ask, 2026-10-14:
+  // a Weight box right after Allergies). Present only where the page
+  // carries vitals (the dashboard); 0 Lbs means no real reading, so
+  // the cell is omitted then, like every empty cell.
+  function weightValue(doc){
+    try {
+      var blocks = doc.querySelectorAll('.vitalDetails');
+      for (var i = 0; i < blocks.length; i++) {
+        var b = blocks[i].querySelector('b');
+        var v = blocks[i].querySelector('.vitalValue');
+        if (b && v && /^weight$/i.test((b.textContent || '').trim())) {
+          var m = (v.textContent || '').match(/([\d.]+)\s*lbs/i);
+          if (m && parseFloat(m[1]) > 0) return m[1] + ' lbs';
+        }
+      }
+      var ext = doc.getElementById('residentHeaderExtended');
+      if (ext) {
+        var m2 = (ext.textContent || '').replace(/\s+/g, ' ').match(/Weight\s+([\d.]+)\s*lbs/i);
+        if (m2 && parseFloat(m2[1]) > 0) return m2[1] + ' lbs';
+      }
+    } catch (e) {}
+    return '';
+  }
+
   function addInfoTable(doc, afterEl){
     var rows = infoRows(doc);
     var byLabel = {};
     rows.forEach(function (r) { byLabel[r.label] = r.value; });
     var room = roomBedNumber(doc, isCrownHeights(doc));
     var adm = admissionDate(doc);
+    var weight = weightValue(doc);
     var old = doc.getElementById('copyInfoTable');
     if (!rows.length && !room && !adm){ if (old && old.parentNode) old.parentNode.removeChild(old); return; }
     var sig = room + '|' + rows.map(function(r){ return r.label + '=' + r.value; }).join('|') +
-      '|' + (adm ? adm.date + adm.kind : '');
+      '|' + (adm ? adm.date + adm.kind : '') + '|W=' + weight;
     if (old && old.getAttribute('data-sig') === sig) return;
     if (old && old.parentNode) old.parentNode.removeChild(old);
 
@@ -354,6 +379,7 @@
     if (byLabel['Age/Sex']) cells.push(cell('Age / Sex', byLabel['Age/Sex'], { size: 23, center: true, btn: smallCopyBtn(doc, byLabel['Age/Sex'], 'Age/Sex') }));
     if (room) cells.push(cell('Room', room, {}));
     if (byLabel['Allergies']) cells.push(cell('Allergies', byLabel['Allergies'], { size: 17.5, color: '#b42318', flex: true, btn: smallCopyBtn(doc, byLabel['Allergies'], 'Allergies') }));
+    if (weight) cells.push(cell('Weight', weight, {}));
     if (byLabel['Psych meds']) cells.push(cell('Psych meds', byLabel['Psych meds'], { size: 15, btn: smallCopyBtn(doc, byLabel['Psych meds'], 'Psych meds') }));
     if (adm) {
       var av = doc.createElement('span');
