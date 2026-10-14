@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.21
+// @version      1.22
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -250,7 +250,6 @@
         });
         if (target.nextSibling) target.parentNode.insertBefore(btn, target.nextSibling);
         else target.parentNode.appendChild(btn);
-        noteFLoaded(doc);   // the F is on the page — the date may follow now
       }
     } catch (e) {}
   }
@@ -901,12 +900,12 @@
       for (var j = 0; j < targets.length; j++) { try { targets[j].blur(); } catch (e) {} }
     } catch (e) {}
   }
-  // Date of Consult — STAGGERED (his design, 2026-10-14: "first the
-  // F button is placed instantly and then a moment later the date is
-  // filled out"). The F badges plant on the normal instant passes;
-  // the date now waits for the F button to be placed (v1.21, his
-  // method) — chained to applyFButton, then a 1200ms beat — so the
-  // two never land in the same instant. The fill is typed character
+  // Date of Consult — ORDER (his directions, 2026-10-14): the date
+  // goes in FIRST, instantly; the F buttons are installed a moment
+  // later (the init order at the bottom of this file). The earlier
+  // orders — F first, then the date, by clock (v1.19/v1.20) or
+  // chained to the F badge (v1.21) — did not work on his screen.
+  // The fill is typed character
   // by character (the input class PCC's widget is built for) WITHOUT
   // taking focus — focus is never stolen on a form he is editing —
   // and only into an EMPTY field; a date he set himself always wins.
@@ -914,20 +913,6 @@
   // fill runs there with focus (his keypress, his moment), and either
   // way the field gets a real focus/blur cycle so the widget parses
   // what it holds before the save click lands.
-  // The date waits for the F (his method, 2026-10-14: "wait until
-  // the F fully loads before putting in the date"). The fill is
-  // chained to the F button actually being PLACED on the form — the
-  // proof that PCC has finished loading the page — instead of a fixed
-  // clock (v1.19/v1.20's timed fills could land before the form's own
-  // widget finished initializing). Queued once per document.
-  function noteFLoaded(doc){
-    try {
-      if (doc.__pccDateQueued) return;
-      doc.__pccDateQueued = true;
-      setTimeout(fillConsultDateSoft, 1200);
-      setTimeout(fillConsultDateSoft, 3500);
-    } catch (e) {}
-  }
   function todayStrK(){ var d = new Date(); return ('0' + (d.getMonth() + 1)).slice(-2) + '/' + ('0' + d.getDate()).slice(-2) + '/' + d.getFullYear(); }
   function keyEvK(doc, type, ch){
     var w = doc.defaultView || window;
@@ -1375,9 +1360,15 @@
   placeABadge();
   setTimeout(placeABadge, 1500);
   setTimeout(placeABadge, 4000);
-  // F button: place on load + retries (PCC re-renders the toolbar)
-  applyFButton();
-  setTimeout(applyFButton, 1500);
+  // ORDER INVERTED (v1.22, his direction: "place the date instantly.
+  // wait a moment, then install the F buttons"). The date goes in
+  // FIRST — instantly, with two early retries for a late form frame —
+  // and the F buttons are installed a moment later, so the badge
+  // installation can no longer disturb the date fill.
+  fillConsultDateSoft();
+  setTimeout(fillConsultDateSoft, 800);
+  setTimeout(fillConsultDateSoft, 1600);
+  setTimeout(applyFButton, 2000);
   setTimeout(applyFButton, 4000);
   applyFAdmissionBadge();
   setTimeout(applyFAdmissionBadge, 1500);
@@ -1445,8 +1436,8 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // (v1.21: the date fill is no longer on a fixed clock — it is
-  // chained to the F button being placed; see noteFLoaded.)
+  // (v1.22: the date now fills FIRST, in the init order above — the
+  // F buttons are the ones that wait.)
   // Runs last: on a both-green section list, no F badge survives (v1.7)
   applyFSectionListCleanup();
   setTimeout(applyFSectionListCleanup, 1500);
