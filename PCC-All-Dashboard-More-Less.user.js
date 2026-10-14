@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      2.4
+// @version      2.5
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -500,11 +500,20 @@
       g.type = 'button';
       g.id = 'tmGBtn';
       g.className = 'rh-header-btn';
+      // Very light blue fill; white while pressed, blue again on
+      // release (his spec, 2026-10-14) — the :active rule below.
+      g.style.background = '#dbeafe';
       g.textContent = 'G';
       g.title = 'Grab all — queue everything on screen (same as the G key)';
       g.addEventListener('click', triggerG);
       var sBtn = document.getElementById('tmSBtn');
       bar.insertBefore(g, sBtn ? sBtn.nextSibling : more.nextSibling);
+    }
+    if (!document.getElementById('tmGBtnStyle')) {
+      var gst = document.createElement('style');
+      gst.id = 'tmGBtnStyle';
+      gst.textContent = '#tmGBtn:active{background:#ffffff !important;}';
+      (document.head || document.documentElement).appendChild(gst);
     }
     var stray;
     while ((stray = document.getElementById('tmRelRow') || document.getElementById('tmBimsRow'))) stray.remove();
