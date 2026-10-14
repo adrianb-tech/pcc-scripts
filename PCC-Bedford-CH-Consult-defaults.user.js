@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.15
+// @version      1.16
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -180,10 +180,18 @@
   // PCC's own "Admission (re-entry)" header line). Set ONCE at open.
   var copyTypeDone = false;
   function openerHasReadmission() {
+    // ONLY the Readmission flag's own ALERT box counts (v1.16 fix).
+    // The v1.14 text search false-fired: PCC's header prints
+    // "Admission (re-entry)" for ANY routine re-entry, but the
+    // flag's rule — re-entry on/after the last psych form — is the
+    // actual readmission test (his report, 2026-10-14 15:33: a plain
+    // re-entry got flipped to Initial). The alert box is
+    // #tmReadmitBox with big text READMISSION.
     try {
       var od = window.opener && window.opener.document;
-      var txt = (od && od.body ? od.body.innerText : '');
-      return /readmission/i.test(txt) || /admission \(re-entry\)/i.test(txt);
+      if (!od) return false;
+      var box = od.getElementById('tmReadmitBox');
+      return !!(box && box.firstChild && /READMISSION/.test(box.firstChild.textContent || ''));
     } catch (e) { return false; }
   }
   function runCopyType() {
