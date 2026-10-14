@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.3
+// @version      1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @name         Bedford + Crown Heights — Consult defaults (Crown Heights)
@@ -21,11 +21,26 @@
     // NO checkboxes get checked — Reason for Consult included (the
     // 'a. Psychiatric Evaluation' check this script used to set is
     // gone). The only answers set are the two No radios below.
-    var gdrNo = document.querySelector('input[name="Cust_3_D"][value="b"]');
-    if (gdrNo && !gdrNo.checked) gdrNo.click();
+    // Copied/follow-up forms carry his answers — F1 recommendations
+    // written, D1 boxes checked, a GDR answer that may be Yes. Forcing
+    // the No radios there desyncs PCC's own trigger logic: he had to
+    // press Yes, then No again to make the form register (his report,
+    // 2026-10-14). Defaults are for FRESH forms only — if any editable
+    // textarea already holds text, this form has been worked: set
+    // nothing. (The review acks below still run; they change no answers.)
+    var worked = false;
+    var tas = document.querySelectorAll('textarea');
+    for (var ti = 0; ti < tas.length; ti++) {
+      if (tas[ti].disabled || tas[ti].readOnly) continue;
+      if ((tas[ti].value || '').trim().length > 10) { worked = true; break; }
+    }
+    if (!worked) {
+      var gdrNo = document.querySelector('input[name="Cust_3_D"][value="b"]');
+      if (gdrNo && !gdrNo.checked) gdrNo.click();
 
-    var newRecsNo = document.querySelector('input[name="Cust_3_F"][value="b"]');
-    if (newRecsNo && !newRecsNo.checked) newRecsNo.click();
+      var newRecsNo = document.querySelector('input[name="Cust_3_F"][value="b"]');
+      if (newRecsNo && !newRecsNo.checked) newRecsNo.click();
+    }
 
     // 2. Find every question still needing review (hidden ack field == "N").
     var links = document.querySelectorAll('a.qcheck');
