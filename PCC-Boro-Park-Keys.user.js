@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version 2.5
+// @version 2.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -698,6 +698,37 @@
     return null;
   }
   function isBoroPark() { return true; } // Boro Park only script
+
+  // Commit-before-save (his evidence, 2026-10-14): clicking Save & Exit
+  // with the mouse registers the note correctly; the scripted F did
+  // not. A real click first blurs the field in focus — that blur is
+  // what makes PCC commit the field (the date widget parses on blur,
+  // fields commit on blur). A synthetic click never moves focus, so
+  // the commit never ran and the section saved as incomplete. Scripted
+  // F now does exactly what his mouse does: blur, a beat for the
+  // handlers, then click.
+  function commitBlur(){
+    try {
+      var docs = allDocs(), targets = [];
+      for (var i = 0; i < docs.length; i++) {
+        var ae = docs[i].activeElement;
+        if (!ae) continue;
+        var tag = ae.tagName || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae.isContentEditable) targets.push(ae);
+      }
+      for (var j = 0; j < targets.length; j++) { try { targets[j].blur(); } catch (e) {} }
+    } catch (e) {}
+  }
+  function fireSaveClick(btn){
+    try {
+      var nowS = Date.now();
+      if (window.__pccSaveAt && nowS - window.__pccSaveAt < 1000) return true;
+      window.__pccSaveAt = nowS;
+    } catch (e) {}
+    commitBlur();
+    setTimeout(function(){ fireClick(btn); }, 120);
+    return true;
+  }
   function doFAction() {
     if (!shouldRun()) return false;
     // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
@@ -734,14 +765,14 @@
     // Form edit page: F clicks Save & Sign & Exit at Boro Park, Save & Exit elsewhere
     if (isBoroPark()) {
       var sse = findSaveSignExit();
-      if (sse) { fireClick(sse); return true; }
+      if (sse) return fireSaveClick(sse);
     }
     var se = findSaveExit();
-    if (se) { fireClick(se); return true; }
+    if (se) return fireSaveClick(se);
     if (!isBedfordOrCH()) return false;
     // Inside the form: F hits Save & Sign & Lock & Exit (Bedford/Crown Heights only)
     var t = findSaveSignLockExit();
-    if (t) { fireClick(t); return true; }
+    if (t) return fireSaveClick(t);
     return false;
   }
 
