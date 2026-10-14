@@ -1,9 +1,10 @@
 // ==UserScript==
-// @version      1.4
+// @version      1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Consult-defaults.user.js
 // @name         Bedford + Crown Heights — Consult defaults (Crown Heights)
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
+// @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
@@ -69,9 +70,53 @@
     if (done) return;
     if (document.querySelector('input[name="Cust_1_A"]') || document.querySelector('a.qcheck')) run();
   }
+  // --- Reasons for Form popup (his ask, 2026-10-14): clicking New on a
+  // new patient opens this popup with the wrong form preselected. Set
+  // Form = 'Consult-Psychiatry 1.0' and Type of Form = 'Initial'.
+  // One-shot at open, like the form defaults — if he changes either
+  // afterwards, nothing re-asserts it. Facility-gated through the
+  // opener (the popup itself carries no facility name): only when the
+  // chart behind it is Bedford / Crown Heights.
+  function setSelectByLabel(labelText, optionText) {
+    var labels = document.querySelectorAll('td, div, span, label');
+    for (var i = 0; i < labels.length; i++) {
+      if ((labels[i].textContent || '').trim() !== labelText) continue;
+      var row = labels[i].closest('tr') || labels[i].parentElement;
+      var sel = row ? row.querySelector('select') : null;
+      if (!sel) continue;
+      for (var j = 0; j < sel.options.length; j++) {
+        if ((sel.options[j].text || '').trim() === optionText) {
+          if (sel.selectedIndex !== j) {
+            sel.selectedIndex = j;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+  function popupFacilityOk() {
+    try {
+      var od = window.opener && window.opener.document;
+      var txt = (od && od.body ? od.body.innerText : '').toLowerCase();
+      return txt.indexOf('crown heights') !== -1 || txt.indexOf('bedford') !== -1;
+    } catch (e) { return false; }
+  }
+  function runPopup() {
+    if (done) return;
+    if (!/newassess\.jsp/.test(location.pathname)) return;
+    if (!popupFacilityOk()) { done = true; return; }
+    if (setSelectByLabel('Form:', 'Consult-Psychiatry 1.0')) {
+      done = true;
+      // Type options may refresh off the Form change — give PCC a beat.
+      setTimeout(function() { setSelectByLabel('Type of Form:', 'Initial'); }, 350);
+    }
+  }
   var burstLeft = 50;
   (function burst() {
     attempt();
+    runPopup();
     if (done || --burstLeft <= 0) return;
     setTimeout(burst, 60);
   })();
