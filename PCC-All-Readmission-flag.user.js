@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -121,6 +121,11 @@
         anchor.parentNode.insertBefore(box, anchor.nextSibling);
       } catch(e){ return; }
     }
+    // His call (2026-10-14 18:37): the only VISIBLE warning is the
+    // chip beside the G button. This box stays in the DOM — hidden —
+    // because both consult-defaults scripts detect readmission by
+    // reading it (firstChild text / __mode) in the opener.
+    box.style.display = 'none';
     if (box.firstChild) box.firstChild.textContent = big;
     if (box.lastChild) box.lastChild.textContent = small;
   }
