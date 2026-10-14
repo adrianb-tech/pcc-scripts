@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.16
+// @version      1.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -879,6 +879,37 @@
     return null;
   }
   function isBoroPark() { return false; } // CNR/Saints script
+
+  // Commit-before-save (his evidence, 2026-10-14): clicking Save & Exit
+  // with the mouse registers the note correctly; the scripted F did
+  // not. A real click first blurs the field in focus — that blur is
+  // what makes PCC commit the field (the date widget parses on blur,
+  // fields commit on blur). A synthetic click never moves focus, so
+  // the commit never ran and the section saved as incomplete. Scripted
+  // F now does exactly what his mouse does: blur, a beat for the
+  // handlers, then click.
+  function commitBlur(){
+    try {
+      var docs = allDocs(), targets = [];
+      for (var i = 0; i < docs.length; i++) {
+        var ae = docs[i].activeElement;
+        if (!ae) continue;
+        var tag = ae.tagName || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || ae.isContentEditable) targets.push(ae);
+      }
+      for (var j = 0; j < targets.length; j++) { try { targets[j].blur(); } catch (e) {} }
+    } catch (e) {}
+  }
+  function fireSaveClick(btn){
+    try {
+      var nowS = Date.now();
+      if (window.__pccSaveAt && nowS - window.__pccSaveAt < 1000) return true;
+      window.__pccSaveAt = nowS;
+    } catch (e) {}
+    commitBlur();
+    setTimeout(function(){ fireClick(btn); }, 120);
+    return true;
+  }
   function doFAction() {
     if (!shouldRun()) return false;
     // One press, ONE action (his discovery + rule, 2026-10-14): F was
@@ -933,12 +964,8 @@
     if (ns) { fireClick(ns); return true; }
     // Form edit page (CNR/Saints): F clicks, in priority order:
     // Save & Sign & Lock & Exit -> Save & Sign & Exit -> Save & Exit
-    var t = findSaveSignLockExit();
-    if (t) { fireClick(t); return true; }
-    var sse = findSaveSignExit();
-    if (sse) { fireClick(sse); return true; }
-    var se = findSaveExit();
-    if (se) { fireClick(se); return true; }
+    var svChain = findSaveSignLockExit() || findSaveSignExit() || findSaveExit();
+    if (svChain) return fireSaveClick(svChain);
     return false;
   }
 
