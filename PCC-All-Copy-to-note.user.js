@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version 1.3
+// @version      1.4
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -295,16 +295,21 @@
     { key: 'pccFillRelationships', seen: 'pccFillRelationshipsSeen', apply: applyRelationships }
   ];
 
-  var userTouched = false;
+  // Takeover tracking (v1.4): a timestamp, not a lifetime ban. The old
+  // boolean meant ANY earlier click/keypress on a form control — e.g.
+  // clicking into the note to read it — silently blocked every later fill
+  // for that page load (his Saints report 2026-10-14: age never updated,
+  // while the regex and queue were both fine). Now: a grab queued BEFORE
+  // his last touch stays blocked (stale grabs can't land in a form he has
+  // taken over), but a grab he makes AFTER touching applies — pressing G
+  // is the explicit instruction.
+  var touchedAt = 0;
   ['mousedown', 'keydown'].forEach(function (ev) {
     document.addEventListener(ev, function (e) {
       if (!e.isTrusted) return;
-      // Only real form interaction counts as taking over. Clicking the panel
-      // background to focus this half, or scrolling, must not cancel a fill
-      // (his split-view report, 2026-10-13).
       var tg = e.target;
       if (tg && tg.closest && tg.closest('textarea, input, select, button, a, label, [contenteditable]')) {
-        userTouched = true;
+        touchedAt = Date.now();
       }
     }, true);
   });
@@ -398,7 +403,6 @@
   }
 
   function checkAndApply() {
-    if (userTouched) return;
     var field = findNoteField();
     if (!field) return;
     var txt = field.value || '';
@@ -407,7 +411,7 @@
     var reqs = {};
     TOPICS.forEach(function (topic) {
       var r = readQueue(topic);
-      if (r) reqs[topic.key] = r;
+      if (r && r.ts > touchedAt) reqs[topic.key] = r;   // pre-touch grabs stay blocked
     });
 
     // Mismatch check against the note as opened, before any fill lands.
