@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.28
+// @version 1.29
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -466,6 +466,13 @@
   // in the same instant; let go and both restore together.
   // No separate label timer.
   var lit = false;
+  // The light is owned by SOURCES (his G-key report, v1.29):
+  // pressing G fires the grab, whose synthetic clicks land on
+  // this tile mid-hold and used to restore it instantly. Only
+  // trusted presses count now - the light lasts exactly as
+  // long as a real key/mouse/button hold does.
+  var srcKey = false, srcMouse = false, srcBtn = false, srcTm = false;
+  function renderLight() { lightTile(srcKey || srcMouse || srcBtn || srcTm); }
   function lightTile(on) {
     var b = document.getElementById('pnDxBox');
     if (!b) return;
@@ -542,7 +549,7 @@
       setTimeout(function () { hideBoxBadge(); }, 400);
     }
     // G held on a chart page: the tile row's signal (tmGPress).
-    if (e.key === 'tmGPress') lightTile(!!e.newValue);
+    if (e.key === 'tmGPress') { srcTm = !!e.newValue; renderLight(); }
   });
 
   // On THIS page the tile-row script never runs, so tmGPress is
@@ -562,12 +569,24 @@
     if (!e.isTrusted || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key !== 'g' && e.key !== 'G') return;
     if (typingNow()) return;
-    lightTile(true);
+    srcKey = true; renderLight();
   }, true);
   document.addEventListener('keyup', function (e) {
     if (e.key !== 'g' && e.key !== 'G') return;
-    lightTile(false);
+    srcKey = false; renderLight();
   }, true);
+
+  function notesTable() {
+    var tables = document.querySelectorAll('table'), best = null, bestN = 0;
+    for (var i = 0; i < tables.length; i++) {
+      var n = 0, links = tables[i].querySelectorAll('a');
+      for (var j = 0; j < links.length; j++) {
+        if ((links[j].textContent || '').trim().toLowerCase() === 'view') n++;
+      }
+      if (n > bestN) { bestN = n; best = tables[i]; }
+    }
+    return best;
+  }
 
   function insertBox(){
     if (document.getElementById('pnDxBox')) return;
@@ -582,8 +601,16 @@
       wrap = document.createElement('div');
       wrap.id = 'pnTilesWrap';
       wrap.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);padding:10px;margin:8px 0;box-sizing:border-box;';
-      var bar = all.parentElement;
-      bar.parentNode.insertBefore(wrap, bar.nextSibling);
+      // Anchor: right before the notes table (the views bar
+      // itself moves up into the header - Behavior v1.4 - so it
+      // is no longer a safe anchor). Fallback: after the bar.
+      var tbl = notesTable();
+      if (tbl && tbl.parentNode) {
+        tbl.parentNode.insertBefore(wrap, tbl);
+      } else {
+        var bar = all.parentElement;
+        bar.parentNode.insertBefore(wrap, bar.nextSibling);
+      }
     }
     if (!document.getElementById('pnDxBtnRow')) {
       var hdrCss = 'font-size:13px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;';
@@ -599,7 +626,7 @@
       gBtn.onclick = boxTriggerG;
       // Holding the G button lights the tile for exactly the
       // press, same as the key and the tile itself (v1.28).
-      gBtn.addEventListener('mousedown', function () { lightTile(true); });
+      gBtn.addEventListener('mousedown', function (e) { if (e.isTrusted) { srcBtn = true; renderLight(); } });
     }
     var box = document.createElement('div');
     box.id = 'pnDxBox';
@@ -615,9 +642,12 @@
       tileGrab();
     });
     box.addEventListener('mousedown', function (e) {
-      lightTile(true);
+      if (e.isTrusted) { srcMouse = true; renderLight(); }
     });
-    window.addEventListener('mouseup', function () { lightTile(false); });
+    window.addEventListener('mouseup', function (e) {
+      if (!e.isTrusted) return;
+      srcMouse = false; srcBtn = false; renderLight();
+    });
     runDx();
     hideBoxBadge();
     setTimeout(hideBoxBadge, 600);
