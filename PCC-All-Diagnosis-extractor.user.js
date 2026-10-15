@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.24
+// @version 1.25
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -449,36 +449,47 @@
   // flashes like a tile-row tile and the diagnoses copy + queue.
   function tileGrab(){
     if (!dxText) return;
-    flashTile();
+    flashLabel();
     copyText(dxText, null);
     try {
       localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: dxText, ts: Date.now() }));
     } catch (err) {}
   }
-  // Exactly the tile-row press language (his spec, v1.24): light
-  // blue fill, #93c5fd border, the label flashes 'Copied' - all
-  // for one second, then the tile restores itself. It never
-  // stays blue.
-  var flashTimer = 0;
-  function flashTile(){
+  // Press language, identical to the tile row (his spec, v1.25):
+  // the tile is lit (light blue fill, #93c5fd border, label reads
+  // 'Copied') ONLY while it is pressed - mouse down on it, or G
+  // held - and restores the moment the press ends. A plain click
+  // also flashes the label 'Copied' for a second, like the tile
+  // row's Copy buttons do.
+  var lit = false, labelTimer = 0;
+  function setLabel(txt) {
+    var lab = document.getElementById('pnDxLabel');
+    if (!lab) return;
+    if (!lab.getAttribute('data-orig')) lab.setAttribute('data-orig', lab.textContent);
+    lab.textContent = txt;
+  }
+  function restoreLabel() {
+    var lab = document.getElementById('pnDxLabel');
+    if (lab && lab.getAttribute('data-orig')) {
+      lab.textContent = lab.getAttribute('data-orig');
+      lab.removeAttribute('data-orig');
+    }
+  }
+  function lightTile(on) {
     var b = document.getElementById('pnDxBox');
     if (!b) return;
-    var lab = document.getElementById('pnDxLabel');
-    b.style.background = '#dbeafe';
-    b.style.borderColor = '#93c5fd';
-    if (lab && !lab.getAttribute('data-orig')) {
-      lab.setAttribute('data-orig', lab.textContent);
-      lab.textContent = 'Copied';
-    }
-    if (flashTimer) clearTimeout(flashTimer);
-    flashTimer = setTimeout(function () {
-      b.style.background = '#fff';
-      b.style.borderColor = '#e2e8f0';
-      var l2 = document.getElementById('pnDxLabel');
-      if (l2 && l2.getAttribute('data-orig')) {
-        l2.textContent = l2.getAttribute('data-orig');
-        l2.removeAttribute('data-orig');
-      }
+    lit = on;
+    b.style.background = on ? '#dbeafe' : '#fff';
+    b.style.borderColor = on ? '#93c5fd' : '#e2e8f0';
+    if (on) { setLabel('Copied'); }
+    else if (!labelTimer) { restoreLabel(); }
+  }
+  function flashLabel() {
+    setLabel('Copied');
+    if (labelTimer) clearTimeout(labelTimer);
+    labelTimer = setTimeout(function () {
+      labelTimer = 0;
+      if (!lit) restoreLabel();
     }, 1000);
   }
 
@@ -524,13 +535,23 @@
     if (!box) return;
     var badge = box.querySelector('.pcc-g-badge');
     if (badge) badge.style.display = 'none';
+    // Since the tile itself became the grab target (v1.23), the
+    // grab script parks its G badge right AFTER the tile - the
+    // stray G he saw under the Behavior tile (v1.25). Hide it.
+    var n = box.nextElementSibling;
+    while (n && n.classList && n.classList.contains('pcc-g-badge')) {
+      n.style.display = 'none';
+      n = n.nextElementSibling;
+    }
   }
 
-  // A G grab from anywhere flashes this tile too.
   window.addEventListener('storage', function (e) {
     if (e.key === 'pccGrabSignal' && e.newValue) {
-      setTimeout(function () { flashTile(); hideBoxBadge(); }, 400);
+      setTimeout(function () { hideBoxBadge(); }, 400);
     }
+    // G held anywhere: this tile lights for exactly as long as
+    // the press lasts - the tile row's own signal (tmGPress).
+    if (e.key === 'tmGPress') lightTile(!!e.newValue);
   });
 
   function insertBox(){
@@ -563,6 +584,11 @@
       if (e.target.closest && e.target.closest('#pnDxS, #pnDxG')) return;
       tileGrab();
     });
+    box.addEventListener('mousedown', function (e) {
+      if (e.target.closest && e.target.closest('#pnDxS, #pnDxG')) return;
+      lightTile(true);
+    });
+    window.addEventListener('mouseup', function () { lightTile(false); });
     runDx();
     hideBoxBadge();
     setTimeout(hideBoxBadge, 600);
