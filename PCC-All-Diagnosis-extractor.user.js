@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.36
+// @version 1.37
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -720,6 +720,11 @@
         bar.parentNode.insertBefore(wrap, bar.nextSibling);
       }
     }
+    // The grab script plants its G badge next to the tile a
+    // beat after the tile appears; sweep for it right away on
+    // a few quick one-shot passes so it never gets seen
+    // sitting there on refresh (v1.37).
+    [0, 120, 300, 700].forEach(function (ms) { setTimeout(hideBoxBadge, ms); });
     if (!document.getElementById('pnDxBtnRow')) {
       var hdrCss = 'font-size:13px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;';
       var row = document.createElement('div');
