@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.11
+// @version      2.12
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -690,6 +690,12 @@
     try {
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
+        // The evergreen page's buttons carry their labels in
+        // value=, which innerText never sees - the live page's
+        // own rendered text contains NEITHER 'view all' NOR
+        // 'add progress note' (probe-proven 2026-10-15). Judge
+        // the page by its stable testids first.
+        try { if (docs[d].querySelector('[data-testid="pn-view-all-btn"], [data-testid="pn-add-progress-note-btn"]')) return true; } catch (e5) {}
         try {
           var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
           // VIEW ALL button is the key indicator — be lenient
