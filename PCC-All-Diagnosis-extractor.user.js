@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.27
+// @version 1.28
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -449,7 +449,6 @@
   // flashes like a tile-row tile and the diagnoses copy + queue.
   function tileGrab(){
     if (!dxText) return;
-    flashLabel();
     copyText(dxText, null);
     try {
       localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: dxText, ts: Date.now() }));
@@ -461,36 +460,28 @@
   // held - and restores the moment the press ends. A plain click
   // also flashes the label 'Copied' for a second, like the tile
   // row's Copy buttons do.
-  var lit = false, labelTimer = 0;
-  function setLabel(txt) {
-    var lab = document.getElementById('pnDxLabel');
-    if (!lab) return;
-    if (!lab.getAttribute('data-orig')) lab.setAttribute('data-orig', lab.textContent);
-    lab.textContent = txt;
-  }
-  function restoreLabel() {
-    var lab = document.getElementById('pnDxLabel');
-    if (lab && lab.getAttribute('data-orig')) {
-      lab.textContent = lab.getAttribute('data-orig');
-      lab.removeAttribute('data-orig');
-    }
-  }
+  // Label and fill move TOGETHER, locked to the press (his
+  // spec, v1.28): press - by the G key, the G button, or the
+  // tile itself - and the tile turns blue AND reads 'Copied'
+  // in the same instant; let go and both restore together.
+  // No separate label timer.
+  var lit = false;
   function lightTile(on) {
     var b = document.getElementById('pnDxBox');
     if (!b) return;
     lit = on;
     b.style.background = on ? '#dbeafe' : '#fff';
     b.style.borderColor = on ? '#93c5fd' : '#e2e8f0';
-    if (on) { setLabel('Copied'); }
-    else if (!labelTimer) { restoreLabel(); }
-  }
-  function flashLabel() {
-    setLabel('Copied');
-    if (labelTimer) clearTimeout(labelTimer);
-    labelTimer = setTimeout(function () {
-      labelTimer = 0;
-      if (!lit) restoreLabel();
-    }, 1000);
+    var lab = document.getElementById('pnDxLabel');
+    if (lab) {
+      if (on) {
+        if (!lab.getAttribute('data-orig')) lab.setAttribute('data-orig', lab.textContent);
+        lab.textContent = 'Copied';
+      } else if (lab.getAttribute('data-orig')) {
+        lab.textContent = lab.getAttribute('data-orig');
+        lab.removeAttribute('data-orig');
+      }
+    }
   }
 
   // S and G buttons for the box, same actions as the header's
@@ -604,7 +595,11 @@
         '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>';
       wrap.insertBefore(row, wrap.firstChild);
       document.getElementById('pnDxS').onclick = boxTriggerS;
-      document.getElementById('pnDxG').onclick = boxTriggerG;
+      var gBtn = document.getElementById('pnDxG');
+      gBtn.onclick = boxTriggerG;
+      // Holding the G button lights the tile for exactly the
+      // press, same as the key and the tile itself (v1.28).
+      gBtn.addEventListener('mousedown', function () { lightTile(true); });
     }
     var box = document.createElement('div');
     box.id = 'pnDxBox';
