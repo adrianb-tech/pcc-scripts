@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.10
+// @version 1.11
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -32,22 +32,109 @@
     'ORDERS', 'WTS/VITALS', 'RESULTS', 'MDS', 'FORMS', 'ASSMNTS', 'THERAPY', 'PROG NOTES', 'CARE PLAN',
     'TASKS', 'MISC'];
 
-  // His four working tabs, each its own color so they're identifiable at a
-  // glance (his request, 2026-10-13). ASSMNTS is Boro Park's FORMS.
-  var COLORS = {
-    'DASH': { b: '#2563eb', f: '#ffffff' },
-    'PROFILE': { b: '#7c3aed', f: '#ffffff' },
-    'FORMS': { b: '#d97706', f: '#ffffff' },
-    'ASSMNTS': { b: '#d97706', f: '#ffffff' },
-    'PROG NOTES': { b: '#059669', f: '#ffffff' },
-    // Light red shade (his request, 2026-10-13) — dark red text so the
-    // labels stay readable on the pale background.
-    'ORDERS': { b: '#fecaca', f: '#7f1d1d' },
-    'WTS/VITALS': { b: '#fecaca', f: '#7f1d1d' },
-    'RESULTS': { b: '#fecaca', f: '#7f1d1d' },
-    'MED DIAG': { b: '#fecaca', f: '#7f1d1d' },
-    'MISC': { b: '#fecaca', f: '#7f1d1d' }
+  // v1.11 (2026-10-15, his design - Option A + invert, mocked and
+  // approved by him first): the tabs are TILES now, styled like his
+  // data tiles (Admission / Age/Sex / Room). His four working tabs
+  // are big white tiles with a colored dot; the tab he is ON is
+  // INVERTED - filled with its color, white text, the dot becomes a
+  // white ring. Pressing a tile inverts it instantly, before the
+  // page even changes. The second tier (ORDERS, WTS/VITALS,
+  // RESULTS, MED DIAG, MISC) stays smaller in its light-red family;
+  // the overflow tabs under MORE are plain small white tiles; the
+  // MORE/LESS toggle is a tile too.
+  var MAINS = {
+    'DASH': '#2563eb', 'PROFILE': '#7c3aed', 'FORMS': '#d97706',
+    'ASSMNTS': '#d97706', 'PROG NOTES': '#059669'
   };
+  var SECOND = { 'ORDERS': 1, 'WTS/VITALS': 1, 'RESULTS': 1, 'MED DIAG': 1, 'MISC': 1 };
+
+  function setKids(el, color, size) {
+    var kids = el.querySelectorAll('*');
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].classList && kids[i].classList.contains('tmTabDot')) continue;
+      kids[i].style.color = color;
+      kids[i].style.fontWeight = '700';
+      kids[i].style.fontSize = size;
+    }
+  }
+  function dotFor(el, colorHex, inverted) {
+    var dot = null;
+    for (var i = 0; i < el.children.length; i++) {
+      if (el.children[i].classList && el.children[i].classList.contains('tmTabDot')) { dot = el.children[i]; break; }
+    }
+    if (!dot) {
+      dot = document.createElement('span');
+      dot.className = 'tmTabDot';
+      dot.setAttribute('aria-hidden', 'true');
+      if (el.firstChild) el.insertBefore(dot, el.firstChild); else el.appendChild(dot);
+    }
+    dot.style.cssText = 'display:inline-block;border-radius:50%;margin-right:8px;vertical-align:middle;' +
+      (inverted ? 'width:8px;height:8px;background:transparent;border:2.5px solid #ffffff;'
+                : 'width:11px;height:11px;background:' + colorHex + ';border:2.5px solid transparent;');
+    return dot;
+  }
+  function paintTab(el, name, isCur) {
+    if (!el) return;
+    el.style.borderRadius = '12px';
+    el.style.cursor = 'pointer';
+    el.style.whiteSpace = 'nowrap';
+    el.style.boxSizing = 'border-box';
+    el.style.lineHeight = '1.15';
+    if (MAINS[name]) {
+      el.style.padding = '10px 14px';
+      el.style.fontSize = '16px';
+      el.style.fontWeight = '700';
+      if (isCur) {
+        el.style.backgroundColor = MAINS[name];
+        el.style.color = '#ffffff';
+        el.style.border = '1px solid ' + MAINS[name];
+        el.style.boxShadow = '0 1px 3px rgba(16,24,40,.25)';
+        dotFor(el, MAINS[name], true);
+        setKids(el, '#ffffff', '16px');
+      } else {
+        el.style.backgroundColor = '#ffffff';
+        el.style.color = '#131c2b';
+        el.style.border = '1px solid #e2e8f0';
+        el.style.boxShadow = '0 1px 2px rgba(16,24,40,.05)';
+        dotFor(el, MAINS[name], false);
+        setKids(el, '#131c2b', '16px');
+      }
+    } else if (SECOND[name]) {
+      el.style.padding = '8px 10px';
+      el.style.fontSize = '12.5px';
+      el.style.fontWeight = '700';
+      if (isCur) {
+        el.style.backgroundColor = '#b91c1c';
+        el.style.color = '#ffffff';
+        el.style.border = '1px solid #b91c1c';
+        setKids(el, '#ffffff', '12.5px');
+      } else {
+        el.style.backgroundColor = '#fff5f5';
+        el.style.color = '#7f1d1d';
+        el.style.border = '1px solid #fecaca';
+        setKids(el, '#7f1d1d', '12.5px');
+      }
+      el.style.boxShadow = '0 1px 2px rgba(16,24,40,.05)';
+    } else {
+      el.style.padding = '8px 10px';
+      el.style.fontSize = '12.5px';
+      el.style.fontWeight = '700';
+      if (isCur) {
+        el.style.backgroundColor = '#475569';
+        el.style.color = '#ffffff';
+        el.style.border = '1px solid #475569';
+        setKids(el, '#ffffff', '12.5px');
+      } else {
+        el.style.backgroundColor = '#ffffff';
+        el.style.color = '#5b6b7d';
+        el.style.border = '1px solid #e2e8f0';
+        setKids(el, '#5b6b7d', '12.5px');
+      }
+      el.style.boxShadow = '0 1px 2px rgba(16,24,40,.05)';
+    }
+  }
+  var MORE_TILE_CSS = 'cursor:pointer;padding:10px 14px;border:1.5px dashed #b6c2cf;border-radius:12px;' +
+    'background:#ffffff;color:#5b6b7d;font:700 13.5px -apple-system,Helvetica,Arial,sans-serif;white-space:nowrap;';
   // When MORE is open, these overflow tabs come FIRST (his order,
   // 2026-10-13) — the rest follow in PCC's original relative order.
   var EXPAND_FIRST = ['MED DIAG', 'MISC'];
@@ -141,10 +228,11 @@
       var el = tabs[name];
       var a = el.querySelector('a');
       var cls = String(el.className || '') + ' ' + (a ? String(a.className || '') : '');
-      if (/(selected|active|current)/i.test(cls)) cur = name;
+      if (/(selected|active|current)/i.test(cls) || el.getAttribute('aria-selected') === 'true') cur = name;
       if (!el.dataset.pccTrack) {
         el.dataset.pccTrack = '1';
         el.addEventListener('click', function () {
+          try { paintTab(el, name, true); } catch (e3) {}
           try {
             if (HIDE.indexOf(name) !== -1) sessionStorage.setItem('pccCurTab', name);
             else sessionStorage.removeItem('pccCurTab');
@@ -157,28 +245,9 @@
       if (!tabs[name]) return;
       var keep = tabsHidden && name === cur;   // the tab he is ON stays visible
       tabs[name].style.display = (tabsHidden && !keep) ? 'none' : '';
-      if (name === cur) {
-        tabs[name].style.boxShadow = 'inset 0 -4px 0 #3f4a2a';
-        if (!COLORS[name]) tabs[name].style.backgroundColor = '#eef1e4';
-      } else {
-        tabs[name].style.boxShadow = '';
-      }
     });
 
-    Object.keys(COLORS).forEach(function (name) {
-      var el = tabs[name];
-      if (!el) return;
-      el.style.backgroundColor = COLORS[name].b;
-      el.style.color = COLORS[name].f;
-      var kids = el.querySelectorAll('*');
-      for (var i = 0; i < kids.length; i++) {
-        kids[i].style.color = COLORS[name].f;
-        kids[i].style.fontWeight = '700';
-      }
-      for (var j = 0; j < el.children.length; j++) {
-        el.children[j].style.backgroundColor = COLORS[name].b;
-      }
-    });
+    order.forEach(function (name) { paintTab(tabs[name], name, name === cur); });
 
     // Layout (v1.8, his request): MORE appends the hidden tabs TO THE
     // RIGHT — the tabs from the collapsed bar never move or reshuffle.
@@ -207,7 +276,7 @@
 
     // MORE / LESS button at the end of the bar.
     var btn = document.getElementById('pccMoreTabsBtn');
-    if (btn) { btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾'; return true; }
+    if (btn) { btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾'; btn.style.cssText = MORE_TILE_CSS; return true; }
     var last = tabs[order[order.length - 1]];
     var parent = last && last.parentElement;
     if (!parent) return true;
@@ -219,8 +288,7 @@
     btn.id = 'pccMoreTabsBtn';
     btn.type = 'button';
     btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾';
-    btn.style.cssText = 'cursor:pointer;padding:4px 14px;border:1px solid #9aa582;border-radius:6px;' +
-      'background:#eef1e4;color:#3f4a2a;font:bold 13px -apple-system,Helvetica,Arial,sans-serif;white-space:nowrap;';
+    btn.style.cssText = MORE_TILE_CSS;
     btn.addEventListener('click', function (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -245,7 +313,6 @@
   [2500, 4500, 7000].forEach(function (ms) { setTimeout(run, ms); });
   var lastRun = 0;
   document.addEventListener('click', function (e) {
-    if (!e.isTrusted) return;
     var now = Date.now();
     if (now - lastRun < 1000) return;
     lastRun = now;
