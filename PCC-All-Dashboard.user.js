@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.29
+// @version      2.30
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -891,16 +891,35 @@
       processedSig = {};
       fit();
     };
-    // The button lives in its own row, NOT inside the Views cell -
-    // the Views row itself is hidden below (his ask, 2026-10-14).
-    var tbl = cell.closest ? cell.closest('table') : null;
-    if (tbl && tbl.parentNode) {
-      var host = document.createElement('div');
-      host.style.cssText = 'margin:2px 0 6px;';
-      host.appendChild(b);
-      tbl.parentNode.insertBefore(host, tbl);
-    } else {
-      cell.appendChild(b);
+    // His placement (2026-10-15): the toggle takes the place of
+    // PCC's 'Printable View' button in the green bar - that
+    // button is hidden and the toggle sits where it was. If no
+    // Printable View button exists, fall back to a row of its
+    // own above the (hidden) Views table.
+    var placed = false;
+    var pv = document.getElementById('idPrintableViewBtn');
+    if (!pv) {
+      var cands = document.querySelectorAll('input, button, a');
+      for (var pi = 0; pi < cands.length; pi++) {
+        var lab = (cands[pi].value || cands[pi].textContent || '').trim();
+        if (lab === 'Printable View') { pv = cands[pi]; break; }
+      }
+    }
+    if (pv && pv.parentNode) {
+      pv.style.display = 'none';
+      pv.parentNode.insertBefore(b, pv);
+      placed = true;
+    }
+    if (!placed) {
+      var tbl = cell.closest ? cell.closest('table') : null;
+      if (tbl && tbl.parentNode) {
+        var host = document.createElement('div');
+        host.style.cssText = 'margin:2px 0 6px;';
+        host.appendChild(b);
+        tbl.parentNode.insertBefore(host, tbl);
+      } else {
+        cell.appendChild(b);
+      }
     }
     hideDashChrome();
   }
@@ -920,7 +939,7 @@
       }
     }
     var el = document.getElementById('ESOLeditLayout');
-    if (el && el.closest) { var tr = el.closest('tr'); if (tr) tr.style.display = 'none'; }
+    if (el && el.closest) { var tr = el.closest('tr'); if (tr && !tr.querySelector('#tmViewBtn')) tr.style.display = 'none'; }
     var tds = document.querySelectorAll('td');
     for (var j = 0; j < tds.length; j++) {
       var tx = (tds[j].textContent || '').replace(/\s+/g, ' ').trim();
@@ -2106,14 +2125,21 @@
 
   function expand(doc) {
     var win = doc.defaultView;
+    // Speed (2026-10-15): getComputedStyle on every element was
+    // the heavy part of a pass. Read sizes first (one layout,
+    // cached), check computed style only on elements that
+    // actually overflow, and write only after all reads.
+    var clips = [];
     doc.querySelectorAll('body *').forEach(function(e) {
-      var cs = win.getComputedStyle(e);
-      var clips = /(auto|scroll|hidden)/.test(cs.overflowY);
-      if (clips && e.scrollHeight > e.clientHeight + 1) {
-        e.style.setProperty('height', 'auto', 'important');
-        e.style.setProperty('max-height', 'none', 'important');
-        e.style.setProperty('overflow', 'visible', 'important');
+      if (e.scrollHeight > e.clientHeight + 1) {
+        var cs = win.getComputedStyle(e);
+        if (/(auto|scroll|hidden)/.test(cs.overflowY)) clips.push(e);
       }
+    });
+    clips.forEach(function(e) {
+      e.style.setProperty('height', 'auto', 'important');
+      e.style.setProperty('max-height', 'none', 'important');
+      e.style.setProperty('overflow', 'visible', 'important');
     });
     [doc.documentElement, doc.body].forEach(function(e) {
       e.style.setProperty('overflow', 'visible', 'important');
@@ -2225,5 +2251,5 @@
   document.querySelectorAll('iframe[id^="iFramePanel_"]').forEach(function (f) {
     f.addEventListener('load', function () { setTimeout(fit, 100); });
   });
-  [400, 900, 1800, 3200, 5000].forEach(function (ms) { setTimeout(fit, ms); });
+  [600, 1600, 3200].forEach(function (ms) { setTimeout(fit, ms); });
 })();
