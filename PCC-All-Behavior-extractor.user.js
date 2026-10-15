@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.0
+// @version      1.1
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -115,7 +115,7 @@
     if (!table) return null;
     var now = new Date(); now.setHours(0, 0, 0, 0);
     var cutoff = new Date(now.getTime() - 6 * 86400000);
-    var counts = {}, notes = 0, stopped = false;
+    var counts = {}, detail = {}, notes = 0, stopped = false;
     var rows = table.querySelectorAll('tr');
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
@@ -132,10 +132,26 @@
         continue;   // undated rows after the window are old-list tail
       }
       notes++;
+      // When + what kind of note, so he can go read it himself
+      // (his ask, v1.1): the date/time string as PCC prints it,
+      // and the note-type cell (the one right after the date).
+      var whenM = /(\d{1,2}\/\d{1,2}\/\d{4})(\s+\d{1,2}:\d{2}(?:\s*[AP]M)?)?/i.exec(text);
+      var when = whenM ? (whenM[1] + (whenM[2] || '')) : '';
+      var type = '';
+      var cells = row.querySelectorAll('td');
+      for (var c = 0; c < cells.length - 1; c++) {
+        if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(cells[c].textContent || '')) {
+          type = (cells[c + 1].textContent || '').replace(/\s+/g, ' ').trim();
+          break;
+        }
+      }
       var hits = noteSignals(text);
-      Object.keys(hits).forEach(function (k) { counts[k] = (counts[k] || 0) + 1; });
+      Object.keys(hits).forEach(function (k) {
+        counts[k] = (counts[k] || 0) + 1;
+        (detail[k] = detail[k] || []).push({ when: when, type: type });
+      });
     }
-    return { counts: counts, notes: notes };
+    return { counts: counts, detail: detail, notes: notes };
   }
 
   // ---- the tile ----
@@ -150,7 +166,9 @@
       lastSig = 'none';
       return;
     }
-    var items = Object.keys(res.counts).map(function (k) { return { label: k, n: res.counts[k] }; });
+    var items = Object.keys(res.counts).map(function (k) {
+      return { label: k, n: res.counts[k], notes: (res.detail && res.detail[k]) || [] };
+    });
     items.sort(function (a, b) { return b.n - a.n; });
     var sig = JSON.stringify(items) + '|' + res.notes;
     if (sig === lastSig) return;
@@ -162,9 +180,15 @@
       return;
     }
     out.innerHTML = items.map(function (it) {
-      return '<div style="display:flex;justify-content:space-between;padding:2.5px 0;border-bottom:1px solid #f1f5f9;">' +
+      var head = '<div style="display:flex;justify-content:space-between;padding:2.5px 0;">' +
         '<span style="color:#0f172a;">' + it.label + '</span>' +
         '<span style="color:#475569;">' + it.n + (it.n === 1 ? ' note' : ' notes') + '</span></div>';
+      var subs = it.notes.slice(0, 10).map(function (nt) {
+        var s = (nt.when || '') + (nt.type ? ' — ' + nt.type : '');
+        return '<div style="color:#7c8aa0;font-size:11.5px;padding:0 0 2px 12px;">' + s.replace(/</g, '&lt;') + '</div>';
+      }).join('');
+      if (it.notes.length > 10) subs += '<div style="color:#94a3b8;font-size:11.5px;padding:0 0 2px 12px;">+ ' + (it.notes.length - 10) + ' more</div>';
+      return '<div style="border-bottom:1px solid #f1f5f9;padding-bottom:3px;margin-bottom:3px;">' + head + subs + '</div>';
     }).join('') +
       '<div style="color:#94a3b8;font-size:11px;margin-top:5px;">from ' + res.notes + ' notes in the last 7 days</div>';
     if (copy) {
