@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.17
+// @version      2.18
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -858,7 +858,10 @@
   // non-psych diagnoses behind a show-all bar. His click only;
   // Main is always one click away and restores everything.
   function dashView() {
-    try { return localStorage.getItem('tmDashView') === 'mica' ? 'mica' : 'main'; } catch (e) { return 'main'; }
+    // His naming (2026-10-14): the FOLDED layout is 'Main'; the
+    // everything-shown layout is 'Mica'. Default stays Mica -
+    // nothing is folded until he clicks.
+    try { return localStorage.getItem('tmDashView2') === 'main' ? 'main' : 'mica'; } catch (e) { return 'mica'; }
   }
   function plantViewToggle() {
     if (document.getElementById('tmViewBtn')) return;
@@ -872,13 +875,13 @@
     var b = document.createElement('button');
     b.id = 'tmViewBtn';
     b.type = 'button';
-    b.textContent = dashView() === 'mica' ? 'View: Main' : 'View: Mica';
+    b.textContent = dashView() === 'main' ? 'View: Mica' : 'View: Main';
     b.style.cssText = 'margin-left:12px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;' +
       'border:1px solid #7d8f69;border-radius:6px;background:#eef2e6;color:#334155;';
     b.onclick = function () {
-      var next = dashView() === 'mica' ? 'main' : 'mica';
-      try { localStorage.setItem('tmDashView', next); } catch (e) {}
-      b.textContent = next === 'mica' ? 'View: Main' : 'View: Mica';
+      var next = dashView() === 'main' ? 'mica' : 'main';
+      try { localStorage.setItem('tmDashView2', next); } catch (e) {}
+      b.textContent = next === 'main' ? 'View: Mica' : 'View: Main';
       fit();
     };
     cell.appendChild(b);
@@ -1573,28 +1576,19 @@
       var open = body.style.display !== 'none';
       body.style.display = open ? 'none' : 'block';
       bar.textContent = (open ? '\u25B8 ' : '\u25BE ') + label + suffix;
+      fit();
     };
     box.appendChild(bar);
     box.appendChild(body);
   }
 
   function applyMedsView(doc, groups) {
-    var mica = dashView() === 'mica';
+    var mica = dashView() === 'main';
     var flags = doc.getElementById('interactionPanel');
     var labs = doc.getElementById('labsBox');
     var warn = doc.getElementById('warnBox');
     var topRow = doc.getElementById('pccTopRow');
     var labsRow = doc.getElementById('pccLabsRow');
-    // Order detail rows: compact in Mica view (one line per med
-    // for everything except psych and pain, which stay full).
-    (groups || []).forEach(function (g) {
-      var other = g.tier > 1 && g.tier !== 3;
-      g.rows.forEach(function (r, i) {
-        if (i === 0) return;
-        if (mica && other) { r.style.display = 'none'; r.setAttribute('data-tm-compact', '1'); }
-        else if (r.getAttribute('data-tm-compact') === '1') { r.style.display = ''; r.removeAttribute('data-tm-compact'); }
-      });
-    });
     var watch = doc.getElementById('tmWatchBox');
     if (mica) {
       if (!watch && topRow && topRow.parentNode) {
@@ -1619,7 +1613,7 @@
       if (topRow) topRow.style.display = 'none';
       if (labsRow) labsRow.style.display = 'none';
     } else if (watch) {
-      // Only restore when a Mica pass actually moved things -
+      // Only restore when a folded pass actually moved things -
       // otherwise leave his own hide/show choices untouched.
       watch.remove();
       if (topRow) {
@@ -1632,6 +1626,91 @@
         if (warn) { labsRow.appendChild(warn); warn.style.cssText = WARN_BOX_CSS; }
       }
     }
+    renderMedsPanel(doc, groups, mica);
+  }
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function giveText(g) {
+    if (!g.rows[1]) return '';
+    return (g.rows[1].innerText || '').trim().split(/\n/)[0].replace(/^Give\s+/i, '');
+  }
+  function strengthOf(g) {
+    var line = ((g.rows[0].innerText || '').trim().split(/\n|\t/)[0]) || '';
+    var m = line.match(/(\d[\d.,\/]*\s*(?:MG\/ML|UNIT\/GM|MG|MCG|ML|%|UNITS?|GM|G))(?=[\s(]|$)/i);
+    return m ? m[1].toUpperCase() : '';
+  }
+  function freqWord(give) {
+    var s = (give || '').toLowerCase();
+    if (/two times a day/.test(s)) return 'BID';
+    if (/three times a day/.test(s)) return 'TID';
+    if (/four times a day/.test(s)) return 'QID';
+    if (/at bedtime/.test(s)) return 'QHS';
+    if (/every other day/.test(s)) return 'QOD';
+    var h = s.match(/every (\d+) hours?/); if (h) return 'q' + h[1] + 'h';
+    if (/one time a day|once daily|one time each day/.test(s)) return 'daily';
+    if (/in the morning/.test(s)) return 'QAM';
+    if (/as needed/.test(s)) return 'PRN';
+    if (/once a week|one time a week/.test(s)) return 'weekly';
+    return '';
+  }
+  function oneLiner(g) {
+    var fw = freqWord(giveText(g));
+    return escHtml(shortName(g) + ' ' + strengthOf(g) + (fw ? ' ' + fw : ''));
+  }
+  function orderLine(g) {
+    var give = giveText(g);
+    return '<b>' + escHtml(shortName(g) + ' ' + strengthOf(g)) + '</b>' +
+      (give ? ' \u2014 ' + escHtml(give) : '');
+  }
+
+  // The folded view's Medications panel, written the way the
+  // approved mock writes it (his ask, 2026-10-14): psych orders in
+  // full, everything else as one-liners, pain in its orange box -
+  // and PCC's own table one click away, complete and untouched.
+  function renderMedsPanel(doc, groups, folded) {
+    doc.querySelectorAll('[data-tm-compact="1"]').forEach(function (r) {
+      r.style.display = ''; r.removeAttribute('data-tm-compact');
+    });
+    var table = null;
+    if (groups && groups.length && groups[0].rows[0]) table = groups[0].rows[0].closest('table');
+    var panel = doc.getElementById('tmMedsPanel');
+    if (!folded) {
+      if (panel) panel.remove();
+      if (table) table.style.display = '';
+      return;
+    }
+    if (!table || !table.parentNode) return;
+    if (!panel) {
+      panel = doc.createElement('div');
+      panel.id = 'tmMedsPanel';
+      table.parentNode.insertBefore(panel, table);
+    }
+    panel.style.cssText = 'background:#fff;border:1px solid #d6d0bd;border-radius:6px;margin:0 0 6px 0;' +
+      'font-family:-apple-system,Helvetica,Arial,sans-serif;';
+    var psych = [], pain = [], others = [];
+    (groups || []).forEach(function (g) {
+      if (g.tier <= 1) psych.push(orderLine(g));
+      else if (g.tier === 3) pain.push(oneLiner(g));
+      else others.push(oneLiner(g));
+    });
+    var html = '<div style="background:#7d8f69;color:#fff;font-weight:700;font-size:13px;padding:5px 10px;border-radius:6px 6px 0 0;">Medications</div>' +
+      '<div style="padding:8px 10px;font-size:13px;line-height:1.6;">';
+    if (psych.length) html += '<div style="border:2px solid #2563eb;border-radius:4px;padding:6px 9px;margin-bottom:8px;">' + psych.join('<br>') + '</div>';
+    if (others.length) html += '<div style="color:#44403c;">' + others.join(' \u00B7 ') + '</div>';
+    if (pain.length) html += '<div style="color:#7c2d12;border:2px solid #ea580c;border-radius:4px;padding:5px 9px;margin-top:8px;">Pain: ' + pain.join(' \u00B7 ') + '</div>';
+    html += '<div id="tmMedsFullBar" style="margin-top:7px;color:#334155;cursor:pointer;font-weight:600;">\u25B8 show full order text (' + (groups ? groups.length : 0) + ' orders)</div>';
+    html += '</div>';
+    panel.innerHTML = html;
+    table.style.display = 'none';
+    var bar = panel.querySelector('#tmMedsFullBar');
+    if (bar) bar.onclick = function () {
+      var show = table.style.display === 'none';
+      table.style.display = show ? '' : 'none';
+      bar.textContent = (show ? '\u25BE hide full order text' : '\u25B8 show full order text (' + (groups ? groups.length : 0) + ' orders)');
+      fit();
+    };
   }
 
   function codesIn(r) {
@@ -1719,40 +1798,67 @@
     setButton(doc, 'dxToggle',
       'Psych dx first: ' + (on ? 'ON' : 'OFF') + ' (F: ' + fCount + ', G: ' + gCount + ', R: ' + rCount + ', of ' + groups.length + ' dx)',
       function() { setOn('pccDxFirst', !isOn('pccDxFirst')); sortDx(doc); });
-    applyDxView(doc, groups, tbody);
+    applyDxView(doc, sorted, tbody);
   }
 
   // Mica view: the psych block (tiers 0-1, the boxed diagnoses)
   // stays; every other diagnosis hides behind one bar that brings
   // them all back. Main view restores every row.
   function applyDxView(doc, groups, tbody) {
-    var mica = dashView() === 'mica';
-    var bar = doc.getElementById('tmDxBar');
-    var hidden = 0;
-    groups.forEach(function (g) {
-      var other = g.tier > 1;
-      g.rows.forEach(function (r) {
-        if (mica && other) { r.style.display = 'none'; r.setAttribute('data-tm-dxhide', '1'); hidden++; }
-        else if (r.getAttribute('data-tm-dxhide') === '1') { r.style.display = ''; r.removeAttribute('data-tm-dxhide'); }
-      });
+    doc.querySelectorAll('[data-tm-dxhide="1"]').forEach(function (r) {
+      r.style.display = ''; r.removeAttribute('data-tm-dxhide');
     });
-    if (bar) bar.remove();
-    if (mica && hidden > 0) {
-      var tr = doc.createElement('tr');
-      tr.id = 'tmDxBar';
-      var td = doc.createElement('td');
-      td.colSpan = 4;
-      td.style.cssText = 'padding:7px 10px;font-size:13px;font-weight:600;color:#334155;cursor:pointer;background:#f1f5f9;';
-      td.textContent = '\u25B8 ' + hidden + ' more diagnoses \u2014 click to show all';
-      td.onclick = function () {
-        tbody.querySelectorAll('[data-tm-dxhide="1"]').forEach(function (r) {
-          r.style.display = ''; r.removeAttribute('data-tm-dxhide');
-        });
-        tr.remove();
-      };
-      tr.appendChild(td);
-      tbody.appendChild(tr);
+    var oldBar = doc.getElementById('tmDxBar');
+    if (oldBar && oldBar.tagName === 'TR') oldBar.remove();
+    var folded = dashView() === 'main';
+    var table = null;
+    var firstRow = null;
+    (groups || []).some(function (g) { if (g.rows[0]) { firstRow = g.rows[0]; return true; } return false; });
+    if (firstRow) table = firstRow.closest('table');
+    var panel = doc.getElementById('tmDxPanel');
+    if (!folded) {
+      if (panel) panel.remove();
+      if (table) table.style.display = '';
+      return;
     }
+    if (!table || !table.parentNode) return;
+    if (!panel) {
+      panel = doc.createElement('div');
+      panel.id = 'tmDxPanel';
+      table.parentNode.insertBefore(panel, table);
+    }
+    panel.style.cssText = 'background:#fff;border:1px solid #d6d0bd;border-radius:6px;margin:0 0 6px 0;' +
+      'font-family:-apple-system,Helvetica,Arial,sans-serif;';
+    function dxLine(g) {
+      var c = g.rows[0].cells;
+      if (c && c.length >= 4) return ((c[2].innerText || '').trim() + ' ' + (c[3].innerText || '').trim()).trim();
+      return (g.rows[0].innerText || '').trim();
+    }
+    var psych = [], rest = [];
+    (groups || []).forEach(function (g) {
+      if (g.tier <= 1) psych.push(dxLine(g));
+      else rest.push(dxLine(g));
+    });
+    var html = '<div style="background:#7d8f69;color:#fff;font-weight:700;font-size:13px;padding:5px 10px;border-radius:6px 6px 0 0;">Active Diagnoses \u2014 psych first</div>' +
+      '<div style="padding:8px 10px;font-size:13px;line-height:1.6;">';
+    if (psych.length) html += '<div style="border:2px solid #2563eb;border-radius:4px;padding:6px 9px;">' + psych.map(escHtml).join('<br>') + '</div>';
+    if (rest.length) {
+      html += '<div id="tmDxMore" style="display:none;margin-top:7px;">' + rest.map(escHtml).join('<br>') + '</div>';
+      html += '<div id="tmDxBar" style="margin-top:7px;color:#334155;cursor:pointer;font-weight:600;">\u25B8 ' + rest.length + ' more diagnoses \u2014 click to show all</div>';
+    }
+    html += '</div>';
+    panel.innerHTML = html;
+    table.style.display = 'none';
+    var bar = panel.querySelector('#tmDxBar');
+    var more = panel.querySelector('#tmDxMore');
+    if (bar && more) bar.onclick = function () {
+      var show = more.style.display === 'none';
+      more.style.display = show ? 'block' : 'none';
+      bar.textContent = show
+        ? '\u25BE ' + rest.length + ' more diagnoses \u2014 click to hide'
+        : '\u25B8 ' + rest.length + ' more diagnoses \u2014 click to show all';
+      fit();
+    };
   }
 
   function expand(doc) {
@@ -1773,7 +1879,7 @@
 
   function contentBottom(doc) {
     var bottom = 0;
-    doc.querySelectorAll('tr').forEach(function(r) {
+    doc.querySelectorAll('tr, #tmMedsPanel, #tmDxPanel, #tmWatchBox, #pccTopRow, #pccLabsRow').forEach(function(r) {
       var b = r.getBoundingClientRect().bottom;
       if (b > bottom) bottom = b;
     });
