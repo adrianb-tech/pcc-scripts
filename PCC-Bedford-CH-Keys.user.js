@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.6
+// @version      2.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -874,8 +874,45 @@
       var r = target.getClientRects()[0];
       if (!r) { badge.style.display = 'none'; return; }
       badge.style.display = '';
-      badge.style.left = (r.right + 4) + 'px';
-      badge.style.top = (r.top + Math.max(0, (r.height - 20) / 2)) + 'px';
+      var place = function (rr) {
+        badge.style.left = (rr.right + 4) + 'px';
+        badge.style.top = (rr.top + Math.max(0, (rr.height - 20) / 2)) + 'px';
+      };
+      place(r);
+      // The app is still settling when the badge first
+      // plants: it used to appear at once on a provisional
+      // spot, then visibly jump to the real one. Now a fresh
+      // badge stays invisible and follows the button frame by
+      // frame until the position holds still for ~half a
+      // second,
+      // then appears - already in the right place. Bounded:
+      // gives up after ~5s and shows wherever it is. A badge
+      // that already showed once just moves, never re-hides.
+      if (!badge.__pnShown && !badge.__pnTrack) {
+        badge.style.visibility = 'hidden';
+        var lastKey = '', still = 0, frames = 0;
+        var track = function () {
+          frames++;
+          var t2 = findViewAllButton();
+          var rr = (t2 && t2.ownerDocument === document) ? t2.getClientRects()[0] : null;
+          if (rr) {
+            place(rr);
+            var key = rr.left + ',' + rr.top + ',' + rr.width;
+            if (key === lastKey) still++; else { still = 0; lastKey = key; }
+          } else { still = 0; }
+          // Show only once the button has held still for
+          // ~half a second AND the badge is ~0.9s old - a
+          // provisional layout can sit still briefly too.
+          if ((still >= 30 && frames >= 54) || frames > 300) {
+            badge.style.visibility = '';
+            badge.__pnShown = true;
+            badge.__pnTrack = 0;
+            return;
+          }
+          badge.__pnTrack = requestAnimationFrame(track);
+        };
+        badge.__pnTrack = requestAnimationFrame(track);
+      }
     } catch (e) {}
   }
   // Progress Notes - View All: F badge on the patient's name (Resident Profile link)
@@ -1035,7 +1072,7 @@
   setTimeout(applyFViewBadge, 1500);
   setTimeout(applyFViewBadge, 4000);
   applyFViewAllBadge();
-  setTimeout(applyFViewAllBadge, 1500);
+  setTimeout(applyFViewAllBadge, 350); setTimeout(applyFViewAllBadge, 800); setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
   setTimeout(applyFViewAllBadge, 8000);
   // The evergreen Progress Notes page renders late and can
