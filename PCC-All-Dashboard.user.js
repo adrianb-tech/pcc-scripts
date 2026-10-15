@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.18
+// @version      2.19
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -864,7 +864,7 @@
     try { return localStorage.getItem('tmDashView2') === 'main' ? 'main' : 'mica'; } catch (e) { return 'mica'; }
   }
   function plantViewToggle() {
-    if (document.getElementById('tmViewBtn')) return;
+    if (document.getElementById('tmViewBtn')) { hideDashChrome(); return; }
     var tds = document.querySelectorAll('td');
     var cell = null;
     for (var i = 0; i < tds.length; i++) {
@@ -876,7 +876,7 @@
     b.id = 'tmViewBtn';
     b.type = 'button';
     b.textContent = dashView() === 'main' ? 'View: Mica' : 'View: Main';
-    b.style.cssText = 'margin-left:12px;padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;' +
+    b.style.cssText = 'padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;' +
       'border:1px solid #7d8f69;border-radius:6px;background:#eef2e6;color:#334155;';
     b.onclick = function () {
       var next = dashView() === 'main' ? 'mica' : 'main';
@@ -884,9 +884,46 @@
       b.textContent = next === 'main' ? 'View: Mica' : 'View: Main';
       fit();
     };
-    cell.appendChild(b);
+    // The button lives in its own row, NOT inside the Views cell -
+    // the Views row itself is hidden below (his ask, 2026-10-14).
+    var tbl = cell.closest ? cell.closest('table') : null;
+    if (tbl && tbl.parentNode) {
+      var host = document.createElement('div');
+      host.style.cssText = 'margin:2px 0 6px;';
+      host.appendChild(b);
+      tbl.parentNode.insertBefore(host, tbl);
+    } else {
+      cell.appendChild(b);
+    }
+    hideDashChrome();
   }
 
+  // Hide PCC's dashboard chrome (his ask, 2026-10-14): the
+  // 'Resident Dashboard' tab strip, the Edit Layout / Printable
+  // View button bar, and PCC's own 'Views: Main' row. Display
+  // only; every anchor is exact, and the tab strip hides only
+  // when its text is short (tab labels, not page content).
+  function hideDashChrome() {
+    var links = document.querySelectorAll('a');
+    for (var i = 0; i < links.length; i++) {
+      if ((links[i].textContent || '').trim() === 'Resident Dashboard') {
+        var dv = links[i].closest ? links[i].closest('div') : null;
+        if (dv && (dv.textContent || '').length < 200) dv.style.display = 'none';
+        break;
+      }
+    }
+    var el = document.getElementById('ESOLeditLayout');
+    if (el && el.closest) { var tr = el.closest('tr'); if (tr) tr.style.display = 'none'; }
+    var tds = document.querySelectorAll('td');
+    for (var j = 0; j < tds.length; j++) {
+      var tx = (tds[j].textContent || '').replace(/\s+/g, ' ').trim();
+      if (/^Views:/.test(tx) && tx.length < 40) {
+        var tb = tds[j].closest ? tds[j].closest('table') : null;
+        if (tb) tb.style.display = 'none';
+        break;
+      }
+    }
+  }
   function setButton(doc, id, text, onclick) {
     var b = doc.getElementById(id);
     if (!b) {
@@ -1695,8 +1732,7 @@
       else if (g.tier === 3) pain.push(oneLiner(g));
       else others.push(oneLiner(g));
     });
-    var html = '<div style="background:#7d8f69;color:#fff;font-weight:700;font-size:13px;padding:5px 10px;border-radius:6px 6px 0 0;">Medications</div>' +
-      '<div style="padding:8px 10px;font-size:13px;line-height:1.6;">';
+    var html = '<div style="padding:8px 10px;font-size:13px;line-height:1.6;">';
     if (psych.length) html += '<div style="border:2px solid #2563eb;border-radius:4px;padding:6px 9px;margin-bottom:8px;">' + psych.join('<br>') + '</div>';
     if (others.length) html += '<div style="color:#44403c;">' + others.join(' \u00B7 ') + '</div>';
     if (pain.length) html += '<div style="color:#7c2d12;border:2px solid #ea580c;border-radius:4px;padding:5px 9px;margin-top:8px;">Pain: ' + pain.join(' \u00B7 ') + '</div>';
@@ -1830,17 +1866,29 @@
     panel.style.cssText = 'background:#fff;border:1px solid #d6d0bd;border-radius:6px;margin:0 0 6px 0;' +
       'font-family:-apple-system,Helvetica,Arial,sans-serif;';
     function dxLine(g) {
-      var c = g.rows[0].cells;
-      if (c && c.length >= 4) return ((c[2].innerText || '').trim() + ' ' + (c[3].innerText || '').trim()).trim();
-      return (g.rows[0].innerText || '').trim();
+      // Read across every row of the group: on the live page the
+      // description does not sit in the code row's 4th cell (his
+      // screenshot, 2026-10-14: codes showed, descriptions didn't).
+      // Split the group's whole text into fields, take the first
+      // field that is exactly an ICD-10 code, and everything after
+      // it is the description.
+      var all = g.rows.map(function (r) { return r.innerText || ''; }).join('\n');
+      var parts = all.split(/\t|\n/).map(function (s) { return s.trim(); })
+        .filter(function (s) { return s; });
+      var ci = -1, code = '';
+      for (var i = 0; i < parts.length; i++) {
+        if (/^[A-Z]\d{2}(\.\d{1,2})?$/.test(parts[i])) { ci = i; code = parts[i]; break; }
+      }
+      if (ci === -1) return parts.join(' ');
+      var desc = parts.slice(ci + 1).filter(function (p) { return p !== code; }).join(' ');
+      return (code + ' ' + desc).trim();
     }
     var psych = [], rest = [];
     (groups || []).forEach(function (g) {
       if (g.tier <= 1) psych.push(dxLine(g));
       else rest.push(dxLine(g));
     });
-    var html = '<div style="background:#7d8f69;color:#fff;font-weight:700;font-size:13px;padding:5px 10px;border-radius:6px 6px 0 0;">Active Diagnoses \u2014 psych first</div>' +
-      '<div style="padding:8px 10px;font-size:13px;line-height:1.6;">';
+    var html = '<div style="padding:8px 10px;font-size:13px;line-height:1.6;">';
     if (psych.length) html += '<div style="border:2px solid #2563eb;border-radius:4px;padding:6px 9px;">' + psych.map(escHtml).join('<br>') + '</div>';
     if (rest.length) {
       html += '<div id="tmDxMore" style="display:none;margin-top:7px;">' + rest.map(escHtml).join('<br>') + '</div>';
