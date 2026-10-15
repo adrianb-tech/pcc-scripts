@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.23
+// @version 1.24
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -445,24 +445,41 @@
     }
   }
 
-  // Clicking the tile = clicking the old Copy button (his spec,
-  // v1.23): the tile turns light blue, the diagnoses copy and
-  // queue for the note; a click anywhere else turns it white.
+  // Clicking the tile = clicking the old Copy button: the tile
+  // flashes like a tile-row tile and the diagnoses copy + queue.
   function tileGrab(){
     if (!dxText) return;
-    paintTileBlue();
+    flashTile();
     copyText(dxText, null);
     try {
       localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: dxText, ts: Date.now() }));
     } catch (err) {}
   }
-  function paintTileBlue(){
+  // Exactly the tile-row press language (his spec, v1.24): light
+  // blue fill, #93c5fd border, the label flashes 'Copied' - all
+  // for one second, then the tile restores itself. It never
+  // stays blue.
+  var flashTimer = 0;
+  function flashTile(){
     var b = document.getElementById('pnDxBox');
-    if (b) b.style.background = '#dbeafe';
-  }
-  function paintTileWhite(){
-    var b = document.getElementById('pnDxBox');
-    if (b) b.style.background = '#fff';
+    if (!b) return;
+    var lab = document.getElementById('pnDxLabel');
+    b.style.background = '#dbeafe';
+    b.style.borderColor = '#93c5fd';
+    if (lab && !lab.getAttribute('data-orig')) {
+      lab.setAttribute('data-orig', lab.textContent);
+      lab.textContent = 'Copied';
+    }
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () {
+      b.style.background = '#fff';
+      b.style.borderColor = '#e2e8f0';
+      var l2 = document.getElementById('pnDxLabel');
+      if (l2 && l2.getAttribute('data-orig')) {
+        l2.textContent = l2.getAttribute('data-orig');
+        l2.removeAttribute('data-orig');
+      }
+    }, 1000);
   }
 
   // S and G buttons for the box, same actions as the header's
@@ -496,8 +513,8 @@
   // The button's clicked state is BLUE (like the header tiles
   // lighting up) - the word 'Copied' never shows. markCopied is
   // re-asserted after the copy helper's text flash would land.
-  // (v1.23: markCopied painted the old Copy button blue; the
-  // tile itself paints now - see paintTileBlue above.)
+  // (markCopied painted the old Copy button blue; since
+  // v1.23 the tile itself flashes - see flashTile above.)
 
   // The tile has its own G now - hide the grab-all badge that
   // parks itself next to this Copy button (the G key and the
@@ -509,10 +526,10 @@
     if (badge) badge.style.display = 'none';
   }
 
-  // A G grab from anywhere turns this tile blue too.
+  // A G grab from anywhere flashes this tile too.
   window.addEventListener('storage', function (e) {
     if (e.key === 'pccGrabSignal' && e.newValue) {
-      setTimeout(function () { paintTileBlue(); hideBoxBadge(); }, 400);
+      setTimeout(function () { flashTile(); hideBoxBadge(); }, 400);
     }
   });
 
@@ -535,7 +552,7 @@
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
       '<button class="rh-header-btn" id="pnDxS" type="button" title="Copy name + room (same as the S key)" style="' + hdrCss + '">S</button>' +
       '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>' +
-      '<span style="font-weight:700;color:#334155;">Diagnoses</span>' +
+      '<span id="pnDxLabel" style="font-weight:700;color:#334155;">Diagnoses</span>' +
       '</div>' +
       '<div id="pnDxOut" style="color:#0f172a;"></div>';
     box.style.cursor = 'pointer';
@@ -568,13 +585,6 @@
     }
   }
   var lastNotesLen = -1;
-
-  // His spec: the tile is white when it is not clicked.
-  document.addEventListener('click', function (e) {
-    if (!e.isTrusted) return;
-    var b = document.getElementById('pnDxBox');
-    if (b && !b.contains(e.target)) paintTileWhite();
-  }, true);
 
   // Scheduling: bounded staggered runs after load + re-run on your clicks.
   // (Permanent interval removed in the reorganization — no-timers rule.)
