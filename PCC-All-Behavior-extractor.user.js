@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.12
+// @version      1.13
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -324,11 +324,15 @@
         '<button type="button" class="pnBehFbR" style="' + pill + 'border:1px solid #cbd5e1;background:#fff;color:#15803d;">\u2713 right</button>' +
         '<button type="button" class="pnBehFbW" style="' + pill + 'border:1px solid #cbd5e1;background:#fff;color:#b91c1c;">\u2717 wrong</button>' +
         '<input type="text" class="pnBehFbWhy" placeholder="why? (optional)" style="flex:0 1 220px;padding:3px 8px;border:1px solid #cbd5e1;border-radius:999px;font-size:11.5px;color:#0f172a;background:#fff;">' +
+        '<button type="button" class="pnBehFbSaveWhy" style="' + pill + 'border:1px solid #cbd5e1;background:#fff;color:#334155;">save my comment</button>' +
+        '<span class="pnBehFbWhySaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>' +
         '<span class="pnBehFbSaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>';
       var topBtn = bar.querySelector('.pnBehTopBtn');
       var rBtn = bar.querySelector('.pnBehFbR');
       var wBtn = bar.querySelector('.pnBehFbW');
       var whyInp = bar.querySelector('.pnBehFbWhy');
+      var saveWhyBtn = bar.querySelector('.pnBehFbSaveWhy');
+      var whySavedSpan = bar.querySelector('.pnBehFbWhySaved');
       var savedSpan = bar.querySelector('.pnBehFbSaved');
       topBtn.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
@@ -369,9 +373,18 @@
         lastSig = '';
         render(analyze(behDays));
       }
-      whyInp.addEventListener('change', function () {
+      // Explicit save for the comment (his ask, v1.13): the
+      // button stores it - into the record once a verdict
+      // exists, or staged in the field until he picks one -
+      // and 'comment saved' stays written next to it.
+      saveWhyBtn.addEventListener('mousedown', function () { saveWhyBtn.style.background = '#dbeafe'; });
+      saveWhyBtn.addEventListener('mouseup', function () { saveWhyBtn.style.background = '#fff'; });
+      saveWhyBtn.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
         if (curVerdict) fbSave(recFor(curVerdict));
+        whySavedSpan.textContent = 'comment saved';
       });
+      whyInp.addEventListener('input', function () { whySavedSpan.textContent = ''; });
       rBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); saveVerdict('right'); });
       wBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); saveVerdict('wrong'); });
       whyInp.addEventListener('click', function (e) { e.stopPropagation(); });
@@ -380,7 +393,12 @@
       var prev = fbLoad().filter(function (r) {
         return r.kind === 'beh' && r.signal === entry.label && r.when === entry.when;
       })[0];
-      if (prev) { whyInp.value = prev.why || ''; curVerdict = prev.verdict; paintVerdict(prev.verdict); }
+      if (prev) {
+        whyInp.value = prev.why || '';
+        curVerdict = prev.verdict;
+        paintVerdict(prev.verdict);
+        if (prev.why) whySavedSpan.textContent = 'comment saved';
+      }
       entry.cell.insertBefore(bar, entry.cell.firstChild);
     }
     marked = { cells: recs, span: span, bar: bar };
@@ -689,7 +707,7 @@
     insertBox(false);
   }
 
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(tick, ms); });
+  [300, 700, 1400, 2400, 4000, 6000, 8000].forEach(function (ms) { setTimeout(tick, ms); });
   var last = 0;
   document.addEventListener('click', function (e) {
     if (!e.isTrusted) return;
