@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.8
+// @version      3.9
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -209,6 +209,22 @@
     return null;
   }
 
+  // PCC flags a vital by putting class 'vitalWithException'
+  // on its cell in the header vitals table - that is what
+  // turns the value red with the warning triangle (his
+  // screenshot, 2026-10-15). Mirror it on the Weight tile.
+  function weightFlagged() {
+    var blocks = document.querySelectorAll('.vitalDetails');
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i].querySelector('b');
+      if (b && /^weight$/i.test((b.textContent || '').trim())) {
+        var td = blocks[i].closest ? blocks[i].closest('td') : null;
+        return !!(td && td.classList && td.classList.contains('vitalWithException'));
+      }
+    }
+    return false;
+  }
+
   function queueCopy(label, value) {
     try { if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value); } catch (err) {}
     var KEYS = { 'Age/Sex': 'pccFillAgeSex', 'Allergies': 'pccFillAllergies', 'Psych meds': 'pccFillPsychMeds', 'Relationships': 'pccFillRelationships', 'BIMS': 'pccFillBims' };
@@ -293,20 +309,21 @@
   function tile(labelText, valueText, opts) {
     opts = opts || {};
     var d = document.createElement('div');
-    d.style.cssText = 'background:' + (opts.rose ? '#fdf3f2' : '#fff') + ';border:1px solid ' +
-      (opts.rose ? '#f0c8c2' : '#e2e8f0') + ';border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);' +
+    d.style.cssText = 'background:' + (opts.warn ? '#ff1a1a' : (opts.rose ? '#fdf3f2' : '#fff')) + ';border:1px solid ' +
+      (opts.warn ? '#ff8080' : (opts.rose ? '#f0c8c2' : '#e2e8f0')) + ';border-radius:12px;box-shadow:' +
+      (opts.warn ? '0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)' : '0 1px 3px rgba(15,23,42,.05)') + ';' +
       'padding:' + (opts.pad || '12px 16px 14px') + ';' + (opts.wide ? 'flex:1 1 520px;min-width:440px;' : (opts.grow ? 'flex:1 1 400px;min-width:340px;' : (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;')));
     var lab = document.createElement('div');
     lab.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;';
     var ls = document.createElement('span');
     ls.textContent = labelText;
     ls.style.cssText = 'font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:' +
-      (opts.rose ? '#a05a52' : '#8494a7') + ';';
+      (opts.warn ? '#ffe1e1' : (opts.rose ? '#a05a52' : '#8494a7')) + ';';
     lab.appendChild(ls);
     if (opts.btn) lab.appendChild(opts.btn);
     var v = document.createElement('div');
     var fontCss = 'font-size:' + (opts.size || 21) + 'px;font-weight:' + (opts.weight || 700) +
-      ';line-height:' + (opts.multi ? '1.45' : '1.3') + ';color:' + (opts.color || '#131c2b') + ';';
+      ';line-height:' + (opts.multi ? '1.45' : '1.3') + ';color:' + (opts.color || (opts.warn ? '#ffffff' : '#131c2b')) + ';';
     if (opts.cols) {
       // Banner layout (his pick, design A in the row): the lines
       // flow into columns of at most 4, so the tile grows sideways,
@@ -515,6 +532,7 @@
     var d = cardData();
     if (d) {
       d.weight = weightValue();
+      d.weightRed = weightFlagged();
       d.meds = medsDisplay();
       var mp = medsPanel();
       d.medsFill = (mp && mp.btn && mp.btn.hasAttribute('data-fill-value')) ? mp.btn.getAttribute('data-fill-value') : null;
@@ -523,7 +541,7 @@
     }
     var row = document.getElementById(ROW_ID);
     if (!d) { if (row) row.remove(); return; }
-    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || ''].join('|');
+    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.weightRed ? 'R' : '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || ''].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
     row = document.createElement('div');
@@ -545,7 +563,7 @@
       c.style.cssText = 'font-size:16px;font-weight:800;color:#2563eb;';
       return c;
     }
-    if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true }));
+    if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true, warn: !!d.weightRed }));
     if (d.meds) {
       // Design A in the row, right after Weight (his pick): a wide
       // banner tile whose lines flow into columns. First-class tile
