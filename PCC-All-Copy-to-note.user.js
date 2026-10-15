@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.8
+// @version      1.9
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -397,7 +397,7 @@
     return v;
   }
 
-  var tileWarnPublished = false, tileWarnLast = '';
+  var tileWarnPublished = false, tileWarnLast = '', tileWarnTs = 0;
   function clearTileWarn() {
     if (!tileWarnPublished) return;
     tileWarnPublished = false; tileWarnLast = '';
@@ -413,9 +413,14 @@
     var mf = findMedsField(field);
     var v = tileVerdicts(txt, mf ? (mf.value || '') : null, chart);
     var s = JSON.stringify(v);
-    if (s !== tileWarnLast) {
+    // Write on change, and re-write every ~20s as a heartbeat
+    // while the form stays open: the tile row ignores verdicts
+    // older than 2 minutes, so a form closed without a clean
+    // clear can never leave a tile stuck red.
+    if (s !== tileWarnLast || Date.now() - tileWarnTs > 20000) {
       tileWarnLast = s;
-      try { localStorage.setItem('tmTileWarn', JSON.stringify({ age: v.age, allergies: v.allergies, meds: v.meds, rel: v.rel, ts: Date.now() })); } catch (e) {}
+      tileWarnTs = Date.now();
+      try { localStorage.setItem('tmTileWarn', JSON.stringify({ age: v.age, allergies: v.allergies, meds: v.meds, rel: v.rel, ts: tileWarnTs })); } catch (e) {}
     }
     tileWarnPublished = true;
   }
