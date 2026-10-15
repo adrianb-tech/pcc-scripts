@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.20
+// @version 1.21
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -434,14 +434,46 @@
     var text = items.join(', ');
     out.textContent = text;
     copy.style.display = '';
+    copy.style.background = '#fff';
+    copy.style.color = '#2563eb';
     copy.setAttribute('data-fill-value', text);
     copy.onclick = function(){
+      copy.style.background = '#2563eb';
+      copy.style.color = '#fff';
       copyText(text, copy);
       // Also drop a fill request so the note panel can insert after "Medical Hx".
       try {
         localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: text, ts: Date.now() }));
       } catch(err){}
     };
+  }
+
+  // S and G buttons for the box, same actions as the header's
+  // (his ask, 2026-10-14). G mirrors the header G exactly: click
+  // this page's G badge, else broadcast the grab signal. S must
+  // fire in the HEADER document - that is where the resident
+  // name lives and where the S listener finds it.
+  function boxTriggerG() {
+    var badge = document.querySelector('.pcc-g-badge');
+    if (badge) { badge.click(); return; }
+    try { localStorage.setItem('pccGrabSignal', String(Date.now())); } catch (e) {}
+  }
+  function boxTriggerS() {
+    var docs = [];
+    try {
+      var top = window.top;
+      (function walk(w) {
+        try { docs.push(w.document); } catch (e) { return; }
+        for (var i = 0; i < w.frames.length; i++) walk(w.frames[i]);
+      })(top);
+    } catch (e) { docs = [document]; }
+    var target = null;
+    for (var i = 0; i < docs.length; i++) {
+      if (docs[i].getElementById && docs[i].getElementById('residentHeaderButtons')) { target = docs[i]; break; }
+    }
+    if (!target) target = document;
+    var KEv = (target.defaultView && target.defaultView.KeyboardEvent) || KeyboardEvent;
+    target.dispatchEvent(new KEv('keydown', { key: 's', bubbles: true, cancelable: true }));
   }
 
   function insertBox(){
@@ -451,14 +483,24 @@
     var bar = all.parentElement;
     var box = document.createElement('div');
     box.id = 'pnDxBox';
-    box.style.cssText = 'margin:8px 0;padding:8px 12px;border:1px solid #2563eb;background:#eff6ff;font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
+    // Tile look, matching the header tiles (white card, soft
+    // border, rounded, shadow). Copy is white until clicked,
+    // then blue - the same on/off language as the header.
+    box.style.cssText = 'margin:8px 0;padding:14px 16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
+    var btnCss = 'padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#334155;';
     box.innerHTML =
-      '<div style="font-weight:bold;color:#1d4ed8;margin-bottom:4px;">Diagnoses from notes ' +
-      '<button id="pnDxRun" type="button" style="margin-left:6px;padding:1px 6px;font-size:11px;font-weight:normal;cursor:pointer;">Find diagnoses</button> ' +
-      '<button class="pcc-fill-copy" id="pnDxCopy" data-fill-label="Diagnoses" type="button" style="margin-left:4px;padding:1px 6px;font-size:11px;font-weight:normal;cursor:pointer;display:none;">Copy</button></div>' +
-      '<div id="pnDxOut"></div>';
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
+      '<span style="font-weight:700;color:#334155;">Diagnoses</span>' +
+      '<button id="pnDxRun" type="button" style="' + btnCss + '">Find diagnoses</button>' +
+      '<button class="pcc-fill-copy" id="pnDxCopy" data-fill-label="Diagnoses" type="button" style="' + btnCss + 'border-color:#2563eb;color:#2563eb;display:none;">Copy</button>' +
+      '<button id="pnDxS" type="button" title="Copy name + room (same as the S key)" style="' + btnCss + 'margin-left:auto;">S</button>' +
+      '<button id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + btnCss + 'background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;">G</button>' +
+      '</div>' +
+      '<div id="pnDxOut" style="color:#0f172a;"></div>';
     bar.parentNode.insertBefore(box, bar.nextSibling);
     document.getElementById('pnDxRun').onclick = runDx;
+    document.getElementById('pnDxS').onclick = boxTriggerS;
+    document.getElementById('pnDxG').onclick = boxTriggerG;
     runDx();
   }
 
