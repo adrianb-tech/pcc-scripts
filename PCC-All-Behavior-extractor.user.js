@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.2
+// @version      1.3
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -268,12 +268,24 @@
       };
       behCopy.addEventListener('mousedown', function () { lightBeh(true); });
       window.addEventListener('mouseup', function () { lightBeh(false); });
-    } else {
-      // keep it tucked directly under the Diagnoses tile
+    }
+    // Sit inside the white card with the Diagnoses tile when it
+    // exists (v1.3); otherwise keep the old standalone placement.
+    var wrap = document.getElementById('pnTilesWrap');
+    if (wrap) {
+      if (box.parentElement !== wrap) wrap.appendChild(box);
+      box.style.margin = '8px 0 0';
+    } else if (box.parentElement) {
       var dx2 = document.getElementById('pnDxBox');
       if (dx2 && dx2.parentNode && box.previousElementSibling !== dx2) {
         dx2.parentNode.insertBefore(box, dx2.nextSibling);
       }
+    }
+    // Second net for the stray grab badge (it belongs to the
+    // Diagnoses tile but can park below this one).
+    if (box.parentElement) {
+      var bs = box.parentElement.querySelectorAll(':scope > .pcc-g-badge');
+      for (var i2 = 0; i2 < bs.length; i2++) bs[i2].style.display = 'none';
     }
     render(analyze());
   }
