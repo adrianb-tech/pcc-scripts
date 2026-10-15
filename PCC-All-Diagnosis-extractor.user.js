@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.34
+// @version 1.35
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -9,6 +9,7 @@
 // ==/UserScript==
 
 (function(){
+  var pnStart = Date.now();
   // ===== Medical Abbreviations Mapping =====
   var ABBR = [
     // Cardiac / Vascular
@@ -675,6 +676,10 @@
     // still inside the white card.
     var wrap = document.getElementById('pnTilesWrap');
     if (!wrap) {
+      // Final anchor only (v1.35): while the notes panel is
+      // still rendering, WAIT - never park the card at a
+      // provisional spot it will jump away from a beat later.
+      if (!pnCard() && Date.now() - pnStart < 6000) return;
       wrap = document.createElement('div');
       wrap.id = 'pnTilesWrap';
       wrap.style.cssText = 'background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 2px 10px rgba(15,23,42,.10);padding:10px;margin:10px 0 18px;box-sizing:border-box;';
