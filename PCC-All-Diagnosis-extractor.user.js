@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.33
+// @version 1.34
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -697,9 +697,17 @@
       var row = document.createElement('div');
       row.id = 'pnDxBtnRow';
       row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;';
+      // The verdict buttons live HERE, not in the tile (v1.34):
+      // inside the tile they were tiny targets nested in one
+      // big copy button - hard to hit, and every press lit the
+      // tile. In this row they are standalone buttons, like S/G.
+      var fbCss = 'font-size:13px;font-weight:700;padding:5px 13px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;';
       row.innerHTML =
         '<button class="rh-header-btn" id="pnDxS" type="button" title="Copy name + room (same as the S key)" style="' + hdrCss + '">S</button>' +
-        '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>';
+        '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>' +
+        '<button id="pnDxFbR" type="button" title="The diagnoses are right" style="' + fbCss + 'color:#15803d;">\u2713</button>' +
+        '<button id="pnDxFbW" type="button" title="The diagnoses are wrong - I will give my version" style="' + fbCss + 'color:#b91c1c;">\u2717</button>' +
+        '<span id="pnDxFbSaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>';
       wrap.insertBefore(row, wrap.firstChild);
       document.getElementById('pnDxS').onclick = boxTriggerS;
       var gBtn = document.getElementById('pnDxG');
@@ -714,9 +722,6 @@
     box.innerHTML =
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
       '<span id="pnDxLabel" style="font-weight:700;color:#334155;">Diagnoses</span>' +
-      '<button id="pnDxFbR" type="button" title="The script got this right" style="font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#15803d;cursor:pointer;">\u2713</button>' +
-      '<button id="pnDxFbW" type="button" title="Wrong - I will give my version" style="font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#b91c1c;cursor:pointer;">\u2717</button>' +
-      '<span id="pnDxFbSaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>' +
       '</div>' +
       '<div id="pnDxEditor" style="display:none;margin-bottom:8px;">' +
       '<textarea id="pnDxEditText" rows="3" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font-size:13px;font-family:inherit;color:#0f172a;"></textarea>' +
@@ -778,6 +783,7 @@
       tileGrab();
     });
     box.addEventListener('mousedown', function (e) {
+      if (e.target.closest && e.target.closest('#pnDxEditor')) return;
       if (e.isTrusted) { srcMouse = true; renderLight(); }
     });
     window.addEventListener('mouseup', function (e) {
@@ -802,11 +808,19 @@
     insertBox();
     gapSection();
     if (document.getElementById('pnDxBox')) {
-      var len = notesText().length;
-      if (len !== lastNotesLen) { lastNotesLen = len; runDx(); }
+      // Cheap fingerprint first (v1.34 speed): building the
+      // full notes text on every pass was part of the drag.
+      var tbl2 = notesTable();
+      var fp2 = tbl2 ? tbl2.rows.length + ':' + (tbl2.textContent || '').length : '';
+      if (fp2 !== lastFpDx) {
+        lastFpDx = fp2;
+        var len = notesText().length;
+        if (len !== lastNotesLen) { lastNotesLen = len; runDx(); }
+      }
     }
   }
   var lastNotesLen = -1;
+  var lastFpDx = '';
 
   // Scheduling: bounded staggered runs after load + re-run on your clicks.
   // (Permanent interval removed in the reorganization — no-timers rule.)
