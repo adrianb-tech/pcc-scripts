@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.7
+// @version      1.8
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -29,7 +29,11 @@
     { label: 'Tearfulness', words: ['tearful', 'tearfulness', 'crying', 'weeping'], phrases: ['crying spells', 'crying episodes'] },
     { label: 'Anxiety', words: ['anxious', 'anxiety', 'panicky', 'worried'], phrases: ['panic attack'] },
     { label: 'Poor appetite', phrases: ['poor appetite', 'appetite poor', 'decreased appetite', 'appetite decreased', 'no appetite', 'not eating', 'refusing meals', 'refused meals', 'refusing food', 'refused food', 'poor intake'] },
-    { label: 'Withdrawn', words: ['withdrawn'], phrases: ['isolating', 'isolates', 'stays in room', 'stayed in room', 'remains in room', 'in room all day', 'refuses activities', 'refused activities', 'not participating'] }
+    { label: 'Withdrawn', words: ['withdrawn'], phrases: ['isolating', 'isolates', 'stays in room', 'stayed in room', 'remains in room', 'in room all day', 'refuses activities', 'refused activities', 'not participating'] },
+    // Compliance is its own category, not a symptom (his
+    // ruling, v1.8): explicit compliance language only - the
+    // plain refusal events stay under Refusals.
+    { label: 'Non-compliance', phrases: ['non-compliant', 'noncompliant', 'non-compliance', 'noncompliance', 'not compliant', 'poorly compliant'] }
   ];
 
   // Template / boilerplate contexts that must NOT count as a Fall.
@@ -48,6 +52,18 @@
   // A match counts unless it is negated in its own sentence (a
   // negation word shortly before it) or, for falls, part of a
   // template phrase like "fall risk".
+  // His editorial rules (his feedback, 2026-10-15, v1.8):
+  // (1) The tile surfaces COMPLAINTS - symptoms/behaviors
+  // reported by staff or the patient. A medication ORDER line
+  // ("Melatonin ... by mouth at bedtime for Insomnia, ACTIVE")
+  // is a drug dispensed FOR the symptom, not a complaint; a
+  // care-plan GOAL statement ("...refusing food by review
+  // date") is not an event either. Neither counts.
+  // (2) Compliance is its OWN category (the Non-compliance
+  // signal below) - meds, ADLs, showering, eating.
+  var ORDER_RE = /\b(give|apply|instill|inhale|inject)\b[^.!?]*\b(by mouth|topically|orally)\b/i;
+  var ACTIVE_RE = /\bACTIVE\s*,/;
+  var GOAL_RE = /by (review|target) date/i;
   function matchCounts(text, m, isFall) {
     var start = m.index, end = start + m[0].length;
     if (isFall) {
@@ -62,6 +78,8 @@
     var before = text.slice(cut + 1, start);
     if (before.length > 48) before = before.slice(before.length - 48);
     if (NEG.test(before)) return false;
+    var sent = sentenceAround(text, m.index);
+    if (ORDER_RE.test(sent) || ACTIVE_RE.test(sent) || GOAL_RE.test(sent)) return false;
     return true;
   }
 
