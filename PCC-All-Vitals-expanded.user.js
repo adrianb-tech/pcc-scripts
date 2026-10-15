@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.4
+// @version 1.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
 // @name         Every facility — Vitals: open expanded
@@ -81,28 +81,39 @@
     return document.querySelector('button[data-testid="vtl_Vitals_viewAll_1"]');
   }
   function plantFBadge() {
+    // Fixed overlay on <body> (v1.5): the vitals table is a
+    // React app that re-renders its rows; badges planted
+    // inside the row got clipped (v1.3) or wiped (v1.4). The
+    // overlay tracks the Weight button's position instead.
     var btn = weightViewAllBtn();
-    if (!btn) return;
-    if (document.getElementById('tmWtsFBadge')) return;
-    // Inline pill right after the button (v1.4): the v1.3
-    // absolute overlay was clipped to a sliver by the MUI
-    // cell's overflow (his screenshot, 2026-10-15).
-    var badge = document.createElement('span');
-    badge.id = 'tmWtsFBadge';
-    badge.textContent = 'F';
-    badge.title = 'Shortcut: press F for Weight view all';
-    badge.setAttribute('style',
-      'display:inline-flex;align-items:center;justify-content:center;' +
-      'width:20px;height:20px;border-radius:999px;margin-left:6px;' +
-      'vertical-align:middle;' +
-      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
-      'font-size:11px;font-weight:700;color:#fff;' +
-      'background:linear-gradient(135deg,#ef4444,#dc2626);' +
-      'box-shadow:0 2px 8px rgba(220,38,38,.35),0 1px 2px rgba(0,0,0,.1);' +
-      'pointer-events:none;user-select:none;');
-    if (btn.nextSibling) btn.parentNode.insertBefore(badge, btn.nextSibling);
-    else btn.parentNode.appendChild(badge);
+    var badge = document.getElementById('tmWtsFBadge');
+    if (!btn) { if (badge) badge.style.display = 'none'; return; }
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.id = 'tmWtsFBadge';
+      badge.textContent = 'F';
+      badge.title = 'Shortcut: press F for Weight view all';
+      badge.setAttribute('style',
+        'position:fixed;z-index:999999;' +
+        'display:flex;align-items:center;justify-content:center;' +
+        'width:20px;height:20px;border-radius:999px;' +
+        'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
+        'font-size:11px;font-weight:700;color:#fff;' +
+        'background:linear-gradient(135deg,#ef4444,#dc2626);' +
+        'box-shadow:0 2px 8px rgba(220,38,38,.35),0 1px 2px rgba(0,0,0,.1);' +
+        'pointer-events:none;user-select:none;');
+      (document.body || document.documentElement).appendChild(badge);
+    }
+    var r = btn.getClientRects()[0];
+    if (!r) { badge.style.display = 'none'; return; }
+    badge.style.display = 'flex';
+    badge.style.left = (r.right + 4) + 'px';
+    badge.style.top = (r.top + Math.max(0, (r.height - 20) / 2)) + 'px';
   }
+  var wtsScrollLast = 0;
+  function wtsOnScroll() { var n = Date.now(); if (n - wtsScrollLast < 250) return; wtsScrollLast = n; plantFBadge(); }
+  window.addEventListener('scroll', wtsOnScroll, true);
+  window.addEventListener('resize', wtsOnScroll);
   function fireClick(el) {
     var w = el.ownerDocument.defaultView;
     ['mousedown', 'mouseup', 'click'].forEach(function (type) {
