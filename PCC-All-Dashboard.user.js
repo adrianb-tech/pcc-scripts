@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.23
+// @version      2.24
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -980,7 +980,67 @@
 
   function togglePanel(doc, id) {
     var p = doc.getElementById(id);
+    if (!p) { try { p = doc.defaultView.parent.document.getElementById(id); } catch (e) {} }
     if (p) p.style.display = (p.style.display === 'none') ? 'block' : 'none';
+  }
+
+  function topDocOf(doc) {
+    try {
+      var td = doc.defaultView.parent.document;
+      return td && td !== doc ? td : null;
+    } catch (e) { return null; }
+  }
+
+  // FULL-LIST LAYOUT (his composition, 2026-10-14): the three
+  // boxes (flags | labs | black box) sit side by side in thirds
+  // in a row in the DASHBOARD document, above the side-by-side
+  // Medications / Active Diagnoses frames, so every edge lines
+  // up. The boxes are rendered inside the Medications frame as
+  // always, then relocated here; the next render pass rebuilds
+  // them in-frame and plantBoxes swaps the fresh copies up.
+  // #medListBox never moves - the header tile reads it in-frame.
+  var BOX_IDS = ['interactionPanel', 'labsBox', 'warnBox'];
+  function plantBoxes(doc) {
+    var td = topDocOf(doc);
+    if (!td) return;
+    var area = td.getElementById('dragArea');
+    if (!area || !area.parentNode) return;
+    var row = td.getElementById('tmBoxesRow');
+    if (!row) {
+      row = td.createElement('div');
+      row.id = 'tmBoxesRow';
+      row.style.cssText = 'display:flex;gap:10px;align-items:flex-start;width:100%;box-sizing:border-box;margin:0 0 10px 0;';
+      area.parentNode.insertBefore(row, area);
+    }
+    BOX_IDS.forEach(function (id) {
+      var fresh = doc.getElementById(id);
+      var stale = td.getElementById(id);
+      if (fresh) {
+        if (stale && stale !== fresh) stale.remove();
+        row.appendChild(fresh);
+        fresh.style.flex = '1 1 0';
+        fresh.style.width = 'auto';
+        fresh.style.minWidth = '0';
+        fresh.style.marginLeft = '0';
+        fresh.style.marginBottom = '0';
+        fresh.style.display = 'block';
+      }
+    });
+  }
+
+  // Folded view keeps the boxes in-frame (the watch stack):
+  // pull them back out of the dashboard row first.
+  function pullBoxes(doc) {
+    var td = topDocOf(doc);
+    if (!td) return;
+    BOX_IDS.forEach(function (id) {
+      if (!doc.getElementById(id)) {
+        var b = td.getElementById(id);
+        if (b && doc.body) doc.body.appendChild(b);
+      }
+    });
+    var row = td.getElementById('tmBoxesRow');
+    if (row && !row.children.length) row.remove();
   }
 
   function clearRowStyle(g) {
@@ -1587,7 +1647,9 @@
       labsRow.appendChild(warnBox);
     }
     warnBox.innerHTML = buildWarningsHtml(warnData);
+    if (dashView() === 'main') pullBoxes(doc);
     applyMedsView(doc, groups);
+    if (dashView() !== 'main') plantBoxes(doc);
   }
 
   var LAB_BOX_CSS = 'flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #1d4ed8;background:#eff6ff;overflow-wrap:anywhere;';
