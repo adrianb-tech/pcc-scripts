@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.6
+// @version      1.7
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -94,7 +94,7 @@
         re.lastIndex = 0;
         var m;
         while ((m = re.exec(text)) !== null) {
-          if (matchCounts(text, m, isFall)) { found[sig.label] = sentenceAround(text, m.index); break; }
+          if (matchCounts(text, m, isFall)) { found[sig.label] = { sent: sentenceAround(text, m.index), phrase: m[0] }; break; }
           if (m[0].length === 0) re.lastIndex++;
         }
       }
@@ -136,6 +136,8 @@
     for (var i = 0; i < bs.length; i++) {
       if (/:\s*$/.test((bs[i].textContent || '').trim())) bs[i].remove();
     }
+    var tb = clone.querySelectorAll('.pnBehTopBtn');
+    for (var q = 0; q < tb.length; q++) tb[q].remove();
     return (clone.textContent || '').replace(/\s+/g, ' ');
   }
 
@@ -203,7 +205,10 @@
       var scan = noteScan(prose);
       Object.keys(scan).forEach(function (k) {
         counts[k] = (counts[k] || 0) + 1;
-        (detail[k] = detail[k] || []).push({ when: when, type: type, desc: scan[k], row: row });
+        (detail[k] = detail[k] || []).push({
+          when: when, type: type, desc: scan[k].sent, phrase: scan[k].phrase,
+          row: row, cell: (dateCell !== -1 && cells[dateCell + 2]) ? cells[dateCell + 2] : null
+        });
       });
     }
     return { counts: counts, detail: detail, notes: notes };
@@ -211,7 +216,98 @@
 
   // ---- the tile ----
   var lastSig = '';
-  var jumpRows = [], paintedJump = null, flashRowTimer = 0;
+  var jumpRows = [], paintedJump = null;
+  // The identified note (his design, v1.7): the row gets the
+  // light blue fill + a blue border, the matched sentence gets
+  // the DARKER blue, and a back-to-top button sits on the note.
+  // It stays marked until the next jump or the button.
+  var marked = null;
+  function unmarkNote() {
+    if (!marked) return;
+    marked.cells.forEach(function (c) {
+      c.td.style.background = c.bg;
+      c.td.style.borderTop = c.bt; c.td.style.borderBottom = c.bb;
+      c.td.style.borderLeft = c.bl; c.td.style.borderRight = c.br;
+    });
+    if (marked.span && marked.span.parentNode) {
+      marked.span.parentNode.replaceChild(document.createTextNode(marked.span.textContent), marked.span);
+    }
+    if (marked.btn && marked.btn.parentNode) marked.btn.parentNode.removeChild(marked.btn);
+    marked = null;
+  }
+  function highlightSentence(cell, sent, phrase) {
+    if (!cell) return null;
+    var walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    var nodes = [], n;
+    while ((n = walker.nextNode())) nodes.push(n);
+    var norm = function (s) { return (s || '').replace(/\s+/g, ' ').trim().toLowerCase(); };
+    var target = norm(sent), ph = norm(phrase);
+    for (var i = 0; i < nodes.length; i++) {
+      var raw = nodes[i].nodeValue, low = norm(raw);
+      var from = -1, to = -1;
+      var ti = target ? low.indexOf(target.slice(0, 60)) : -1;
+      if (ti !== -1) { from = ti; to = ti + target.length; }
+      else if (ph && low.indexOf(ph) !== -1) {
+        var pi = low.indexOf(ph);
+        from = Math.max(raw.lastIndexOf('.', pi - 1), raw.lastIndexOf('\n', pi - 1)) + 1;
+        var ends = [raw.indexOf('.', pi), raw.indexOf('\n', pi)].filter(function (x) { return x !== -1; });
+        to = ends.length ? Math.min.apply(null, ends) + 1 : raw.length;
+      }
+      if (from === -1) continue;
+      // map normalized offsets back onto the raw text loosely:
+      // find the phrase in the raw node and expand to its
+      // sentence there instead (exact for single-node prose).
+      var rp = ph ? raw.toLowerCase().indexOf(ph) : -1;
+      if (rp === -1) continue;
+      from = Math.max(raw.lastIndexOf('.', rp - 1), raw.lastIndexOf('\n', rp - 1)) + 1;
+      var e2 = [raw.indexOf('.', rp), raw.indexOf('\n', rp)].filter(function (x) { return x !== -1; });
+      to = e2.length ? Math.min.apply(null, e2) + 1 : raw.length;
+      var span = document.createElement('span');
+      span.style.cssText = 'background:#93c5fd;color:#172554;padding:1px 3px;border-radius:3px;';
+      var mid = document.createTextNode(raw.slice(from, to));
+      var after = document.createTextNode(raw.slice(to));
+      nodes[i].nodeValue = raw.slice(0, from);
+      span.appendChild(mid);
+      var parent = nodes[i].parentNode;
+      parent.insertBefore(span, nodes[i].nextSibling);
+      parent.insertBefore(after, span.nextSibling);
+      return span;
+    }
+    return null;
+  }
+  function markNote(entry) {
+    unmarkNote();
+    var row = entry.row;
+    if (!row) return;
+    var tds = row.querySelectorAll('td');
+    var recs = [];
+    for (var i = 0; i < tds.length; i++) {
+      var td = tds[i];
+      recs.push({ td: td, bg: td.style.background, bt: td.style.borderTop, bb: td.style.borderBottom, bl: td.style.borderLeft, br: td.style.borderRight });
+      td.style.background = '#dbeafe';
+      td.style.borderTop = '2px solid #2563eb';
+      td.style.borderBottom = '2px solid #2563eb';
+      if (i === 0) td.style.borderLeft = '2px solid #2563eb';
+      if (i === tds.length - 1) td.style.borderRight = '2px solid #2563eb';
+    }
+    var span = highlightSentence(entry.cell, entry.desc, entry.phrase);
+    var btn = null;
+    if (entry.cell) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'pnBehTopBtn';
+      btn.textContent = '\u2191 back to top';
+      btn.style.cssText = 'display:inline-block;margin:0 0 6px;padding:3px 10px;border:none;border-radius:999px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(37,99,235,.35);';
+      btn.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        var wrap = document.getElementById('pnTilesWrap') || document.getElementById('pnBehBox');
+        unmarkNote();
+        if (wrap) { try { wrap.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (err) { wrap.scrollIntoView(); } }
+      });
+      entry.cell.insertBefore(btn, entry.cell.firstChild);
+    }
+    marked = { cells: recs, span: span, btn: btn };
+  }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function paintViews() {
     var btns = document.querySelectorAll('.pnBehView');
@@ -254,7 +350,7 @@
         '<span style="color:#0f172a;">' + it.label + '</span>' +
         '<span style="color:#475569;">' + it.n + (it.n === 1 ? ' note' : ' notes') + '</span></div>';
       var subs = it.notes.slice(0, 10).map(function (nt) {
-        jumpRows.push(nt.row);
+        jumpRows.push(nt);
         var ji = jumpRows.length - 1;
         var s = esc((nt.when || '') + (nt.type ? ' — ' + nt.type : ''));
         var d = nt.desc ? '<div style="color:#334155;font-size:12px;padding-top:1px;">' + esc(nt.desc) + '</div>' : '';
@@ -420,14 +516,11 @@
       box.addEventListener('click', function (e) {
         var j = e.target.closest ? e.target.closest('.pnBehJump') : null;
         if (!j) return;
-        var row = jumpRows[+j.getAttribute('data-j')];
-        if (!row) return;
-        try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-        catch (err) { row.scrollIntoView(); }
-        var old = row.style.background;
-        row.style.background = '#dbeafe';
-        if (flashRowTimer) clearTimeout(flashRowTimer);
-        flashRowTimer = setTimeout(function () { row.style.background = old; }, 1600);
+        var entry = jumpRows[+j.getAttribute('data-j')];
+        if (!entry || !entry.row) return;
+        markNote(entry);
+        try { entry.row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        catch (err) { entry.row.scrollIntoView(); }
       });
     }
     // Sit inside the white card with the Diagnoses tile when it
