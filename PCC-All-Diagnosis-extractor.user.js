@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.32
+// @version 1.33
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -419,6 +419,59 @@
   }
 
   var dxText = '';
+  // His diagnoses feedback (v1.33, designed with him): a
+  // check and an x on the tile. Check = the script was right.
+  // X opens an editor holding the script's version; he saves
+  // HIS version, and from then on this tile copies/queues his
+  // words on this chart. Both judgements save to the shared
+  // browser feedback store and reach Mica inside captures.
+  var dxScriptText = '', dxCorrected = '';
+  var FB_KEY = 'pnFeedback';
+  function fbLoad() {
+    try { var a = JSON.parse(localStorage.getItem(FB_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  }
+  function fbSave(rec) {
+    var a = fbLoad().filter(function (r) { return r.k !== rec.k; });
+    a.push(rec);
+    while (a.length > 300) a.shift();
+    try { localStorage.setItem(FB_KEY, JSON.stringify(a)); } catch (e) {}
+  }
+  function dxCid() {
+    var m = /ESOLclientid=(\d+)/.exec(location.search || '');
+    return m ? m[1] : '';
+  }
+  function loadCorr() {
+    try {
+      var c = JSON.parse(sessionStorage.getItem('pnDxCorr') || 'null');
+      if (c && c.cid === dxCid() && c.text) dxCorrected = c.text;
+    } catch (e) {}
+  }
+  function paintDxFb() {
+    var w = document.getElementById('pnDxFbW');
+    if (w) {
+      w.style.background = dxCorrected ? '#fee2e2' : '#fff';
+      w.style.borderColor = dxCorrected ? '#b91c1c' : '#cbd5e1';
+    }
+    var rst = document.getElementById('pnDxEditReset');
+    if (rst) rst.style.display = dxCorrected ? '' : 'none';
+    var lab = document.getElementById('pnDxLabel');
+    if (lab && !lab.getAttribute('data-orig')) {
+      lab.textContent = dxCorrected ? 'Diagnoses \u2014 your version' : 'Diagnoses';
+    }
+  }
+  function applyDx() {
+    var out = document.getElementById('pnDxOut');
+    var box = document.getElementById('pnDxBox');
+    dxText = dxCorrected || dxScriptText;
+    if (out) out.textContent = dxText;
+    if (box && dxText) {
+      box.classList.add('pcc-fill-copy');
+      box.setAttribute('data-fill-label', 'Diagnoses');
+      box.setAttribute('data-fill-value', dxText);
+    }
+    paintDxFb();
+  }
   function runDx(){
     var out = document.getElementById('pnDxOut');
     var box = document.getElementById('pnDxBox');
@@ -426,23 +479,18 @@
     var items = res.items;
     if (!items.length) {
       dxText = '';
+      dxScriptText = '';
       out.textContent = 'No serious diagnoses found in the loaded notes.';
       return;
     }
     // A clinician's own list (Dx- / Additional / Secondary) is presented
     // as written; the abbreviation pass is only for prose-mined items.
     items = res.verbatimOnly ? items : abbrDx(items);
-    var text = items.join(', ');
-    dxText = text;
-    out.textContent = text;
-    // The TILE is the copy target now (v1.23, his redesign): it
-    // carries the fill contract the Copy button used to carry, so
-    // the G key / grab-all still queue these diagnoses.
-    if (box) {
-      box.classList.add('pcc-fill-copy');
-      box.setAttribute('data-fill-label', 'Diagnoses');
-      box.setAttribute('data-fill-value', text);
-    }
+    dxScriptText = items.join(', ');
+    // The TILE is the copy target (v1.23): applyDx puts the
+    // effective text (his correction when he's made one) on the
+    // tile and into the fill contract for G / grab-all.
+    applyDx();
   }
 
   // Clicking the tile = clicking the old Copy button: the tile
@@ -666,11 +714,67 @@
     box.innerHTML =
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
       '<span id="pnDxLabel" style="font-weight:700;color:#334155;">Diagnoses</span>' +
+      '<button id="pnDxFbR" type="button" title="The script got this right" style="font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#15803d;cursor:pointer;">\u2713</button>' +
+      '<button id="pnDxFbW" type="button" title="Wrong - I will give my version" style="font-size:12px;font-weight:700;padding:2px 9px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#b91c1c;cursor:pointer;">\u2717</button>' +
+      '<span id="pnDxFbSaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>' +
       '</div>' +
+      '<div id="pnDxEditor" style="display:none;margin-bottom:8px;">' +
+      '<textarea id="pnDxEditText" rows="3" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font-size:13px;font-family:inherit;color:#0f172a;"></textarea>' +
+      '<div style="display:flex;gap:6px;margin-top:6px;align-items:center;">' +
+      '<button id="pnDxEditSave" type="button" style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;border:1px solid #93c5fd;background:#dbeafe;color:#1e3a5f;cursor:pointer;">Save my version</button>' +
+      '<button id="pnDxEditCancel" type="button" style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;">Cancel</button>' +
+      '<button id="pnDxEditReset" type="button" style="display:none;margin-left:auto;font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;">back to script version</button>' +
+      '</div></div>' +
       '<div id="pnDxOut" style="color:#0f172a;"></div>';
     box.style.cursor = 'pointer';
     wrap.appendChild(box);
+    loadCorr();
+    var fbR = document.getElementById('pnDxFbR');
+    var fbW = document.getElementById('pnDxFbW');
+    var fbSaved = document.getElementById('pnDxFbSaved');
+    var editor = document.getElementById('pnDxEditor');
+    var editText = document.getElementById('pnDxEditText');
+    fbR.onclick = function () {
+      fbSave({
+        k: 'dxok|' + dxCid() + '|' + (dxScriptText || '').slice(0, 40),
+        kind: 'dx', verdict: 'right', script: dxScriptText,
+        site: location.hostname, ts: Date.now(), sent: false
+      });
+      fbSaved.textContent = 'saved';
+      setTimeout(function () { fbSaved.textContent = ''; }, 1500);
+    };
+    fbW.onclick = function () {
+      editText.value = dxCorrected || dxScriptText;
+      editor.style.display = '';
+      paintDxFb();
+      editText.focus();
+    };
+    document.getElementById('pnDxEditSave').onclick = function () {
+      var v = (editText.value || '').replace(/\s+/g, ' ').trim();
+      if (!v) return;
+      dxCorrected = v;
+      try { sessionStorage.setItem('pnDxCorr', JSON.stringify({ cid: dxCid(), text: v })); } catch (e) {}
+      fbSave({
+        k: 'dx|' + dxCid(), kind: 'dx', verdict: 'wrong',
+        script: dxScriptText, corrected: v,
+        site: location.hostname, ts: Date.now(), sent: false
+      });
+      editor.style.display = 'none';
+      applyDx();
+      fbSaved.textContent = 'saved';
+      setTimeout(function () { fbSaved.textContent = ''; }, 1500);
+    };
+    document.getElementById('pnDxEditCancel').onclick = function () {
+      editor.style.display = 'none';
+    };
+    document.getElementById('pnDxEditReset').onclick = function () {
+      dxCorrected = '';
+      try { sessionStorage.removeItem('pnDxCorr'); } catch (e) {}
+      editor.style.display = 'none';
+      applyDx();
+    };
     box.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('#pnDxEditor, #pnDxFbR, #pnDxFbW')) return;
       tileGrab();
     });
     box.addEventListener('mousedown', function (e) {
