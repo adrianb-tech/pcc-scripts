@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.9
+// @version      3.10
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -323,7 +323,7 @@
     if (opts.btn) lab.appendChild(opts.btn);
     var v = document.createElement('div');
     var fontCss = 'font-size:' + (opts.size || 21) + 'px;font-weight:' + (opts.weight || 700) +
-      ';line-height:' + (opts.multi ? '1.45' : '1.3') + ';color:' + (opts.color || (opts.warn ? '#ffffff' : '#131c2b')) + ';';
+      ';line-height:' + (opts.multi ? '1.45' : '1.3') + ';color:' + (opts.warn ? '#ffffff' : (opts.color || '#131c2b')) + ';';
     if (opts.cols) {
       // Banner layout (his pick, design A in the row): the lines
       // flow into columns of at most 4, so the tile grows sideways,
@@ -541,7 +541,21 @@
     }
     var row = document.getElementById(ROW_ID);
     if (!d) { if (row) row.remove(); return; }
-    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.weightRed ? 'R' : '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || ''].join('|');
+    // Publish the chart values the note is compared against
+    // (engine reads tmTileChart), and read back its verdicts
+    // (tmTileWarn): a topic blank in the open note or different
+    // from the chart paints its tile warning-red.
+    try {
+      var chartVals = [d.ageSex || '', d.allergies || '', (d.medsFill !== null && d.medsFill !== undefined) ? d.medsFill : (d.meds || ''), d.rel || ''].join('|');
+      if (window.__tmChartLast !== chartVals) {
+        window.__tmChartLast = chartVals;
+        localStorage.setItem('tmTileChart', JSON.stringify({ ageSex: d.ageSex || null, allergies: d.allergies || null, meds: (d.medsFill !== null && d.medsFill !== undefined) ? d.medsFill : (d.meds || null), rel: d.rel || null, ts: Date.now() }));
+      }
+    } catch (e) {}
+    var tw = null;
+    try { tw = JSON.parse(localStorage.getItem('tmTileWarn') || 'null'); } catch (e) {}
+    if (tw && Date.now() - (tw.ts || 0) > 45 * 60000) tw = null;
+    var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.weightRed ? 'R' : '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || '', tw ? (tw.age ? '1' : '0') + (tw.allergies ? '1' : '0') + (tw.meds ? '1' : '0') + (tw.rel ? '1' : '0') : '----'].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
     row = document.createElement('div');
@@ -554,16 +568,16 @@
       var kind = m && m[3] ? m[3].toLowerCase() : '';
       row.appendChild(tile(kind ? 'Admission (' + kind + ')' : 'Admission', m ? m[1] : d.admission, {}));
     }
-    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', click: { label: 'Age/Sex', value: d.ageSex }, fill: { label: 'Age/Sex', value: d.ageSex } }));
+    if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex }, fill: { label: 'Age/Sex', value: d.ageSex } }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
-    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
+    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     function medCountChip(txt) {
       var c = document.createElement('span');
       c.textContent = txt;
-      c.style.cssText = 'font-size:16px;font-weight:800;color:#2563eb;';
+      c.style.cssText = 'font-size:16px;font-weight:800;color:' + ((tw && tw.meds) ? '#ffffff' : '#2563eb') + ';';
       return c;
     }
-    if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true, warn: !!d.weightRed }));
+    if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true, color: d.weightRed ? '#dc2626' : undefined }));
     if (d.meds) {
       // Design A in the row, right after Weight (his pick): a wide
       // banner tile whose lines flow into columns. First-class tile
@@ -571,13 +585,13 @@
       // Dashboard stamps at render; the delegate proxy remains only
       // as a fallback for older Dashboard installs.
       if (d.medsFill !== null && d.medsFill !== undefined) {
-        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', btn: medCountChip(String(d.meds === '- none' ? 0 : d.meds.split('\n').length)), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }));
+        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', warn: !!(tw && tw.meds), btn: medCountChip(String(d.meds === '- none' ? 0 : d.meds.split('\n').length)), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }));
       } else {
-        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', btn: medCountChip(String(d.meds === '- none' ? 0 : d.meds.split('\n').length)), delegate: 'meds' }));
+        row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', warn: !!(tw && tw.meds), btn: medCountChip(String(d.meds === '- none' ? 0 : d.meds.split('\n').length)), delegate: 'meds' }));
       }
     }
     if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 340, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
-    if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 340, fit: true, click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
+    if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 340, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
   }
@@ -774,6 +788,7 @@
       return;
     }
     if (e.key === 'tmGPress') { if (e.newValue) hlAllTiles(); else hlRestoreAll(); return; }
+    if (e.key === 'tmTileWarn') { setTimeout(function () { buildCards(); renderReadmitChip(); renderHighChip(); }, 350); return; }
     if (e.key !== 'tmRowPing' || !e.newValue) return;
     var ts = parseInt(e.newValue, 10);
     if (!ts || Date.now() - ts > 5000) return;
