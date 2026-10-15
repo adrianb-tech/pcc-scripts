@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.14
+// @version      1.15
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -368,7 +368,9 @@
       function saveVerdict(v) {
         if (curVerdict) return;
         curVerdict = v;
-        fbSave(recFor(v));
+        var rec = recFor(v);
+        fbSave(rec);
+        fbSnap(rec.k);
         paintVerdict(v);
         lastSig = '';
         render(analyze(behDays));
@@ -434,9 +436,74 @@
   function fbSave(rec) {
     var a = fbLoad().filter(function (r) { return r.k !== rec.k; });
     a.push(rec);
-    while (a.length > 300) a.shift();
+    while (a.length > 1000) a.shift();
     try { localStorage.setItem(FB_KEY, JSON.stringify(a)); } catch (e) {}
   }
+// Judgement snapshots (his design): the moment he judges,
+  // a pruned copy of this notes page is stored in the
+  // browser's big storage (IndexedDB 'pnReview'), linked to
+  // the record by its key - so a periodic review file can
+  // pair every judgement with the page it was made on.
+  // Pruned: scripts/styles/images and our own UI stripped;
+  // the notes themselves stay whole.
+  function snapPrune(root) {
+    var c = root.cloneNode(true);
+    c.removeAttribute('style');
+    var kill = c.querySelectorAll('script, style, link, img, svg, iframe, .pnBehFbBar, #pnTilesWrap');
+    for (var i = 0; i < kill.length; i++) kill[i].remove();
+    var all = c.querySelectorAll('*');
+    for (var j = 0; j < all.length; j++) { all[j].removeAttribute('style'); all[j].removeAttribute('onclick'); }
+    return c.outerHTML;
+  }
+  function snapHTML() {
+    var card = null;
+    var as = document.querySelectorAll('a');
+    for (var i = 0; i < as.length; i++) {
+      var tr = as[i].closest ? as[i].closest('tr') : null;
+      var tds = tr ? tr.querySelectorAll('td') : [];
+      if (tds.length > 2 && /^\d{1,2}\/\d{1,2}\/\d{4}/.test((tds[1].textContent || '').replace(/\s+/g, ' ').trim())) {
+        var tb = as[i].closest('table');
+        card = (tb && tb.closest('.evergreen-card')) || tb;
+        break;
+      }
+    }
+    if (!card) return '';
+    var head = '';
+    var spans = document.querySelectorAll('span');
+    for (var s = 0; s < spans.length; s++) {
+      if ((spans[s].textContent || '').replace(/\s+/g, ' ').trim() === 'Progress Notes - View All') {
+        var hp = spans[s].parentElement;
+        if (hp) head = snapPrune(hp);
+        break;
+      }
+    }
+    return '<div class="pn-snap">' + head + snapPrune(card) + '</div>';
+  }
+  function fbSnap(key) {
+    try {
+      var html = snapHTML();
+      if (!html || typeof indexedDB === 'undefined') return;
+      var rq = indexedDB.open('pnReview', 1);
+      rq.onupgradeneeded = function () {
+        if (!rq.result.objectStoreNames.contains('snaps')) rq.result.createObjectStore('snaps', { keyPath: 'k' });
+      };
+      rq.onsuccess = function () {
+        try {
+          var store = rq.result.transaction('snaps', 'readwrite').objectStore('snaps');
+          store.put({ k: key, html: html, ts: Date.now(), sent: false });
+          var all = store.getAll();
+          all.onsuccess = function () {
+            var rows = all.result || [];
+            if (rows.length <= 500) return;
+            rows.sort(function (a, b) { return (a.sent === b.sent) ? a.ts - b.ts : (a.sent ? -1 : 1); });
+            rows.slice(0, rows.length - 500).forEach(function (r) { store.delete(r.k); });
+          };
+        } catch (e) {}
+      };
+      rq.onerror = function () {};
+    } catch (e) {}
+  }
+
   function verdictMap() {
     var map = {};
     fbLoad().forEach(function (r) { if (r.kind === 'beh') map[r.signal + '|' + r.when] = r.verdict; });
