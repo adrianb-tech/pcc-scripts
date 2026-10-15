@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.3
-// @description  Page capture + feedback courier (v1.3): click the green HTML button, wait 3 seconds, and the whole frame tree downloads as one file, with live probes - and, since v1.3, his saved extractor feedback (verdicts + corrections from the Behavior and Diagnosis tiles) embedded in the file, marked sent so each judgement rides exactly once.
+// @version      1.4
+// @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
 // @run-at       document-idle
@@ -123,4 +123,79 @@
   });
 
   (document.body || document.documentElement).appendChild(btn);
+
+  // ---- REVIEW export (v1.4, his design): one file with every
+  // unsent judgement AND the page snapshot frozen when he made
+  // it, for periodic review. Marked sent afterwards.
+  var rbtn = document.createElement('button');
+  rbtn.textContent = 'REVIEW';
+  rbtn.setAttribute('style', [
+    'position:fixed', 'right:14px', 'bottom:76px', 'z-index:2147483647',
+    'background:#1e40af', 'color:#ffffff', 'border:none', 'border-radius:10px',
+    'padding:12px 18px', 'font:700 15px -apple-system, "Segoe UI", Roboto, sans-serif',
+    'cursor:pointer', 'box-shadow:0 4px 14px rgba(0,0,0,.35)'
+  ].join(';'));
+  (document.body || document.documentElement).appendChild(rbtn);
+
+  function download(name, text) {
+    var blob = new Blob([text], { type: 'text/html' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    (document.body || document.documentElement).appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+  }
+  function stamp() {
+    var d = new Date();
+    return String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0');
+  }
+  rbtn.addEventListener('click', function () {
+    var all = [];
+    try { all = JSON.parse(localStorage.getItem('pnFeedback') || '[]'); } catch (e) {}
+    if (!Array.isArray(all)) all = [];
+    var unsent = all.filter(function (r) { return !r.sent; });
+    if (!unsent.length) {
+      rbtn.textContent = 'NONE';
+      setTimeout(function () { rbtn.textContent = 'REVIEW'; }, 2000);
+      return;
+    }
+    rbtn.textContent = 'WORKING...';
+    function finish(snaps) {
+      var byKey = {};
+      (snaps || []).forEach(function (s) { byKey[s.k] = s; });
+      var lines = ['<!-- PCC REVIEW v1.4 ' + new Date().toISOString() + ' - ' + unsent.length + ' unsent judgements, each followed by the page frozen when it was made -->'];
+      unsent.forEach(function (r, i) {
+        lines.push('\n\n<!-- ================= JUDGEMENT ' + (i + 1) + ' of ' + unsent.length + ' ================= -->');
+        lines.push('<script type="application/json" class="pn-review-rec">' +
+          JSON.stringify(r).replace(/<\//g, '<\\/') + '</' + 'script>');
+        var s = byKey[r.k];
+        lines.push(s && s.html ? s.html : '<!-- (no page snapshot stored for this judgement) -->');
+      });
+      download('pcc-review-' + stamp() + '.html', lines.join('\n'));
+      all.forEach(function (r) { r.sent = true; });
+      try { localStorage.setItem('pnFeedback', JSON.stringify(all)); } catch (e) {}
+      rbtn.textContent = 'SAVED';
+      setTimeout(function () { rbtn.textContent = 'REVIEW'; }, 2500);
+    }
+    try {
+      var rq = indexedDB.open('pnReview', 1);
+      rq.onupgradeneeded = function () {
+        if (!rq.result.objectStoreNames.contains('snaps')) rq.result.createObjectStore('snaps', { keyPath: 'k' });
+      };
+      rq.onsuccess = function () {
+        var got = rq.result.transaction('snaps', 'readonly').objectStore('snaps').getAll();
+        got.onsuccess = function () {
+          var snaps = got.result || [];
+          finish(snaps);
+          try {
+            var wtx = rq.result.transaction('snaps', 'readwrite').objectStore('snaps');
+            snaps.forEach(function (s) { if (!s.sent) { s.sent = true; wtx.put(s); } });
+          } catch (e) {}
+        };
+        got.onerror = function () { finish([]); };
+      };
+      rq.onerror = function () { finish([]); };
+    } catch (e) { finish([]); }
+  });
 })();
