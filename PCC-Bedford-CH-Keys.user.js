@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.4
+// @version      2.5
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -846,18 +846,33 @@
     } catch (e) {}
   }
   // Progress Notes: F badge on VIEW ALL button
+  // Fixed-overlay badge (2026-10-15): the evergreen Progress
+  // Notes app re-renders its toolbar when the notes data lands,
+  // wiping any badge planted inside it (his captures: the
+  // header scripts' marks survive, this badge never did). So
+  // the badge now lives on <body> as a fixed overlay tracking
+  // the button - the A-badge pattern, which survives renders.
+  var VA_BADGE_ID = 'tmPnViewAllF';
   function applyFViewAllBadge() {
     try {
       if (!shouldRun()) return;
-      if (!isProgressNotesPage()) return;
+      var badge = document.getElementById(VA_BADGE_ID);
+      if (!isProgressNotesPage()) { if (badge) badge.style.display = 'none'; return; }
       var target = findViewAllButton();
-      if (!target || !target.parentNode) return;
-      var badgeCls = FBTN_CLASS + '-viewall';
-      if (target.parentNode.querySelector('.' + badgeCls)) return;
-      var badge = makeFBadge('View All (same as F key)', function() { doFAction(); });
-      badge.classList.add(badgeCls);
-      if (target.nextSibling) target.parentNode.insertBefore(badge, target.nextSibling);
-      else target.parentNode.appendChild(badge);
+      if (!target || target.ownerDocument !== document) { if (badge) badge.style.display = 'none'; return; }
+      if (!badge) {
+        badge = makeFBadge('View All (same as F key)', function() { doFAction(); }, document);
+        badge.id = VA_BADGE_ID;
+        badge.style.position = 'fixed';
+        badge.style.zIndex = '999999';
+        badge.style.marginLeft = '0';
+        (document.body || document.documentElement).appendChild(badge);
+      }
+      var r = target.getClientRects()[0];
+      if (!r) { badge.style.display = 'none'; return; }
+      badge.style.display = '';
+      badge.style.left = (r.right + 4) + 'px';
+      badge.style.top = (r.top + Math.max(0, (r.height - 20) / 2)) + 'px';
     } catch (e) {}
   }
   // Progress Notes - View All: F badge on the patient's name (Resident Profile link)
@@ -1055,6 +1070,10 @@
   try {
     window.addEventListener('scroll', placeABadge, true);
     window.addEventListener('resize', placeABadge);
+    var vaScrollLast = 0;
+    function vaOnScroll() { var n = Date.now(); if (n - vaScrollLast < 250) return; vaScrollLast = n; applyFViewAllBadge(); }
+    window.addEventListener('scroll', vaOnScroll, true);
+    window.addEventListener('resize', vaOnScroll);
   } catch (e) {}
 
   // ---- Keyboard shortcuts ----
