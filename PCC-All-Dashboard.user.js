@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.21
+// @version      2.22
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1672,6 +1672,48 @@
       }
     }
     renderMedsPanel(doc, groups, mica);
+    var mTable = null;
+    if (groups && groups.length && groups[0].rows[0]) mTable = groups[0].rows[0].closest('table');
+    // Main view keeps only the Order column (his list, 2026-10-14:
+    // Duplicate, Alert, Order Status, Revised, Last Ordered go).
+    trimTable(doc, mTable, ['Order'], mica);
+  }
+
+  // Trim a PCC table to the columns he cares about (Main view):
+  // keep the named headers, hide the rest. The header row is the
+  // one carrying the distinctive header text; rows with a
+  // colspanning cell (order detail rows) are left whole. Mica
+  // view restores every cell.
+  function trimTable(doc, table, keep, folded) {
+    if (!table) return;
+    if (!folded) {
+      table.querySelectorAll('[data-tm-colhide="1"]').forEach(function (c) {
+        c.style.display = ''; c.removeAttribute('data-tm-colhide');
+      });
+      return;
+    }
+    var rows = table.querySelectorAll('tr');
+    var hdr = null, hideIdx = [];
+    rows.forEach(function (r) {
+      if (hdr) return;
+      var cells = r.cells || [];
+      var texts = [];
+      for (var i = 0; i < cells.length; i++) texts.push((cells[i].textContent || '').replace(/\s+/g, ' ').trim());
+      if (texts.indexOf(keep[0]) !== -1 && texts.length >= 3) {
+        hdr = r;
+        texts.forEach(function (tx, i) { if (keep.indexOf(tx) === -1) hideIdx.push(i); });
+      }
+    });
+    if (!hdr || !hideIdx.length) return;
+    rows.forEach(function (r) {
+      var cells = r.cells || [];
+      for (var i = 0; i < cells.length; i++) {
+        if (cells[i].colSpan > 1) return;
+      }
+      hideIdx.forEach(function (i) {
+        if (cells[i]) { cells[i].style.display = 'none'; cells[i].setAttribute('data-tm-colhide', '1'); }
+      });
+    });
   }
 
   function escHtml(s) {
@@ -1863,6 +1905,8 @@
     (groups || []).some(function (g) { if (g.rows[0]) { firstRow = g.rows[0]; return true; } return false; });
     if (firstRow) table = firstRow.closest('table');
     var panel = doc.getElementById('tmDxPanel');
+    // Main view keeps only ICD-10 + Short Description.
+    trimTable(doc, table, ['ICD-10', 'Short Description'], folded);
     if (!folded) {
       if (panel) panel.remove();
       if (table) table.style.display = '';
@@ -1973,8 +2017,31 @@
     });
   }
 
+  // Main view: Medications and Active Diagnoses sit side by side
+  // (his ask, 2026-10-14). Pure CSS on PCC's #dragArea layout
+  // table - the widget iframes are never reparented (that would
+  // reload them); the two rows simply become flex columns.
+  function applySideBySide() {
+    var st = document.getElementById('tmSideStyle');
+    if (dashView() === 'main') {
+      if (!st) {
+        st = document.createElement('style');
+        st.id = 'tmSideStyle';
+        st.textContent =
+          '#dragArea{display:flex !important;gap:10px;align-items:flex-start;}' +
+          '#dragArea > tbody{display:contents;}' +
+          '#dragArea > tbody > tr{flex:1 1 0;min-width:0;height:auto !important;}' +
+          '#dragArea > tbody > tr > td{display:block;width:auto !important;}';
+        document.head.appendChild(st);
+      }
+    } else if (st) {
+      st.remove();
+    }
+  }
+
   function fit() {
     plantViewToggle();
+    applySideBySide();
     document.querySelectorAll('iframe[id^="iFramePanel_"]').forEach(function(f) {
       try {
         var doc = f.contentDocument || f.contentWindow.document;
