@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.5
+// @version      2.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -644,6 +644,9 @@
     try {
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
+        // Evergreen buttons carry labels in value= (invisible
+        // to innerText - probe-proven 2026-10-15): testids first.
+        try { if (docs[d].querySelector('[data-testid="pn-view-all-btn"], [data-testid="pn-add-progress-note-btn"]')) return true; } catch (e5) {}
         try {
           var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
           if (t.indexOf('view all') !== -1 && t.indexOf('effective date') !== -1) return true;
