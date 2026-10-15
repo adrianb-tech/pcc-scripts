@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.30
+// @version 1.31
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -576,6 +576,30 @@
     srcKey = false; renderLight();
   }, true);
 
+  // Separation (his ask, v1.31): the Progress Notes panel
+  // sits flush under the tiles. Two moves, either topology:
+  // a spacer right after the tiles card, and a top margin on
+  // the .evergreen-card panel when it follows the card (the
+  // card's own bottom margin gets swallowed by the table
+  // layout around it).
+  function gapSection() {
+    var wrap = document.getElementById('pnTilesWrap');
+    if (!wrap) return;
+    if (!document.getElementById('pnTilesSpacer') && wrap.parentNode) {
+      var sp = document.createElement('div');
+      sp.id = 'pnTilesSpacer';
+      sp.style.cssText = 'height:18px;';
+      wrap.parentNode.insertBefore(sp, wrap.nextSibling);
+    }
+    var cards = document.querySelectorAll('.evergreen-card');
+    for (var i = 0; i < cards.length; i++) {
+      if (wrap.compareDocumentPosition(cards[i]) & 4) {
+        cards[i].style.marginTop = '18px';
+        break;
+      }
+    }
+  }
+
   function notesTable() {
     var tables = document.querySelectorAll('table'), best = null, bestN = 0;
     for (var i = 0; i < tables.length; i++) {
@@ -664,6 +688,7 @@
       return;
     }
     insertBox();
+    gapSection();
     if (document.getElementById('pnDxBox')) {
       var len = notesText().length;
       if (len !== lastNotesLen) { lastNotesLen = len; runDx(); }
