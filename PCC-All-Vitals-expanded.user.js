@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.3
+// @version 1.4
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
 // @name         Every facility — Vitals: open expanded
@@ -84,23 +84,24 @@
     var btn = weightViewAllBtn();
     if (!btn) return;
     if (document.getElementById('tmWtsFBadge')) return;
-    var host = btn.parentElement;
-    if (!host) return;
-    if (!host.style.position) host.style.position = 'relative';
+    // Inline pill right after the button (v1.4): the v1.3
+    // absolute overlay was clipped to a sliver by the MUI
+    // cell's overflow (his screenshot, 2026-10-15).
     var badge = document.createElement('span');
     badge.id = 'tmWtsFBadge';
     badge.textContent = 'F';
     badge.title = 'Shortcut: press F for Weight view all';
     badge.setAttribute('style',
-      'position:absolute;top:-9px;right:-14px;z-index:50;' +
-      'display:flex;align-items:center;justify-content:center;' +
-      'width:20px;height:20px;border-radius:999px;' +
+      'display:inline-flex;align-items:center;justify-content:center;' +
+      'width:20px;height:20px;border-radius:999px;margin-left:6px;' +
+      'vertical-align:middle;' +
       'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;' +
       'font-size:11px;font-weight:700;color:#fff;' +
       'background:linear-gradient(135deg,#ef4444,#dc2626);' +
       'box-shadow:0 2px 8px rgba(220,38,38,.35),0 1px 2px rgba(0,0,0,.1);' +
       'pointer-events:none;user-select:none;');
-    host.appendChild(badge);
+    if (btn.nextSibling) btn.parentNode.insertBefore(badge, btn.nextSibling);
+    else btn.parentNode.appendChild(badge);
   }
   function fireClick(el) {
     var w = el.ownerDocument.defaultView;
