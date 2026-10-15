@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.7
+// @version      1.8
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -340,6 +340,94 @@
     }, true);
   });
 
+
+  // ---- Tile warnings (his request, 2026-10-15) ----
+  // While a consult form is open, compare the note against the
+  // tile row's chart values (published by More/Less as
+  // tmTileChart) and publish verdicts as tmTileWarn; the tiles
+  // paint warning-red for any topic blank in the note or
+  // different from the chart, white when it matches. Tile
+  // rules differ from the mismatch panel on purpose: blank /
+  // placeholder counts as a warning here - that is the point
+  // ('so I remember to fill in the correct information').
+  // Weight is NOT a topic: he never writes it into the note.
+  function tileVerdicts(txt, medsTxt, chart) {
+    var v = { age: false, allergies: false, meds: false, rel: false };
+    if (chart.ageSex) {
+      var hm = txt.match(/^[ \t]*HPI[ \t]+(\d{1,3})[MF]\b/m);
+      var qa = String(chart.ageSex).match(/\d{1,3}/);
+      v.age = !hm || !qa || hm[1] !== qa[0];
+    }
+    if (chart.allergies) {
+      var am = txt.match(/^[ \t]*Allergies[ \t]*:?[ \t]*(.*)$/m);
+      if (!am || !am[1].trim()) v.allergies = true;
+      else {
+        var nka = /^(NKA|NKDA|No[ \t]+known)/i;
+        var noteSet = nka.test(am[1].trim()) ? '' : allergySet(am[1].trim());
+        var chartSet = nka.test(String(chart.allergies).trim()) ? '' : allergySet(String(chart.allergies));
+        v.allergies = noteSet !== chartSet;
+      }
+    }
+    if (chart.meds) {
+      var secLines = null;
+      if (medsTxt !== null && medsTxt !== undefined) secLines = String(medsTxt).split('\n');
+      else secLines = medSectionLines(txt);
+      var chartNone = /^\s*-\s*none\s*$/i.test(String(chart.meds).trim());
+      if (!secLines) v.meds = true;
+      else {
+        var content = secLines.filter(function (l) { return l.trim() !== ''; });
+        var noteNone = content.length === 1 && /^\s*-\s*none\s*$/i.test(content[0].trim());
+        if (!content.length) v.meds = true;
+        else if (noteNone || chartNone) v.meds = noteNone !== chartNone;
+        else {
+          var noteMap = {}, chartMap = {}, diff = false, k;
+          content.forEach(function (l) { var p = parseMedLine(l); if (p) noteMap[p.canon] = normSpec(p.spec); });
+          String(chart.meds).split('\n').forEach(function (l) { var p = parseMedLine(l); if (p) chartMap[p.canon] = normSpec(p.spec); });
+          for (k in chartMap) { if (noteMap[k] !== chartMap[k]) { diff = true; break; } }
+          if (!diff) { for (k in noteMap) { if (!(k in chartMap)) { diff = true; break; } } }
+          v.meds = diff;
+        }
+      }
+    }
+    if (chart.rel) {
+      var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/m);
+      if (!cm || !cm[1].trim() || /^xx\b/i.test(cm[1].trim())) v.rel = true;
+      else v.rel = cm[1].trim().toLowerCase() !== String(chart.rel).trim().toLowerCase();
+    }
+    return v;
+  }
+
+  var tileWarnPublished = false, tileWarnLast = '';
+  function clearTileWarn() {
+    if (!tileWarnPublished) return;
+    tileWarnPublished = false; tileWarnLast = '';
+    try { localStorage.removeItem('tmTileWarn'); } catch (e) {}
+  }
+  function publishTileWarn() {
+    var chart = null;
+    try { chart = JSON.parse(localStorage.getItem('tmTileChart') || 'null'); } catch (e) {}
+    var field = findNoteField();
+    if (!chart || !field) { clearTileWarn(); return; }
+    var txt = field.value || '';
+    if (!looksLikeHisNote(txt)) { clearTileWarn(); return; }
+    var mf = findMedsField(field);
+    var v = tileVerdicts(txt, mf ? (mf.value || '') : null, chart);
+    var s = JSON.stringify(v);
+    if (s !== tileWarnLast) {
+      tileWarnLast = s;
+      try { localStorage.setItem('tmTileWarn', JSON.stringify({ age: v.age, allergies: v.allergies, meds: v.meds, rel: v.rel, ts: Date.now() })); } catch (e) {}
+    }
+    tileWarnPublished = true;
+  }
+  var tileInputLast = 0;
+  document.addEventListener('input', function (e) {
+    if (!e.isTrusted) return;
+    var now = Date.now();
+    if (now - tileInputLast < 700) return;
+    tileInputLast = now;
+    setTimeout(publishTileWarn, 50);
+  }, true);
+
   function findNoteField() {
     var labels = document.querySelectorAll('td, th, div, span, label, b');
     for (var i = 0; i < labels.length; i++) {
@@ -446,9 +534,9 @@
 
   function checkAndApply() {
     var field = findNoteField();
-    if (!field) return;
+    if (!field) { clearTileWarn(); return; }
     var txt = field.value || '';
-    if (!looksLikeHisNote(txt)) return;
+    if (!looksLikeHisNote(txt)) { clearTileWarn(); return; }
     var medsField = findMedsField(field);
     var medsTxt = medsField ? (medsField.value || '') : null;
 
@@ -510,6 +598,7 @@
         });
       }
     }
+    publishTileWarn();
     renderDiff(labels, sig);
   }
 
