@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.19
+// @version      2.20
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1606,14 +1606,22 @@
     });
     var bar = doc.createElement('div');
     bar.className = 'tmWatchBar';
-    bar.style.cssText = 'cursor:pointer;font-weight:600;padding:2px 0;';
+    bar.style.cssText = 'font-weight:600;padding:2px 0;';
     var suffix = names.length ? ' \u2014 ' + names.join(' \u00B7 ') : '';
     bar.textContent = '\u25B8 ' + label + suffix;
-    bar.onclick = function () {
-      var open = body.style.display !== 'none';
-      body.style.display = open ? 'none' : 'block';
-      bar.textContent = (open ? '\u25B8 ' : '\u25BE ') + label + suffix;
-      fit();
+    // Hover to expand (his ask, 2026-10-14): the pointer entering
+    // the box opens it, leaving closes it. The body lives inside
+    // the same box, so moving from the bar into the text doesn't
+    // flicker. Refit resizes the frame only - no re-render.
+    box.onmouseenter = function () {
+      body.style.display = 'block';
+      bar.textContent = '\u25BE ' + label + suffix;
+      refitFrame(doc);
+    };
+    box.onmouseleave = function () {
+      body.style.display = 'none';
+      bar.textContent = '\u25B8 ' + label + suffix;
+      refitFrame(doc);
     };
     box.appendChild(bar);
     box.appendChild(body);
@@ -1745,7 +1753,7 @@
       var show = table.style.display === 'none';
       table.style.display = show ? '' : 'none';
       bar.textContent = (show ? '\u25BE hide full order text' : '\u25B8 show full order text (' + (groups ? groups.length : 0) + ' orders)');
-      fit();
+      refitFrame(doc);
     };
   }
 
@@ -1905,7 +1913,7 @@
       bar.textContent = show
         ? '\u25BE ' + rest.length + ' more diagnoses \u2014 click to hide'
         : '\u25B8 ' + rest.length + ' more diagnoses \u2014 click to show all';
-      fit();
+      refitFrame(doc);
     };
   }
 
@@ -1944,6 +1952,22 @@
       }
       el = el.parentElement;
     }
+  }
+
+  // Resize ONE widget frame after an in-place expand/collapse -
+  // WITHOUT re-rendering. (v2.20: the unfold bars used to call
+  // fit(), whose re-render instantly rebuilt the folded state
+  // and ate the click. That was the 'buttons don't work' bug.)
+  function refitFrame(doc) {
+    document.querySelectorAll('iframe[id^="iFramePanel_"]').forEach(function (f) {
+      try {
+        if ((f.contentDocument || f.contentWindow.document) !== doc) return;
+        expand(doc);
+        var h = Math.ceil(contentBottom(doc)) + 30;
+        if (h > 80 && Math.abs(h - f.offsetHeight) > 5) f.style.height = h + 'px';
+        unclipParents(f);
+      } catch (e) {}
+    });
   }
 
   function fit() {
