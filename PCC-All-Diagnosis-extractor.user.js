@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.35
+// @version 1.36
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -448,12 +448,35 @@
       if (c && c.cid === dxCid() && c.text) dxCorrected = c.text;
     } catch (e) {}
   }
+  function fbDel(key) {
+    try { localStorage.setItem(FB_KEY, JSON.stringify(fbLoad().filter(function (r) { return r.k !== key; }))); } catch (e) {}
+  }
+  function dxVerdict() {
+    if (dxCorrected) return 'wrong';
+    var k = 'dxok|' + dxCid() + '|' + (dxScriptText || '').slice(0, 40);
+    return fbLoad().some(function (r) { return r.k === k; }) ? 'right' : '';
+  }
+  // Judge ONCE (his rule, v1.36): after a verdict the buttons
+  // lock, the chosen one stays filled, and 'completed' stays
+  // written next to them - visible while he looks around.
   function paintDxFb() {
+    var v = dxVerdict();
+    var r = document.getElementById('pnDxFbR');
     var w = document.getElementById('pnDxFbW');
-    if (w) {
-      w.style.background = dxCorrected ? '#fee2e2' : '#fff';
-      w.style.borderColor = dxCorrected ? '#b91c1c' : '#cbd5e1';
+    var saved = document.getElementById('pnDxFbSaved');
+    if (r) {
+      r.style.background = v === 'right' ? '#dcfce7' : '#fff';
+      r.style.borderColor = v === 'right' ? '#15803d' : '#cbd5e1';
+      r.disabled = !!v;
+      r.style.cursor = v ? 'default' : 'pointer';
     }
+    if (w) {
+      w.style.background = v === 'wrong' ? '#fee2e2' : '#fff';
+      w.style.borderColor = v === 'wrong' ? '#b91c1c' : '#cbd5e1';
+      w.disabled = !!v;
+      w.style.cursor = v ? 'default' : 'pointer';
+    }
+    if (saved) saved.textContent = v ? 'completed' : '';
     var rst = document.getElementById('pnDxEditReset');
     if (rst) rst.style.display = dxCorrected ? '' : 'none';
     var lab = document.getElementById('pnDxLabel');
@@ -712,7 +735,8 @@
         '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>' +
         '<button id="pnDxFbR" type="button" title="The diagnoses are right" style="' + fbCss + 'color:#15803d;">\u2713</button>' +
         '<button id="pnDxFbW" type="button" title="The diagnoses are wrong - I will give my version" style="' + fbCss + 'color:#b91c1c;">\u2717</button>' +
-        '<span id="pnDxFbSaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>';
+        '<span id="pnDxFbSaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>' +
+        '<button id="pnDxEditReset" type="button" style="display:none;font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;">back to script version</button>';
       wrap.insertBefore(row, wrap.firstChild);
       document.getElementById('pnDxS').onclick = boxTriggerS;
       var gBtn = document.getElementById('pnDxG');
@@ -733,7 +757,6 @@
       '<div style="display:flex;gap:6px;margin-top:6px;align-items:center;">' +
       '<button id="pnDxEditSave" type="button" style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;border:1px solid #93c5fd;background:#dbeafe;color:#1e3a5f;cursor:pointer;">Save my version</button>' +
       '<button id="pnDxEditCancel" type="button" style="font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;">Cancel</button>' +
-      '<button id="pnDxEditReset" type="button" style="display:none;margin-left:auto;font-size:12px;font-weight:600;padding:4px 12px;border-radius:999px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;">back to script version</button>' +
       '</div></div>' +
       '<div id="pnDxOut" style="color:#0f172a;"></div>';
     box.style.cursor = 'pointer';
@@ -745,18 +768,18 @@
     var editor = document.getElementById('pnDxEditor');
     var editText = document.getElementById('pnDxEditText');
     fbR.onclick = function () {
+      if (dxVerdict()) return;
       fbSave({
         k: 'dxok|' + dxCid() + '|' + (dxScriptText || '').slice(0, 40),
         kind: 'dx', verdict: 'right', script: dxScriptText,
         site: location.hostname, ts: Date.now(), sent: false
       });
-      fbSaved.textContent = 'saved';
-      setTimeout(function () { fbSaved.textContent = ''; }, 1500);
+      paintDxFb();
     };
     fbW.onclick = function () {
+      if (dxVerdict()) return;
       editText.value = dxCorrected || dxScriptText;
       editor.style.display = '';
-      paintDxFb();
       editText.focus();
     };
     document.getElementById('pnDxEditSave').onclick = function () {
@@ -771,14 +794,16 @@
       });
       editor.style.display = 'none';
       applyDx();
-      fbSaved.textContent = 'saved';
-      setTimeout(function () { fbSaved.textContent = ''; }, 1500);
     };
     document.getElementById('pnDxEditCancel').onclick = function () {
       editor.style.display = 'none';
     };
     document.getElementById('pnDxEditReset').onclick = function () {
+      // Withdrawing the correction withdraws the judgement
+      // too: the record leaves the store and the buttons
+      // unlock, so he can judge again if he wants.
       dxCorrected = '';
+      fbDel('dx|' + dxCid());
       try { sessionStorage.removeItem('pnDxCorr'); } catch (e) {}
       editor.style.display = 'none';
       applyDx();
