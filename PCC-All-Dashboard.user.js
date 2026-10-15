@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.22
+// @version      2.23
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1676,7 +1676,7 @@
     if (groups && groups.length && groups[0].rows[0]) mTable = groups[0].rows[0].closest('table');
     // Main view keeps only the Order column (his list, 2026-10-14:
     // Duplicate, Alert, Order Status, Revised, Last Ordered go).
-    trimTable(doc, mTable, ['Order'], mica);
+    trimTable(doc, mTable, ['Order'], !mica);
   }
 
   // Trim a PCC table to the columns he cares about (Main view):
@@ -1906,7 +1906,7 @@
     if (firstRow) table = firstRow.closest('table');
     var panel = doc.getElementById('tmDxPanel');
     // Main view keeps only ICD-10 + Short Description.
-    trimTable(doc, table, ['ICD-10', 'Short Description'], folded);
+    trimTable(doc, table, ['ICD-10', 'Short Description'], !folded);
     if (!folded) {
       if (panel) panel.remove();
       if (table) table.style.display = '';
@@ -2023,7 +2023,7 @@
   // reload them); the two rows simply become flex columns.
   function applySideBySide() {
     var st = document.getElementById('tmSideStyle');
-    if (dashView() === 'main') {
+    if (dashView() !== 'main') {
       if (!st) {
         st = document.createElement('style');
         st.id = 'tmSideStyle';
