@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.29
+// @version 1.30
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -478,7 +478,7 @@
     if (!b) return;
     lit = on;
     b.style.background = on ? '#dbeafe' : '#fff';
-    b.style.borderColor = on ? '#93c5fd' : '#e2e8f0';
+    b.style.borderColor = on ? '#93c5fd' : '#cbd5e1';
     var lab = document.getElementById('pnDxLabel');
     if (lab) {
       if (on) {
@@ -600,7 +600,7 @@
     if (!wrap) {
       wrap = document.createElement('div');
       wrap.id = 'pnTilesWrap';
-      wrap.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);padding:10px;margin:8px 0;box-sizing:border-box;';
+      wrap.style.cssText = 'background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 2px 10px rgba(15,23,42,.10);padding:10px;margin:10px 0 18px;box-sizing:border-box;';
       // Anchor: right before the notes table (the views bar
       // itself moves up into the header - Behavior v1.4 - so it
       // is no longer a safe anchor). Fallback: after the bar.
@@ -630,7 +630,7 @@
     }
     var box = document.createElement('div');
     box.id = 'pnDxBox';
-    box.style.cssText = 'margin:0;padding:14px 16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
+    box.style.cssText = 'margin:0;padding:14px 16px;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
     box.innerHTML =
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
       '<span id="pnDxLabel" style="font-weight:700;color:#334155;">Diagnoses</span>' +
