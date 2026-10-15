@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.21
+// @version 1.22
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -438,9 +438,10 @@
     copy.style.color = '#2563eb';
     copy.setAttribute('data-fill-value', text);
     copy.onclick = function(){
-      copy.style.background = '#2563eb';
-      copy.style.color = '#fff';
+      markCopied();
       copyText(text, copy);
+      setTimeout(markCopied, 60);
+      setTimeout(markCopied, 1300);
       // Also drop a fill request so the note panel can insert after "Medical Hx".
       try {
         localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: text, ts: Date.now() }));
@@ -476,6 +477,34 @@
     target.dispatchEvent(new KEv('keydown', { key: 's', bubbles: true, cancelable: true }));
   }
 
+  // The button's clicked state is BLUE (like the header tiles
+  // lighting up) - the word 'Copied' never shows. markCopied is
+  // re-asserted after the copy helper's text flash would land.
+  function markCopied() {
+    var c = document.getElementById('pnDxCopy');
+    if (!c) return;
+    c.textContent = 'Copy';
+    c.style.background = '#2563eb';
+    c.style.color = '#fff';
+  }
+
+  // The tile has its own G now - hide the grab-all badge that
+  // parks itself next to this Copy button (the G key and the
+  // tile's G still grab it exactly as before).
+  function hideBoxBadge() {
+    var box = document.getElementById('pnDxBox');
+    if (!box) return;
+    var badge = box.querySelector('.pcc-g-badge');
+    if (badge) badge.style.display = 'none';
+  }
+
+  // A G grab from anywhere turns this button blue too.
+  window.addEventListener('storage', function (e) {
+    if (e.key === 'pccGrabSignal' && e.newValue) {
+      setTimeout(function () { markCopied(); hideBoxBadge(); }, 400);
+    }
+  });
+
   function insertBox(){
     if (document.getElementById('pnDxBox')) return;
     var all = viewLink('All Notes');
@@ -502,9 +531,12 @@
     document.getElementById('pnDxS').onclick = boxTriggerS;
     document.getElementById('pnDxG').onclick = boxTriggerG;
     runDx();
+    hideBoxBadge();
+    setTimeout(hideBoxBadge, 600);
   }
 
   function tick(){
+    hideBoxBadge();
     var all = viewLink('All Notes');
     var onPN = all && viewLink('Last 30 days');
     if (!onPN) { try { sessionStorage.removeItem('pnClickedAll'); } catch (e) {} return; }
