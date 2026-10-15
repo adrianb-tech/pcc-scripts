@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.13
+// @version      1.14
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -379,10 +379,18 @@
       // and 'comment saved' stays written next to it.
       saveWhyBtn.addEventListener('mousedown', function () { saveWhyBtn.style.background = '#dbeafe'; });
       saveWhyBtn.addEventListener('mouseup', function () { saveWhyBtn.style.background = '#fff'; });
-      saveWhyBtn.addEventListener('click', function (e) {
-        e.preventDefault(); e.stopPropagation();
+      function saveWhy() {
         if (curVerdict) fbSave(recFor(curVerdict));
         whySavedSpan.textContent = 'comment saved';
+      }
+      saveWhyBtn.addEventListener('click', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        saveWhy();
+      });
+      // Enter inside the comment field = save my comment
+      // (his ask, v1.14; same on the diagnoses editor).
+      whyInp.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); saveWhy(); }
       });
       whyInp.addEventListener('input', function () { whySavedSpan.textContent = ''; });
       rBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); saveVerdict('right'); });
