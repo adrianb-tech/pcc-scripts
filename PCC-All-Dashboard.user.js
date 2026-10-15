@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.24
+// @version      2.25
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -930,7 +930,7 @@
       b = doc.createElement('button');
       b.id = id;
       b.type = 'button';
-      b.style.cssText = 'margin:4px 4px 4px 0;padding:3px 8px;font-size:12px;cursor:pointer;';
+      b.style.cssText = 'margin:0 6px 6px 0;padding:0 10px;height:26px;display:inline-flex;align-items:center;box-sizing:border-box;font-size:12px;cursor:pointer;vertical-align:top;';
       b.onclick = onclick;
       // psychToggle goes right above the psych med list box, not at top of body
       if (id === 'psychToggle') {
@@ -1009,7 +1009,7 @@
     if (!row) {
       row = td.createElement('div');
       row.id = 'tmBoxesRow';
-      row.style.cssText = 'display:flex;gap:10px;align-items:flex-start;width:100%;box-sizing:border-box;margin:0 0 10px 0;';
+      row.style.cssText = 'display:flex;gap:10px;align-items:stretch;width:100%;box-sizing:border-box;margin:0 0 10px 0;';
       area.parentNode.insertBefore(row, area);
     }
     BOX_IDS.forEach(function (id) {
@@ -1026,6 +1026,30 @@
         fresh.style.display = 'block';
       }
     });
+  }
+
+  function tidyMedsTop(doc) {
+    ['pccTopRow', 'pccLabsRow'].forEach(function (id) {
+      var r = doc.getElementById(id);
+      if (r) { r.style.margin = '0'; r.style.padding = '0'; }
+    });
+    var bar = doc.getElementById('interactionInfo');
+    var tog = doc.getElementById('psychToggle');
+    if (bar && tog && bar.parentNode) {
+      bar.parentNode.insertBefore(tog, bar.nextSibling);
+      var sub = tog.querySelector('div');
+      if (sub) sub.style.display = 'none';
+    }
+  }
+
+  function untidyMedsTop(doc) {
+    var tog = doc.getElementById('psychToggle');
+    var medBox = doc.getElementById('medListBox');
+    if (tog) {
+      var sub = tog.querySelector('div');
+      if (sub) sub.style.display = '';
+      if (medBox && medBox.parentNode) medBox.parentNode.insertBefore(tog, medBox);
+    }
   }
 
   // Folded view keeps the boxes in-frame (the watch stack):
@@ -1647,9 +1671,9 @@
       labsRow.appendChild(warnBox);
     }
     warnBox.innerHTML = buildWarningsHtml(warnData);
-    if (dashView() === 'main') pullBoxes(doc);
+    if (dashView() === 'main') { pullBoxes(doc); untidyMedsTop(doc); }
     applyMedsView(doc, groups);
-    if (dashView() !== 'main') plantBoxes(doc);
+    if (dashView() !== 'main') { plantBoxes(doc); tidyMedsTop(doc); }
   }
 
   var LAB_BOX_CSS = 'flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #1d4ed8;background:#eff6ff;overflow-wrap:anywhere;';
