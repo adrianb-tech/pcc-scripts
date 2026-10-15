@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.20
+// @version      2.21
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1688,17 +1688,20 @@
   }
   function freqWord(give) {
     var s = (give || '').toLowerCase();
-    if (/two times a day/.test(s)) return 'BID';
-    if (/three times a day/.test(s)) return 'TID';
-    if (/four times a day/.test(s)) return 'QID';
-    if (/at bedtime/.test(s)) return 'QHS';
-    if (/every other day/.test(s)) return 'QOD';
-    var h = s.match(/every (\d+) hours?/); if (h) return 'q' + h[1] + 'h';
-    if (/one time a day|once daily|one time each day/.test(s)) return 'daily';
-    if (/in the morning/.test(s)) return 'QAM';
-    if (/as needed/.test(s)) return 'PRN';
-    if (/once a week|one time a week/.test(s)) return 'weekly';
-    return '';
+    var base = '';
+    if (/two times a day/.test(s)) base = 'BID';
+    else if (/three times a day/.test(s)) base = 'TID';
+    else if (/four times a day/.test(s)) base = 'QID';
+    else if (/at bedtime/.test(s)) base = 'QHS';
+    else if (/every other day/.test(s)) base = 'QOD';
+    else { var h = s.match(/every (\d+) hours?/); if (h) base = 'q' + h[1] + 'h'; }
+    if (!base && /one time a day|once daily|one time each day/.test(s)) base = 'daily';
+    if (!base && /in the morning/.test(s)) base = 'QAM';
+    if (!base && /once a week|one time a week/.test(s)) base = 'weekly';
+    // PRN rides along with the interval (his catch, 2026-10-14:
+    // 'every 8 hours as needed' read 'q8h' and lost the PRN).
+    if (/as needed/.test(s)) return base ? base + ' PRN' : 'PRN';
+    return base;
   }
   function oneLiner(g) {
     var fw = freqWord(giveText(g));
