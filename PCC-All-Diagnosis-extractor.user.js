@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.31
+// @version 1.32
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -585,12 +585,6 @@
   function gapSection() {
     var wrap = document.getElementById('pnTilesWrap');
     if (!wrap) return;
-    if (!document.getElementById('pnTilesSpacer') && wrap.parentNode) {
-      var sp = document.createElement('div');
-      sp.id = 'pnTilesSpacer';
-      sp.style.cssText = 'height:18px;';
-      wrap.parentNode.insertBefore(sp, wrap.nextSibling);
-    }
     var cards = document.querySelectorAll('.evergreen-card');
     for (var i = 0; i < cards.length; i++) {
       if (wrap.compareDocumentPosition(cards[i]) & 4) {
@@ -598,6 +592,17 @@
         break;
       }
     }
+  }
+
+  // The Progress Notes panel: the .evergreen-card that holds
+  // the notes table. The tiles card belongs BEFORE it, outside
+  // its white entirely (his correction, v1.32: the panel's
+  // white was extending up behind the S and G buttons because
+  // the tiles had landed inside the panel).
+  function pnCard() {
+    var tbl = notesTable();
+    if (!tbl || !tbl.closest) return null;
+    return tbl.closest('.evergreen-card');
   }
 
   function notesTable() {
@@ -625,11 +630,14 @@
       wrap = document.createElement('div');
       wrap.id = 'pnTilesWrap';
       wrap.style.cssText = 'background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 2px 10px rgba(15,23,42,.10);padding:10px;margin:10px 0 18px;box-sizing:border-box;';
-      // Anchor: right before the notes table (the views bar
-      // itself moves up into the header - Behavior v1.4 - so it
-      // is no longer a safe anchor). Fallback: after the bar.
+      // Anchor: right BEFORE the Progress Notes panel, outside
+      // its white. Fallbacks: before the notes table, then
+      // after the views bar.
+      var card = pnCard();
       var tbl = notesTable();
-      if (tbl && tbl.parentNode) {
+      if (card && card.parentNode) {
+        card.parentNode.insertBefore(wrap, card);
+      } else if (tbl && tbl.parentNode) {
         tbl.parentNode.insertBefore(wrap, tbl);
       } else {
         var bar = all.parentElement;
