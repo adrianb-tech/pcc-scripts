@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.3
+// @version      1.4
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -209,9 +209,7 @@
   // dashes that separate them. Display only.
   var HIDE_VIEWS = ['Last 8 hrs', 'Last 24 hrs', 'Last 72 hrs', 'Last 7 days', 'Last 30 days'];
   function hideViewLinks() {
-    var bar = document.querySelector('.pn-views-bar');
-    if (!bar) return;
-    var links = bar.querySelectorAll('a');
+    var links = document.querySelectorAll('a[data-testid^="pn-viewall-view-option-"]');
     for (var i = 0; i < links.length; i++) {
       var a = links[i];
       var tid = a.getAttribute('data-testid') || '';
@@ -232,6 +230,33 @@
     if (!b) return;
     b.style.background = on ? '#dbeafe' : '#fff';
     b.style.borderColor = on ? '#93c5fd' : '#e2e8f0';
+  }
+
+  // Move the Views into the header (his layout, v1.4): top
+  // center, on the same row as the resident's name, above the
+  // tiles. The links keep working (inline javascript: hrefs);
+  // the emptied bar cell is hidden. Runs before the hiding so
+  // the hidden links travel with the rest.
+  function moveViews() {
+    var bar = document.querySelector('.pn-views-bar');
+    if (!bar || document.getElementById('pnViewsMoved')) return;
+    var nameRow = null;
+    var spans = document.querySelectorAll('span');
+    for (var i = 0; i < spans.length; i++) {
+      if ((spans[i].textContent || '').trim() === 'Resident' && spans[i].parentElement) {
+        nameRow = spans[i].parentElement;
+        break;
+      }
+    }
+    if (!nameRow) return;
+    var slot = document.createElement('div');
+    slot.id = 'pnViewsMoved';
+    slot.style.cssText = 'flex:1 1 auto;text-align:center;font-size:14px;';
+    while (bar.firstChild) slot.appendChild(bar.firstChild);
+    nameRow.style.display = 'flex';
+    nameRow.style.alignItems = 'center';
+    nameRow.appendChild(slot);
+    bar.style.display = 'none';
   }
 
   function viewLink(txt) {
@@ -293,6 +318,7 @@
   function tick() {
     var all = viewLink('All Notes');
     if (!all) return;
+    moveViews();
     hideViewLinks();
     // Same one-time expansion the diagnosis extractor uses: the
     // full note text only loads in the All Notes view. Shared
