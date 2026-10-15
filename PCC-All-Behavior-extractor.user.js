@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.8
+// @version      1.9
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -154,7 +154,7 @@
     for (var i = 0; i < bs.length; i++) {
       if (/:\s*$/.test((bs[i].textContent || '').trim())) bs[i].remove();
     }
-    var tb = clone.querySelectorAll('.pnBehTopBtn');
+    var tb = clone.querySelectorAll('.pnBehTopBtn, .pnBehFbBar');
     for (var q = 0; q < tb.length; q++) tb[q].remove();
     return (clone.textContent || '').replace(/\s+/g, ' ');
   }
@@ -224,7 +224,7 @@
       Object.keys(scan).forEach(function (k) {
         counts[k] = (counts[k] || 0) + 1;
         (detail[k] = detail[k] || []).push({
-          when: when, type: type, desc: scan[k].sent, phrase: scan[k].phrase,
+          label: k, when: when, type: type, desc: scan[k].sent, phrase: scan[k].phrase,
           row: row, cell: (dateCell !== -1 && cells[dateCell + 2]) ? cells[dateCell + 2] : null
         });
       });
@@ -250,7 +250,7 @@
     if (marked.span && marked.span.parentNode) {
       marked.span.parentNode.replaceChild(document.createTextNode(marked.span.textContent), marked.span);
     }
-    if (marked.btn && marked.btn.parentNode) marked.btn.parentNode.removeChild(marked.btn);
+    if (marked.bar && marked.bar.parentNode) marked.bar.parentNode.removeChild(marked.bar);
     marked = null;
   }
   function highlightSentence(cell, sent, phrase) {
@@ -309,22 +309,62 @@
       if (i === tds.length - 1) td.style.borderRight = '2px solid #2563eb';
     }
     var span = highlightSentence(entry.cell, entry.desc, entry.phrase);
-    var btn = null;
+    var bar = null;
     if (entry.cell) {
-      btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'pnBehTopBtn';
-      btn.textContent = '\u2191 back to top';
-      btn.style.cssText = 'display:inline-block;margin:0 0 6px;padding:3px 10px;border:none;border-radius:999px;background:#2563eb;color:#fff;font-size:11px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(37,99,235,.35);';
-      btn.addEventListener('click', function (e) {
+      // His feedback bar (v1.9): back-to-top + right/wrong +
+      // an optional 'why'. Same press language as everywhere
+      // else; the verdict saves to this browser's store only.
+      bar = document.createElement('div');
+      bar.className = 'pnBehFbBar';
+      bar.style.cssText = 'display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 6px;';
+      var pill = 'display:inline-block;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;cursor:pointer;';
+      bar.innerHTML =
+        '<button type="button" class="pnBehTopBtn" style="' + pill + 'border:none;background:#2563eb;color:#fff;box-shadow:0 2px 6px rgba(37,99,235,.35);">\u2191 back to top</button>' +
+        '<button type="button" class="pnBehFbR" style="' + pill + 'border:1px solid #cbd5e1;background:#fff;color:#15803d;">\u2713 right</button>' +
+        '<button type="button" class="pnBehFbW" style="' + pill + 'border:1px solid #cbd5e1;background:#fff;color:#b91c1c;">\u2717 wrong</button>' +
+        '<input type="text" class="pnBehFbWhy" placeholder="why? (optional)" style="flex:0 1 220px;padding:3px 8px;border:1px solid #cbd5e1;border-radius:999px;font-size:11.5px;color:#0f172a;background:#fff;">' +
+        '<span class="pnBehFbSaved" style="font-size:11px;color:#15803d;font-weight:600;"></span>';
+      var topBtn = bar.querySelector('.pnBehTopBtn');
+      var rBtn = bar.querySelector('.pnBehFbR');
+      var wBtn = bar.querySelector('.pnBehFbW');
+      var whyInp = bar.querySelector('.pnBehFbWhy');
+      var savedSpan = bar.querySelector('.pnBehFbSaved');
+      topBtn.addEventListener('click', function (e) {
         e.preventDefault(); e.stopPropagation();
         var wrap = document.getElementById('pnTilesWrap') || document.getElementById('pnBehBox');
         unmarkNote();
         if (wrap) { try { wrap.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (err) { wrap.scrollIntoView(); } }
       });
-      entry.cell.insertBefore(btn, entry.cell.firstChild);
+      function paintVerdict(v) {
+        rBtn.style.background = v === 'right' ? '#dcfce7' : '#fff';
+        rBtn.style.borderColor = v === 'right' ? '#15803d' : '#cbd5e1';
+        wBtn.style.background = v === 'wrong' ? '#fee2e2' : '#fff';
+        wBtn.style.borderColor = v === 'wrong' ? '#b91c1c' : '#cbd5e1';
+        savedSpan.textContent = v ? 'saved' : '';
+      }
+      function saveVerdict(v) {
+        fbSave({
+          k: 'beh|' + entry.label + '|' + entry.when + '|' + (entry.desc || '').slice(0, 40),
+          kind: 'beh', verdict: v, signal: entry.label, when: entry.when, type: entry.type,
+          sentence: entry.desc, phrase: entry.phrase, why: whyInp.value || '',
+          site: location.hostname, ts: Date.now(), sent: false
+        });
+        paintVerdict(v);
+        lastSig = '';
+        render(analyze(behDays));
+      }
+      rBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); saveVerdict('right'); });
+      wBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); saveVerdict('wrong'); });
+      whyInp.addEventListener('click', function (e) { e.stopPropagation(); });
+      whyInp.addEventListener('keydown', function (e) { e.stopPropagation(); });
+      // Prefill an earlier verdict on this same entry, if any.
+      var prev = fbLoad().filter(function (r) {
+        return r.kind === 'beh' && r.signal === entry.label && r.when === entry.when;
+      })[0];
+      if (prev) { whyInp.value = prev.why || ''; paintVerdict(prev.verdict); }
+      entry.cell.insertBefore(bar, entry.cell.firstChild);
     }
-    marked = { cells: recs, span: span, btn: btn };
+    marked = { cells: recs, span: span, bar: bar };
   }
   function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
   function paintViews() {
@@ -337,6 +377,25 @@
     }
     var r = document.getElementById('pnBehRange');
     if (r) r.textContent = rangeName();
+  }
+  // His feedback store (shared with the diagnosis tile):
+  // verdicts + explanations, saved in THIS browser only, and
+  // carried to Mica inside page captures he chooses to send.
+  var FB_KEY = 'pnFeedback';
+  function fbLoad() {
+    try { var a = JSON.parse(localStorage.getItem(FB_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+  }
+  function fbSave(rec) {
+    var a = fbLoad().filter(function (r) { return r.k !== rec.k; });
+    a.push(rec);
+    while (a.length > 300) a.shift();
+    try { localStorage.setItem(FB_KEY, JSON.stringify(a)); } catch (e) {}
+  }
+  function verdictMap() {
+    var map = {};
+    fbLoad().forEach(function (r) { if (r.kind === 'beh') map[r.signal + '|' + r.when] = r.verdict; });
+    return map;
   }
   function render(res) {
     var out = document.getElementById('pnBehOut');
@@ -353,7 +412,8 @@
       return { label: k, n: res.counts[k], notes: (res.detail && res.detail[k]) || [] };
     });
     items.sort(function (a, b) { return b.n - a.n; });
-    var sig = JSON.stringify(items) + '|' + res.notes + '|' + behDays;
+    var vmap = verdictMap();
+    var sig = JSON.stringify(items) + '|' + res.notes + '|' + behDays + '|' + JSON.stringify(vmap);
     if (sig === lastSig) return;
     lastSig = sig;
     jumpRows = [];
@@ -372,11 +432,14 @@
         var ji = jumpRows.length - 1;
         var s = esc((nt.when || '') + (nt.type ? ' — ' + nt.type : ''));
         var d = nt.desc ? '<div style="color:#334155;font-size:12px;padding-top:1px;">' + esc(nt.desc) + '</div>' : '';
+        var vm = vmap[it.label + '|' + nt.when];
+        var vmark = vm === 'right' ? ' <span style="color:#15803d;font-weight:700;">\u2713</span>'
+          : vm === 'wrong' ? ' <span style="color:#b91c1c;font-weight:700;">\u2717</span>' : '';
         // Click an entry to jump to that note (his ask, v1.6):
         // it paints blue while held, and clicking scrolls the
         // note's row into view and flashes it. No copy here.
         return '<div class="pnBehJump" data-j="' + ji + '" title="Go to this note" style="cursor:pointer;border-radius:6px;padding:2px 6px 3px 12px;">' +
-          '<div style="color:#7c8aa0;font-size:11.5px;">' + s + '</div>' + d + '</div>';
+          '<div style="color:#7c8aa0;font-size:11.5px;">' + s + vmark + '</div>' + d + '</div>';
       }).join('');
       if (it.notes.length > 10) subs += '<div style="color:#94a3b8;font-size:11.5px;padding:0 0 2px 12px;">+ ' + (it.notes.length - 10) + ' more</div>';
       return '<div style="border-bottom:1px solid #f1f5f9;padding-bottom:3px;margin-bottom:3px;">' + head + subs + '</div>';
