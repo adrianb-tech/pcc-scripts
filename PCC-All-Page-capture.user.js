@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.2
-// @description  TEMP diagnostic (v1.2): click the green HTML button, wait 3 seconds, and the whole frame tree downloads as one file - WITH live probes: what the page's rendered text actually contains, the View All button's size/visibility, and which of our badges exist 3s after the click. Delete after debugging.
+// @version      1.3
+// @description  Page capture + feedback courier (v1.3): click the green HTML button, wait 3 seconds, and the whole frame tree downloads as one file, with live probes - and, since v1.3, his saved extractor feedback (verdicts + corrections from the Behavior and Diagnosis tiles) embedded in the file, marked sent so each judgement rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
 // @run-at       document-idle
@@ -55,6 +55,27 @@
     return out.join('\n');
   }
 
+  // His feedback store rides inside the capture (v1.3,
+  // designed with him): the verdicts/corrections the Behavior
+  // and Diagnosis tiles saved in this browser are embedded in
+  // the file he sends, marked sent afterwards so they only
+  // ride once. Nothing is uploaded anywhere by the script -
+  // the file goes where HE sends it.
+  function feedbackBlock() {
+    var all = [];
+    try { all = JSON.parse(localStorage.getItem('pnFeedback') || '[]'); } catch (e) {}
+    if (!Array.isArray(all)) all = [];
+    var unsent = all.filter(function (r) { return !r.sent; });
+    var payload = JSON.stringify({ total: all.length, unsent: unsent }).replace(/<\//g, '<\\/');
+    var block = '\n\n<!-- ================= PN FEEDBACK STORE (unsent judgements ride here) ================= -->\n' +
+      '<script type="application/json" id="pn-feedback-store">' + payload + '</' + 'script>';
+    if (unsent.length) {
+      all.forEach(function (r) { r.sent = true; });
+      try { localStorage.setItem('pnFeedback', JSON.stringify(all)); } catch (e) {}
+    }
+    return block;
+  }
+
   function walk(doc, depth, lines, counter) {
     var n = counter.value++;
     var head = '\n\n<!-- ================= DOC ' + n + ' (depth ' + depth + ') url=' +
@@ -82,8 +103,9 @@
     // the page at +3s, not in the click itself.
     setTimeout(function () {
       try {
-        var lines = ['<!-- PCC TREE CAPTURE v1.2 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->'];
+        var lines = ['<!-- PCC TREE CAPTURE v1.3 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->'];
         walk(document, 0, lines, { value: 0 });
+        lines.push(feedbackBlock());
         var blob = new Blob([lines.join('\n')], { type: 'text/html' });
         var a = document.createElement('a');
         var d = new Date();
