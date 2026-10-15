@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.37
+// @version 1.38
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -800,6 +800,15 @@
       editor.style.display = 'none';
       applyDx();
     };
+    // Enter inside the editor = Save my version (his ask,
+    // v1.38; corrections are one line, so Enter never needs
+    // to be a newline here).
+    editText.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('pnDxEditSave').click();
+      }
+    });
     document.getElementById('pnDxEditCancel').onclick = function () {
       editor.style.display = 'none';
     };
