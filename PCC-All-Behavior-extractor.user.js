@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.10
+// @version      1.11
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -42,6 +42,7 @@
 
   function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+  var behStart = Date.now();
   var COMPILED = SIGNALS.map(function (sig) {
     var pats = [];
     (sig.words || []).forEach(function (w) { pats.push(new RegExp('\\b' + escRe(w) + '\\b', 'gi')); });
@@ -548,6 +549,11 @@
     if (!all) return;
     var box = document.getElementById('pnBehBox');
     if (!box) {
+      // Final anchor only (v1.11): until the Diagnoses tile or
+      // the white card exists, WAIT - this tile used to park
+      // after the views bar first and then jump into the card.
+      if (!document.getElementById('pnDxBox') && !document.getElementById('pnTilesWrap') &&
+          Date.now() - behStart < 6000) return;
       box = document.createElement('div');
       box.id = 'pnBehBox';
       box.style.cssText = 'margin:8px 0;padding:14px 16px;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
@@ -564,10 +570,14 @@
         '</div>' +
         '<div id="pnBehOut" style="color:#0f172a;">Reading notes…</div>';
       var dx = document.getElementById('pnDxBox');
+      var wrap0 = document.getElementById('pnTilesWrap');
       if (dx && dx.parentNode) dx.parentNode.insertBefore(box, dx.nextSibling);
+      else if (wrap0) wrap0.appendChild(box);
       else {
+        // Reachable only after the 6s wait on a page with no
+        // card at all: park after the views bar (old fallback).
         var bar = all.parentElement;
-        bar.parentNode.insertBefore(box, bar.nextSibling);
+        if (bar && bar.parentNode) bar.parentNode.insertBefore(box, bar.nextSibling);
       }
       var behCopy = document.getElementById('pnBehCopy');
       behCopy.onclick = function () {
