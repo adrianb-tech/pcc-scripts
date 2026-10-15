@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.10
+// @version      3.11
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -554,7 +554,7 @@
     } catch (e) {}
     var tw = null;
     try { tw = JSON.parse(localStorage.getItem('tmTileWarn') || 'null'); } catch (e) {}
-    if (tw && Date.now() - (tw.ts || 0) > 45 * 60000) tw = null;
+    if (tw && Date.now() - (tw.ts || 0) > 2 * 60000) tw = null;
     var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.weightRed ? 'R' : '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || '', tw ? (tw.age ? '1' : '0') + (tw.allergies ? '1' : '0') + (tw.meds ? '1' : '0') + (tw.rel ? '1' : '0') : '----'].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
@@ -570,14 +570,14 @@
     }
     if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex }, fill: { label: 'Age/Sex', value: d.ageSex } }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
-    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { rose: true, fixedW: 340, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
+    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { fixedW: 340, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     function medCountChip(txt) {
       var c = document.createElement('span');
       c.textContent = txt;
       c.style.cssText = 'font-size:16px;font-weight:800;color:' + ((tw && tw.meds) ? '#ffffff' : '#2563eb') + ';';
       return c;
     }
-    if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true, color: d.weightRed ? '#dc2626' : undefined }));
+    if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true, color: d.weightRed ? '#a33327' : undefined }));
     if (d.meds) {
       // Design A in the row, right after Weight (his pick): a wide
       // banner tile whose lines flow into columns. First-class tile
