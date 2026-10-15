@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.28
+// @version      2.29
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -621,7 +621,13 @@
     var rows = [];
     groups.forEach(function(g) {
       var hdr = headerText(g);
-      if (!/\bActive\b/i.test(hdr)) return;
+      // 'Active' lives in the Order Status cell, which the
+      // full-list view HIDES - and innerText drops hidden cells,
+      // so the status must also be read from textContent, which
+      // sees every cell. (His report, 2026-10-14: in that view
+      // the psych meds tile read '- none' for medicated patients
+      // because every group failed this test.)
+      if (!/\bActive\b/i.test(hdr + ' ' + (g.rows[0].textContent || ''))) return;
       var med = matchMed(hdr);
       if (!med) return;
       var instr = instrText(g);
