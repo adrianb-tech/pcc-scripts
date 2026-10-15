@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.5
+// @version      1.6
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -65,6 +65,43 @@
     return true;
   }
 
+  // The sentence a match lives in, so the tile can describe
+  // what actually happened (his ask, v1.6).
+  function sentenceAround(text, idx) {
+    var start = Math.max(text.lastIndexOf('.', idx - 1), text.lastIndexOf('\n', idx - 1),
+      text.lastIndexOf('!', idx - 1), text.lastIndexOf('?', idx - 1)) + 1;
+    if (idx - start > 90) {
+      // Run-on template text with no sentence break: keep the
+      // clause around the match instead of the whole blob.
+      start = idx - 90;
+      var sp = text.indexOf(' ', start);
+      if (sp !== -1 && sp < idx) start = sp + 1;
+    }
+    var ends = [text.indexOf('.', idx), text.indexOf('\n', idx), text.indexOf('!', idx), text.indexOf('?', idx)]
+      .filter(function (x) { return x !== -1; });
+    var end = ends.length ? Math.min.apply(null, ends) + 1 : text.length;
+    var s = text.slice(start, end).replace(/\s+/g, ' ').trim();
+    if (s.length > 170) s = s.slice(0, 167).trim() + '\u2026';
+    return s;
+  }
+
+  function noteScan(text) {
+    var found = {};
+    COMPILED.forEach(function (sig) {
+      var isFall = sig.label === 'Falls';
+      for (var i = 0; i < sig.pats.length && !found[sig.label]; i++) {
+        var re = sig.pats[i];
+        re.lastIndex = 0;
+        var m;
+        while ((m = re.exec(text)) !== null) {
+          if (matchCounts(text, m, isFall)) { found[sig.label] = sentenceAround(text, m.index); break; }
+          if (m[0].length === 0) re.lastIndex++;
+        }
+      }
+    });
+    return found;
+  }
+
   function noteSignals(text) {
     var hits = {};
     COMPILED.forEach(function (sig) {
@@ -108,13 +145,21 @@
     return new Date(+m[3], +m[1] - 1, +m[2]);
   }
 
-  function analyze() {
+  // Three views (his ask, v1.6): last 7 days, last 14 days,
+  // or everything on the page.
+  var behDays = 7;
+  function rangeName() { return behDays === 0 ? 'all notes' : 'last ' + behDays + ' days'; }
+
+  function analyze(days) {
     var links = viewLinks();
     if (!links.length) return null;
     var table = links[0].closest('table');
     if (!table) return null;
-    var now = new Date(); now.setHours(0, 0, 0, 0);
-    var cutoff = new Date(now.getTime() - 6 * 86400000);
+    var cutoff = null;
+    if (days > 0) {
+      var now = new Date(); now.setHours(0, 0, 0, 0);
+      cutoff = new Date(now.getTime() - (days - 1) * 86400000);
+    }
     var counts = {}, detail = {}, notes = 0, stopped = false;
     var rows = table.querySelectorAll('tr');
     for (var r = 0; r < rows.length; r++) {
@@ -127,7 +172,7 @@
       var text = rowText(row);
       var d = rowDate(text);
       if (d) {
-        if (d < cutoff) { stopped = true; continue; }
+        if (cutoff && d < cutoff) { stopped = true; continue; }
       } else if (stopped) {
         continue;   // undated rows after the window are old-list tail
       }
@@ -139,16 +184,26 @@
       var when = whenM ? (whenM[1] + (whenM[2] || '')) : '';
       var type = '';
       var cells = row.querySelectorAll('td');
+      var dateCell = -1;
       for (var c = 0; c < cells.length - 1; c++) {
         if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(cells[c].textContent || '')) {
           type = (cells[c + 1].textContent || '').replace(/\s+/g, ' ').trim();
+          dateCell = c;
           break;
         }
       }
-      var hits = noteSignals(text);
-      Object.keys(hits).forEach(function (k) {
+      // Scan the note's own prose cell (the one after the type),
+      // not the whole row - otherwise row metadata (view, date,
+      // type) leaks into the description sentence (v1.6 fix).
+      var prose = text;
+      if (dateCell !== -1 && cells[dateCell + 2]) {
+        var pt = rowText(cells[dateCell + 2]);
+        if (pt && pt.length >= 10) prose = pt;
+      }
+      var scan = noteScan(prose);
+      Object.keys(scan).forEach(function (k) {
         counts[k] = (counts[k] || 0) + 1;
-        (detail[k] = detail[k] || []).push({ when: when, type: type });
+        (detail[k] = detail[k] || []).push({ when: when, type: type, desc: scan[k], row: row });
       });
     }
     return { counts: counts, detail: detail, notes: notes };
@@ -156,12 +211,26 @@
 
   // ---- the tile ----
   var lastSig = '';
+  var jumpRows = [], paintedJump = null, flashRowTimer = 0;
+  function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
+  function paintViews() {
+    var btns = document.querySelectorAll('.pnBehView');
+    for (var i = 0; i < btns.length; i++) {
+      var on = +btns[i].getAttribute('data-days') === behDays;
+      btns[i].style.background = on ? '#334155' : '#fff';
+      btns[i].style.color = on ? '#fff' : '#334155';
+      btns[i].style.borderColor = on ? '#334155' : '#cbd5e1';
+    }
+    var r = document.getElementById('pnBehRange');
+    if (r) r.textContent = rangeName();
+  }
   function render(res) {
     var out = document.getElementById('pnBehOut');
     var copy = document.getElementById('pnBehCopy');
     if (!out) return;
+    paintViews();
     if (!res || !res.notes) {
-      out.textContent = 'No notes in the last 7 days on this page.';
+      out.textContent = 'No notes (' + rangeName() + ') on this page.';
       if (copy) copy.style.display = 'none';
       lastSig = 'none';
       return;
@@ -170,11 +239,12 @@
       return { label: k, n: res.counts[k], notes: (res.detail && res.detail[k]) || [] };
     });
     items.sort(function (a, b) { return b.n - a.n; });
-    var sig = JSON.stringify(items) + '|' + res.notes;
+    var sig = JSON.stringify(items) + '|' + res.notes + '|' + behDays;
     if (sig === lastSig) return;
     lastSig = sig;
+    jumpRows = [];
     if (!items.length) {
-      out.innerHTML = '<div style="color:#475569;">No behavior signals charted in the last 7 days.</div>' +
+      out.innerHTML = '<div style="color:#475569;">No behavior signals charted (' + rangeName() + ').</div>' +
         '<div style="color:#94a3b8;font-size:11px;margin-top:4px;">from ' + res.notes + ' notes</div>';
       if (copy) copy.style.display = 'none';
       return;
@@ -184,16 +254,23 @@
         '<span style="color:#0f172a;">' + it.label + '</span>' +
         '<span style="color:#475569;">' + it.n + (it.n === 1 ? ' note' : ' notes') + '</span></div>';
       var subs = it.notes.slice(0, 10).map(function (nt) {
-        var s = (nt.when || '') + (nt.type ? ' — ' + nt.type : '');
-        return '<div style="color:#7c8aa0;font-size:11.5px;padding:0 0 2px 12px;">' + s.replace(/</g, '&lt;') + '</div>';
+        jumpRows.push(nt.row);
+        var ji = jumpRows.length - 1;
+        var s = esc((nt.when || '') + (nt.type ? ' — ' + nt.type : ''));
+        var d = nt.desc ? '<div style="color:#334155;font-size:12px;padding-top:1px;">' + esc(nt.desc) + '</div>' : '';
+        // Click an entry to jump to that note (his ask, v1.6):
+        // it paints blue while held, and clicking scrolls the
+        // note's row into view and flashes it. No copy here.
+        return '<div class="pnBehJump" data-j="' + ji + '" title="Go to this note" style="cursor:pointer;border-radius:6px;padding:2px 6px 3px 12px;">' +
+          '<div style="color:#7c8aa0;font-size:11.5px;">' + s + '</div>' + d + '</div>';
       }).join('');
       if (it.notes.length > 10) subs += '<div style="color:#94a3b8;font-size:11.5px;padding:0 0 2px 12px;">+ ' + (it.notes.length - 10) + ' more</div>';
       return '<div style="border-bottom:1px solid #f1f5f9;padding-bottom:3px;margin-bottom:3px;">' + head + subs + '</div>';
     }).join('') +
-      '<div style="color:#94a3b8;font-size:11px;margin-top:5px;">from ' + res.notes + ' notes in the last 7 days</div>';
+      '<div style="color:#94a3b8;font-size:11px;margin-top:5px;">from ' + res.notes + ' notes (' + rangeName() + ')</div>';
     if (copy) {
       copy.style.display = '';
-      copy.setAttribute('data-text', 'Behavior (last 7 days): ' + items.map(function (it) { return it.label + ' x' + it.n; }).join(' · '));
+      copy.setAttribute('data-text', 'Behavior (' + rangeName() + '): ' + items.map(function (it) { return it.label + ' x' + it.n; }).join(' · '));
     }
   }
 
@@ -296,12 +373,17 @@
     if (!box) {
       box = document.createElement('div');
       box.id = 'pnBehBox';
-      box.style.cssText = 'margin:8px 0;padding:14px 16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
+      box.style.cssText = 'margin:8px 0;padding:14px 16px;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
       var btnCss = 'padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#334155;';
       box.innerHTML =
         '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
-        '<span style="font-weight:700;color:#334155;">Behavior — last 7 days</span>' +
+        '<span style="font-weight:700;color:#334155;">Behavior — <span id="pnBehRange">last 7 days</span></span>' +
         '<button id="pnBehCopy" type="button" style="' + btnCss + 'display:none;">Copy</button>' +
+        '<span style="margin-left:auto;display:flex;gap:4px;">' +
+        '<button type="button" class="pnBehView" data-days="7" style="' + btnCss + 'border-radius:999px;">7d</button>' +
+        '<button type="button" class="pnBehView" data-days="14" style="' + btnCss + 'border-radius:999px;">14d</button>' +
+        '<button type="button" class="pnBehView" data-days="0" style="' + btnCss + 'border-radius:999px;">All</button>' +
+        '</span>' +
         '</div>' +
         '<div id="pnBehOut" style="color:#0f172a;">Reading notes…</div>';
       var dx = document.getElementById('pnDxBox');
@@ -317,6 +399,36 @@
       };
       behCopy.addEventListener('mousedown', function () { lightBeh(true); });
       window.addEventListener('mouseup', function () { lightBeh(false); });
+      // View switcher: re-render with the chosen window.
+      var vbtns = box.querySelectorAll('.pnBehView');
+      for (var vi = 0; vi < vbtns.length; vi++) {
+        vbtns[vi].addEventListener('click', function () {
+          behDays = +this.getAttribute('data-days');
+          paintViews();
+          render(analyze(behDays));
+        });
+      }
+      // Entry press + jump (no copy - just a button to the note).
+      box.addEventListener('mousedown', function (e) {
+        var j = e.target.closest ? e.target.closest('.pnBehJump') : null;
+        if (paintedJump) { paintedJump.style.background = ''; paintedJump = null; }
+        if (j) { j.style.background = '#dbeafe'; paintedJump = j; }
+      });
+      window.addEventListener('mouseup', function () {
+        if (paintedJump) { paintedJump.style.background = ''; paintedJump = null; }
+      });
+      box.addEventListener('click', function (e) {
+        var j = e.target.closest ? e.target.closest('.pnBehJump') : null;
+        if (!j) return;
+        var row = jumpRows[+j.getAttribute('data-j')];
+        if (!row) return;
+        try { row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        catch (err) { row.scrollIntoView(); }
+        var old = row.style.background;
+        row.style.background = '#dbeafe';
+        if (flashRowTimer) clearTimeout(flashRowTimer);
+        flashRowTimer = setTimeout(function () { row.style.background = old; }, 1600);
+      });
     }
     // Sit inside the white card with the Diagnoses tile when it
     // exists (v1.3); otherwise keep the old standalone placement.
@@ -336,7 +448,7 @@
       var bs = box.parentElement.querySelectorAll(':scope > .pcc-g-badge');
       for (var i2 = 0; i2 < bs.length; i2++) bs[i2].style.display = 'none';
     }
-    render(analyze());
+    render(analyze(behDays));
   }
 
   function tick() {
