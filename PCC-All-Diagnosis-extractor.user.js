@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.26
+// @version 1.27
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -550,10 +550,33 @@
     if (e.key === 'pccGrabSignal' && e.newValue) {
       setTimeout(function () { hideBoxBadge(); }, 400);
     }
-    // G held anywhere: this tile lights for exactly as long as
-    // the press lasts - the tile row's own signal (tmGPress).
+    // G held on a chart page: the tile row's signal (tmGPress).
     if (e.key === 'tmGPress') lightTile(!!e.newValue);
   });
+
+  // On THIS page the tile-row script never runs, so tmGPress is
+  // never written here (his live report, v1.27): the tile lit
+  // for zero milliseconds - only the label flashed. So this
+  // script watches the G key itself (paint only - the grab
+  // itself still belongs to the Grab-all script): lit while
+  // the key is down, restored on release. Same guards as every
+  // key script: trusted, dead while typing, no repeat.
+  function typingNow() {
+    var a = document.activeElement;
+    if (!a) return false;
+    var tg = (a.tagName || '').toLowerCase();
+    return tg === 'input' || tg === 'textarea' || tg === 'select' || !!a.isContentEditable;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (!e.isTrusted || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key !== 'g' && e.key !== 'G') return;
+    if (typingNow()) return;
+    lightTile(true);
+  }, true);
+  document.addEventListener('keyup', function (e) {
+    if (e.key !== 'g' && e.key !== 'G') return;
+    lightTile(false);
+  }, true);
 
   function insertBox(){
     if (document.getElementById('pnDxBox')) return;
