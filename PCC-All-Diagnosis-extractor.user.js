@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.25
+// @version 1.26
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -535,13 +535,14 @@
     if (!box) return;
     var badge = box.querySelector('.pcc-g-badge');
     if (badge) badge.style.display = 'none';
-    // Since the tile itself became the grab target (v1.23), the
-    // grab script parks its G badge right AFTER the tile - the
-    // stray G he saw under the Behavior tile (v1.25). Hide it.
-    var n = box.nextElementSibling;
-    while (n && n.classList && n.classList.contains('pcc-g-badge')) {
-      n.style.display = 'none';
-      n = n.nextElementSibling;
+    // The grab script parks this tile's G badge as a sibling -
+    // and the Behavior tile can slide in between them, so sweep
+    // every badge sharing the tile's parent (on this page the
+    // only grab target is this tile, so any such badge is its).
+    var p = box.parentElement;
+    if (p) {
+      var bs = p.querySelectorAll(':scope > .pcc-g-badge');
+      for (var i = 0; i < bs.length; i++) bs[i].style.display = 'none';
     }
   }
 
@@ -558,34 +559,44 @@
     if (document.getElementById('pnDxBox')) return;
     var all = viewLink('All Notes');
     if (!all) return;
-    var bar = all.parentElement;
+    // v1.26 (his design): both Progress Notes tiles sit on one
+    // white card, like the tile row's background. S and G move
+    // OUT of the Diagnoses tile into their own row above it,
+    // still inside the white card.
+    var wrap = document.getElementById('pnTilesWrap');
+    if (!wrap) {
+      wrap = document.createElement('div');
+      wrap.id = 'pnTilesWrap';
+      wrap.style.cssText = 'background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);padding:10px;margin:8px 0;box-sizing:border-box;';
+      var bar = all.parentElement;
+      bar.parentNode.insertBefore(wrap, bar.nextSibling);
+    }
+    if (!document.getElementById('pnDxBtnRow')) {
+      var hdrCss = 'font-size:13px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;';
+      var row = document.createElement('div');
+      row.id = 'pnDxBtnRow';
+      row.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:8px;';
+      row.innerHTML =
+        '<button class="rh-header-btn" id="pnDxS" type="button" title="Copy name + room (same as the S key)" style="' + hdrCss + '">S</button>' +
+        '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>';
+      wrap.insertBefore(row, wrap.firstChild);
+      document.getElementById('pnDxS').onclick = boxTriggerS;
+      document.getElementById('pnDxG').onclick = boxTriggerG;
+    }
     var box = document.createElement('div');
     box.id = 'pnDxBox';
-    // Tile look, matching the header tiles (white card, soft
-    // border, rounded, shadow). Copy is white until clicked,
-    // then blue - the same on/off language as the header.
-    box.style.cssText = 'margin:8px 0;padding:14px 16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
-    // S and G on the far LEFT, wearing PCC's own rh-header-btn
-    // class - exactly like the S and G beside More on the
-    // resident header (his spec, v1.23). G keeps its light blue.
-    var hdrCss = 'font-size:13px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;';
+    box.style.cssText = 'margin:0;padding:14px 16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
     box.innerHTML =
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
-      '<button class="rh-header-btn" id="pnDxS" type="button" title="Copy name + room (same as the S key)" style="' + hdrCss + '">S</button>' +
-      '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>' +
       '<span id="pnDxLabel" style="font-weight:700;color:#334155;">Diagnoses</span>' +
       '</div>' +
       '<div id="pnDxOut" style="color:#0f172a;"></div>';
     box.style.cursor = 'pointer';
-    bar.parentNode.insertBefore(box, bar.nextSibling);
-    document.getElementById('pnDxS').onclick = boxTriggerS;
-    document.getElementById('pnDxG').onclick = boxTriggerG;
+    wrap.appendChild(box);
     box.addEventListener('click', function (e) {
-      if (e.target.closest && e.target.closest('#pnDxS, #pnDxG')) return;
       tileGrab();
     });
     box.addEventListener('mousedown', function (e) {
-      if (e.target.closest && e.target.closest('#pnDxS, #pnDxG')) return;
       lightTile(true);
     });
     window.addEventListener('mouseup', function () { lightTile(false); });
