@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.27
+// @version      2.28
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1672,7 +1672,6 @@
       labsRow.appendChild(warnBox);
     }
     warnBox.innerHTML = buildWarningsHtml(warnData);
-    if (dashView() === 'main') { pullBoxes(doc); untidyMedsTop(doc); }
     applyMedsView(doc, groups);
     if (dashView() !== 'main') { plantBoxes(doc); tidyMedsTop(doc); }
   }
@@ -2204,6 +2203,7 @@
         if (!isMeds && !DX_FRAME.test(f.id)) return;
         var sig = frameSig(doc);
         if (sig && processedSig[f.id] === sig) return;
+        if (isMeds && dashView() === 'main') { pullBoxes(doc); untidyMedsTop(doc); }
         if (isMeds) sortMeds(doc); else sortDx(doc);
         expand(doc);
         var h = Math.ceil(contentBottom(doc)) + 30;
