@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.28
+// @version      1.29
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -463,7 +463,7 @@
   // target, or a sibling frame's content vetoes this page's badge.
   function docText(doc) { try { return (doc.body ? doc.body.innerText : '').toLowerCase(); } catch (e) { return ''; } }
   function isResidentListDoc(doc) { var t = docText(doc); return t.indexOf('search current residents') !== -1 || (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1); }
-  function isProgressNotesDoc(doc) { var t = docText(doc); if (t.indexOf('view all') !== -1 && (t.indexOf('progress note') !== -1 || t.indexOf('effective date') !== -1)) return true; return t.indexOf('add progress note') !== -1 || t.indexOf('progress notes - view all') !== -1; }
+  function isProgressNotesDoc(doc) { try { if (doc.querySelector('[data-testid="pn-view-all-btn"], [data-testid="pn-add-progress-note-btn"]')) return true; } catch (e) {} var t = docText(doc); if (t.indexOf('view all') !== -1 && (t.indexOf('progress note') !== -1 || t.indexOf('effective date') !== -1)) return true; return t.indexOf('add progress note') !== -1 || t.indexOf('progress notes - view all') !== -1; }
   function isFormsListDoc(doc) { var t = docText(doc); return (t.indexOf('forms list') !== -1 || t.indexOf('in progress list') !== -1) && t.indexOf('form type') !== -1 && t.indexOf('created by') !== -1; }
   function isFormsGridDoc(doc) { var t = docText(doc); return (t.indexOf('assessment date') !== -1 || t.indexOf('form date') !== -1) && t.indexOf('created by') !== -1; }
   function isSectionListDoc(doc) {
