@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: diagnosis extractor
-// @version 1.22
+// @version 1.23
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Diagnosis-extractor.user.js
 // @match        https://*.pointclickcare.com/*
@@ -336,7 +336,7 @@
   }
 
   function copyText(text, btn){
-    function done(){ var o = btn.textContent; btn.textContent = 'Copied'; setTimeout(function(){ btn.textContent = o; }, 1200); }
+    function done(){ if (!btn) return; var o = btn.textContent; btn.textContent = 'Copied'; setTimeout(function(){ btn.textContent = o; }, 1200); }
     try {
       if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(text).then(done, fb); return; }
     } catch (e) {}
@@ -418,35 +418,51 @@
     return out;
   }
 
+  var dxText = '';
   function runDx(){
     var out = document.getElementById('pnDxOut');
-    var copy = document.getElementById('pnDxCopy');
+    var box = document.getElementById('pnDxBox');
     var res = extractDx(notesText());
     var items = res.items;
     if (!items.length) {
+      dxText = '';
       out.textContent = 'No serious diagnoses found in the loaded notes.';
-      copy.style.display = 'none';
       return;
     }
     // A clinician's own list (Dx- / Additional / Secondary) is presented
     // as written; the abbreviation pass is only for prose-mined items.
     items = res.verbatimOnly ? items : abbrDx(items);
     var text = items.join(', ');
+    dxText = text;
     out.textContent = text;
-    copy.style.display = '';
-    copy.style.background = '#fff';
-    copy.style.color = '#2563eb';
-    copy.setAttribute('data-fill-value', text);
-    copy.onclick = function(){
-      markCopied();
-      copyText(text, copy);
-      setTimeout(markCopied, 60);
-      setTimeout(markCopied, 1300);
-      // Also drop a fill request so the note panel can insert after "Medical Hx".
-      try {
-        localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: text, ts: Date.now() }));
-      } catch(err){}
-    };
+    // The TILE is the copy target now (v1.23, his redesign): it
+    // carries the fill contract the Copy button used to carry, so
+    // the G key / grab-all still queue these diagnoses.
+    if (box) {
+      box.classList.add('pcc-fill-copy');
+      box.setAttribute('data-fill-label', 'Diagnoses');
+      box.setAttribute('data-fill-value', text);
+    }
+  }
+
+  // Clicking the tile = clicking the old Copy button (his spec,
+  // v1.23): the tile turns light blue, the diagnoses copy and
+  // queue for the note; a click anywhere else turns it white.
+  function tileGrab(){
+    if (!dxText) return;
+    paintTileBlue();
+    copyText(dxText, null);
+    try {
+      localStorage.setItem('pccFillDiagnoses', JSON.stringify({ value: dxText, ts: Date.now() }));
+    } catch (err) {}
+  }
+  function paintTileBlue(){
+    var b = document.getElementById('pnDxBox');
+    if (b) b.style.background = '#dbeafe';
+  }
+  function paintTileWhite(){
+    var b = document.getElementById('pnDxBox');
+    if (b) b.style.background = '#fff';
   }
 
   // S and G buttons for the box, same actions as the header's
@@ -480,13 +496,8 @@
   // The button's clicked state is BLUE (like the header tiles
   // lighting up) - the word 'Copied' never shows. markCopied is
   // re-asserted after the copy helper's text flash would land.
-  function markCopied() {
-    var c = document.getElementById('pnDxCopy');
-    if (!c) return;
-    c.textContent = 'Copy';
-    c.style.background = '#2563eb';
-    c.style.color = '#fff';
-  }
+  // (v1.23: markCopied painted the old Copy button blue; the
+  // tile itself paints now - see paintTileBlue above.)
 
   // The tile has its own G now - hide the grab-all badge that
   // parks itself next to this Copy button (the G key and the
@@ -498,10 +509,10 @@
     if (badge) badge.style.display = 'none';
   }
 
-  // A G grab from anywhere turns this button blue too.
+  // A G grab from anywhere turns this tile blue too.
   window.addEventListener('storage', function (e) {
     if (e.key === 'pccGrabSignal' && e.newValue) {
-      setTimeout(function () { markCopied(); hideBoxBadge(); }, 400);
+      setTimeout(function () { paintTileBlue(); hideBoxBadge(); }, 400);
     }
   });
 
@@ -516,20 +527,25 @@
     // border, rounded, shadow). Copy is white until clicked,
     // then blue - the same on/off language as the header.
     box.style.cssText = 'margin:8px 0;padding:14px 16px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
-    var btnCss = 'padding:2px 10px;font-size:11px;font-weight:600;cursor:pointer;border-radius:6px;border:1px solid #cbd5e1;background:#fff;color:#334155;';
+    // S and G on the far LEFT, wearing PCC's own rh-header-btn
+    // class - exactly like the S and G beside More on the
+    // resident header (his spec, v1.23). G keeps its light blue.
+    var hdrCss = 'font-size:13px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;';
     box.innerHTML =
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
+      '<button class="rh-header-btn" id="pnDxS" type="button" title="Copy name + room (same as the S key)" style="' + hdrCss + '">S</button>' +
+      '<button class="rh-header-btn" id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + hdrCss + 'background:#dbeafe;">G</button>' +
       '<span style="font-weight:700;color:#334155;">Diagnoses</span>' +
-      '<button id="pnDxRun" type="button" style="' + btnCss + '">Find diagnoses</button>' +
-      '<button class="pcc-fill-copy" id="pnDxCopy" data-fill-label="Diagnoses" type="button" style="' + btnCss + 'border-color:#2563eb;color:#2563eb;display:none;">Copy</button>' +
-      '<button id="pnDxS" type="button" title="Copy name + room (same as the S key)" style="' + btnCss + 'margin-left:auto;">S</button>' +
-      '<button id="pnDxG" type="button" title="Grab all - queue everything on screen (same as the G key)" style="' + btnCss + 'background:#dbeafe;border-color:#93c5fd;color:#1d4ed8;">G</button>' +
       '</div>' +
       '<div id="pnDxOut" style="color:#0f172a;"></div>';
+    box.style.cursor = 'pointer';
     bar.parentNode.insertBefore(box, bar.nextSibling);
-    document.getElementById('pnDxRun').onclick = runDx;
     document.getElementById('pnDxS').onclick = boxTriggerS;
     document.getElementById('pnDxG').onclick = boxTriggerG;
+    box.addEventListener('click', function (e) {
+      if (e.target.closest && e.target.closest('#pnDxS, #pnDxG')) return;
+      tileGrab();
+    });
     runDx();
     hideBoxBadge();
     setTimeout(hideBoxBadge, 600);
@@ -546,7 +562,19 @@
       return;
     }
     insertBox();
+    if (document.getElementById('pnDxBox')) {
+      var len = notesText().length;
+      if (len !== lastNotesLen) { lastNotesLen = len; runDx(); }
+    }
   }
+  var lastNotesLen = -1;
+
+  // His spec: the tile is white when it is not clicked.
+  document.addEventListener('click', function (e) {
+    if (!e.isTrusted) return;
+    var b = document.getElementById('pnDxBox');
+    if (b && !b.contains(e.target)) paintTileWhite();
+  }, true);
 
   // Scheduling: bounded staggered runs after load + re-run on your clicks.
   // (Permanent interval removed in the reorganization — no-timers rule.)
