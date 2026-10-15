@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.1
+// @version      1.2
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -204,6 +204,36 @@
     } catch (e) {}
   }
 
+  // Views row cleanup (his ask, v1.2): he only ever looks at
+  // All Notes and Custom - hide the time-window links and the
+  // dashes that separate them. Display only.
+  var HIDE_VIEWS = ['Last 8 hrs', 'Last 24 hrs', 'Last 72 hrs', 'Last 7 days', 'Last 30 days'];
+  function hideViewLinks() {
+    var bar = document.querySelector('.pn-views-bar');
+    if (!bar) return;
+    var links = bar.querySelectorAll('a');
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i];
+      var tid = a.getAttribute('data-testid') || '';
+      var m = /option-(\d+)$/.exec(tid);
+      var byText = HIDE_VIEWS.indexOf((a.textContent || '').trim()) !== -1;
+      if (!((m && +m[1] >= 2) || byText)) continue;
+      a.style.display = 'none';
+      var p = a.previousSibling;
+      if (p && p.nodeType === 3 && /^\s*-\s*$/.test(p.nodeValue)) p.nodeValue = '';
+    }
+  }
+
+  // Press language, same as the tile row (his ask, v1.2): while
+  // the Copy button is pressed, this tile lights light blue with
+  // the #93c5fd border; release restores it.
+  function lightBeh(on) {
+    var b = document.getElementById('pnBehBox');
+    if (!b) return;
+    b.style.background = on ? '#dbeafe' : '#fff';
+    b.style.borderColor = on ? '#93c5fd' : '#e2e8f0';
+  }
+
   function viewLink(txt) {
     var links = document.querySelectorAll('a');
     for (var i = 0; i < links.length; i++) if ((links[i].textContent || '').trim() === txt) return links[i];
@@ -231,10 +261,13 @@
         var bar = all.parentElement;
         bar.parentNode.insertBefore(box, bar.nextSibling);
       }
-      document.getElementById('pnBehCopy').onclick = function () {
+      var behCopy = document.getElementById('pnBehCopy');
+      behCopy.onclick = function () {
         var t = this.getAttribute('data-text');
         if (t) copyText(t, this);
       };
+      behCopy.addEventListener('mousedown', function () { lightBeh(true); });
+      window.addEventListener('mouseup', function () { lightBeh(false); });
     } else {
       // keep it tucked directly under the Diagnoses tile
       var dx2 = document.getElementById('pnDxBox');
@@ -248,6 +281,7 @@
   function tick() {
     var all = viewLink('All Notes');
     if (!all) return;
+    hideViewLinks();
     // Same one-time expansion the diagnosis extractor uses: the
     // full note text only loads in the All Notes view. Shared
     // session flag so the two scripts never double-click it.
