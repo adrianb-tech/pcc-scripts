@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.4
+// @version      1.5
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -229,7 +229,7 @@
     var b = document.getElementById('pnBehBox');
     if (!b) return;
     b.style.background = on ? '#dbeafe' : '#fff';
-    b.style.borderColor = on ? '#93c5fd' : '#e2e8f0';
+    b.style.borderColor = on ? '#93c5fd' : '#cbd5e1';
   }
 
   // Move the Views into the header (his layout, v1.4): top
@@ -240,12 +240,36 @@
   function moveViews() {
     var bar = document.querySelector('.pn-views-bar');
     if (!bar || document.getElementById('pnViewsMoved')) return;
+    // Anchor on the page title, not the first 'Resident' span
+    // on the page (v1.5 - live, the first match was some other
+    // element and the links landed somewhere invisible): the
+    // resident row is the block inside the SAME header as the
+    // 'Progress Notes - View All' title.
     var nameRow = null;
-    var spans = document.querySelectorAll('span');
-    for (var i = 0; i < spans.length; i++) {
-      if ((spans[i].textContent || '').trim() === 'Resident' && spans[i].parentElement) {
-        nameRow = spans[i].parentElement;
+    var allSpans = document.querySelectorAll('span');
+    var headerDiv = null;
+    for (var i = 0; i < allSpans.length; i++) {
+      if ((allSpans[i].textContent || '').trim() === 'Progress Notes - View All') {
+        headerDiv = allSpans[i].parentElement;
         break;
+      }
+    }
+    if (headerDiv) {
+      var kids = headerDiv.querySelectorAll('div');
+      for (var k = 0; k < kids.length; k++) {
+        var ks = kids[k].querySelectorAll('span');
+        for (var s = 0; s < ks.length; s++) {
+          if ((ks[s].textContent || '').trim() === 'Resident') { nameRow = kids[k]; break; }
+        }
+        if (nameRow) break;
+      }
+    }
+    if (!nameRow) {
+      for (var j = 0; j < allSpans.length; j++) {
+        if ((allSpans[j].textContent || '').trim() === 'Resident' && allSpans[j].parentElement) {
+          nameRow = allSpans[j].parentElement;
+          break;
+        }
       }
     }
     if (!nameRow) return;
