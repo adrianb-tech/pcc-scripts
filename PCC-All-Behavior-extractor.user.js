@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.11
+// @version      1.12
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -336,24 +336,42 @@
         unmarkNote();
         if (wrap) { try { wrap.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (err) { wrap.scrollIntoView(); } }
       });
+      // Judge ONCE (his rule, v1.12, same as the diagnoses
+      // tile): the chosen button stays filled, both lock, and
+      // 'completed' stays written there. The why can still be
+      // finished afterwards - it updates the same record.
+      var curVerdict = '';
       function paintVerdict(v) {
         rBtn.style.background = v === 'right' ? '#dcfce7' : '#fff';
         rBtn.style.borderColor = v === 'right' ? '#15803d' : '#cbd5e1';
         wBtn.style.background = v === 'wrong' ? '#fee2e2' : '#fff';
         wBtn.style.borderColor = v === 'wrong' ? '#b91c1c' : '#cbd5e1';
-        savedSpan.textContent = v ? 'saved' : '';
+        var locked = !!v;
+        rBtn.disabled = locked;
+        wBtn.disabled = locked;
+        rBtn.style.cursor = locked ? 'default' : 'pointer';
+        wBtn.style.cursor = locked ? 'default' : 'pointer';
+        savedSpan.textContent = v ? 'completed' : '';
       }
-      function saveVerdict(v) {
-        fbSave({
+      function recFor(v) {
+        return {
           k: 'beh|' + entry.label + '|' + entry.when + '|' + (entry.desc || '').slice(0, 40),
           kind: 'beh', verdict: v, signal: entry.label, when: entry.when, type: entry.type,
           sentence: entry.desc, phrase: entry.phrase, why: whyInp.value || '',
           site: location.hostname, ts: Date.now(), sent: false
-        });
+        };
+      }
+      function saveVerdict(v) {
+        if (curVerdict) return;
+        curVerdict = v;
+        fbSave(recFor(v));
         paintVerdict(v);
         lastSig = '';
         render(analyze(behDays));
       }
+      whyInp.addEventListener('change', function () {
+        if (curVerdict) fbSave(recFor(curVerdict));
+      });
       rBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); saveVerdict('right'); });
       wBtn.addEventListener('click', function (e) { e.preventDefault(); e.stopPropagation(); saveVerdict('wrong'); });
       whyInp.addEventListener('click', function (e) { e.stopPropagation(); });
@@ -362,7 +380,7 @@
       var prev = fbLoad().filter(function (r) {
         return r.kind === 'beh' && r.signal === entry.label && r.when === entry.when;
       })[0];
-      if (prev) { whyInp.value = prev.why || ''; paintVerdict(prev.verdict); }
+      if (prev) { whyInp.value = prev.why || ''; curVerdict = prev.verdict; paintVerdict(prev.verdict); }
       entry.cell.insertBefore(bar, entry.cell.firstChild);
     }
     marked = { cells: recs, span: span, bar: bar };
