@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.26
+// @version      2.27
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -882,6 +882,7 @@
       var next = dashView() === 'main' ? 'mica' : 'main';
       try { localStorage.setItem('tmDashView2', next); } catch (e) {}
       b.textContent = next === 'main' ? 'View: Mica' : 'View: Main';
+      processedSig = {};
       fit();
     };
     // The button lives in its own row, NOT inside the Views cell -
@@ -2173,6 +2174,25 @@
     }
   }
 
+  // SPEED (his ask, 2026-10-14: setup took ~10s). Two changes:
+  // (1) a frame is only re-processed when its content actually
+  // changed - a cheap order-independent signature (row count +
+  // total row text) gates the heavy sort/screen/expand work;
+  // (2) passes are driven by the widget frames' own load events
+  // plus a few early clock passes, not a blind 10s ladder.
+  var processedSig = {};
+  function frameSig(doc) {
+    var best = null, bestRows = 0;
+    doc.querySelectorAll('table').forEach(function (tb) {
+      var n = tb.rows ? tb.rows.length : 0;
+      if (n > bestRows) { bestRows = n; best = tb; }
+    });
+    if (!best || bestRows < 2) return '';
+    var sum = 0;
+    for (var i = 0; i < best.rows.length; i++) sum += (best.rows[i].textContent || '').length;
+    return bestRows + ':' + sum;
+  }
+
   function fit() {
     plantViewToggle();
     applySideBySide();
@@ -2180,19 +2200,24 @@
       try {
         var doc = f.contentDocument || f.contentWindow.document;
         if (!doc || !doc.body) return;
-        if (f.id === 'iFramePanel_Medications') sortMeds(doc);
-        else if (DX_FRAME.test(f.id)) sortDx(doc);
+        var isMeds = f.id === 'iFramePanel_Medications';
+        if (!isMeds && !DX_FRAME.test(f.id)) return;
+        var sig = frameSig(doc);
+        if (sig && processedSig[f.id] === sig) return;
+        if (isMeds) sortMeds(doc); else sortDx(doc);
         expand(doc);
         var h = Math.ceil(contentBottom(doc)) + 30;
         if (h > 80 && Math.abs(h - f.offsetHeight) > 5) f.style.height = h + 'px';
         unclipParents(f);
+        if (sig) processedSig[f.id] = sig;
       } catch (e) {}
     });
   }
 
-  // Run at staggered delays to catch PCC's late-loading iframes (not a permanent interval)
-  setTimeout(fit, 1500);
-  setTimeout(fit, 3000);
-  setTimeout(fit, 6000);
-  setTimeout(fit, 10000);
+  // The widget frames announce themselves: run a pass just after
+  // each one loads, plus early clock passes and one late safety.
+  document.querySelectorAll('iframe[id^="iFramePanel_"]').forEach(function (f) {
+    f.addEventListener('load', function () { setTimeout(fit, 100); });
+  });
+  [400, 900, 1800, 3200, 5000].forEach(function (ms) { setTimeout(fit, ms); });
 })();
