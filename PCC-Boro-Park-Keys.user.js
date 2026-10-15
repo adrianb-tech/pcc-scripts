@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.9
+// @version      2.10
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -597,6 +597,10 @@
     try {
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
+        // Exact anchor first: the evergreen page's View All button
+        // carries a stable testid (his capture, 2026-10-15).
+        var exact = docs[d].querySelector('[data-testid="pn-view-all-btn"]');
+        if (exact && visible(exact)) return exact;
         // First try standard clickable elements (lenient match)
         var els = docs[d].querySelectorAll('a, button, input[type="button"], input[type="submit"]');
         for (var i = 0; i < els.length; i++) {
@@ -1033,6 +1037,20 @@
   applyFViewAllBadge();
   setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
+  setTimeout(applyFViewAllBadge, 8000);
+  // The evergreen Progress Notes page renders late and can
+  // re-render its toolbar, wiping this badge after the load
+  // passes end (his capture, 2026-10-15: button present, badge
+  // gone). Re-plant on trusted clicks, throttled - the suite's
+  // usual click re-run pattern.
+  var vaLast = 0;
+  document.addEventListener('click', function (e) {
+    if (!e.isTrusted) return;
+    var now = Date.now();
+    if (now - vaLast < 1500) return;
+    vaLast = now;
+    setTimeout(applyFViewAllBadge, 400);
+  }, true);
   applyFResidentProfileBadge();
   setTimeout(applyFResidentProfileBadge, 1500);
   setTimeout(applyFResidentProfileBadge, 4000);
