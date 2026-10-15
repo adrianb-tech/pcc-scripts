@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.25
+// @version      2.26
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1763,6 +1763,47 @@
     // Main view keeps only the Order column (his list, 2026-10-14:
     // Duplicate, Alert, Order Status, Revised, Last Ordered go).
     trimTable(doc, mTable, ['Order'], !mica);
+    sealBoxes(mTable);
+  }
+
+  function ensurePadStyle(doc) {
+    if (doc.getElementById('tmPadStyle')) return;
+    var st = doc.createElement('style');
+    st.id = 'tmPadStyle';
+    st.textContent = '.tmPadTable td, .tmPadTable th { padding-left: 10px !important; }';
+    doc.head.appendChild(st);
+  }
+
+  // The psych/pain boxes are drawn with per-cell borders; when
+  // columns are hidden the side borders land on hidden cells and
+  // a side goes missing. Seal every boxed row: sides on the
+  // first/last VISIBLE cells, top/bottom across all visible
+  // cells, in the row's own box color.
+  function sealBoxes(table) {
+    if (!table) return;
+    table.querySelectorAll('tr').forEach(function (r) {
+      var cells = r.cells || [];
+      var color = '';
+      for (var i = 0; i < cells.length; i++) {
+        var c = cells[i].style.borderLeftColor || cells[i].style.borderTopColor || '';
+        if (c) { color = c; break; }
+      }
+      if (!color) return;
+      var vis = [];
+      for (var j = 0; j < cells.length; j++) {
+        if (!cells[j].hasAttribute('data-tm-colhide')) vis.push(cells[j]);
+      }
+      if (!vis.length) return;
+      var hasTop = false, hasBottom = false;
+      for (var k = 0; k < cells.length; k++) {
+        if (cells[k].style.borderTop) hasTop = true;
+        if (cells[k].style.borderBottom) hasBottom = true;
+      }
+      vis[0].style.borderLeft = '3px solid ' + color;
+      vis[vis.length - 1].style.borderRight = '3px solid ' + color;
+      if (hasTop) vis.forEach(function (c) { c.style.borderTop = '3px solid ' + color; });
+      if (hasBottom) vis.forEach(function (c) { c.style.borderBottom = '3px solid ' + color; });
+    });
   }
 
   // Trim a PCC table to the columns he cares about (Main view):
@@ -1776,8 +1817,11 @@
       table.querySelectorAll('[data-tm-colhide="1"]').forEach(function (c) {
         c.style.display = ''; c.removeAttribute('data-tm-colhide');
       });
+      table.classList.remove('tmPadTable');
       return;
     }
+    table.classList.add('tmPadTable');
+    ensurePadStyle(doc);
     var rows = table.querySelectorAll('tr');
     var hdr = null, hideIdx = [];
     rows.forEach(function (r) {
@@ -1967,6 +2011,9 @@
         g.rows.forEach(function(r) { tbody.appendChild(r); });
       });
     }
+    doc.querySelectorAll('a').forEach(function (a) {
+      if ((a.textContent || '').replace(/\s+/g, ' ').trim() === 'Add Diagnosis') a.style.display = 'none';
+    });
     // Box around psych diagnoses (tier 0 F-codes + tier 1 G-codes like insomnia/dementia, blue)
     // when psych-dx-first is on
     if (on) boxTier(sorted, function(g) { return g.tier <= 1; }, '#2563eb');
@@ -1993,6 +2040,7 @@
     var panel = doc.getElementById('tmDxPanel');
     // Main view keeps only ICD-10 + Short Description.
     trimTable(doc, table, ['ICD-10', 'Short Description'], !folded);
+    sealBoxes(table);
     if (!folded) {
       if (panel) panel.remove();
       if (table) table.style.display = '';
