@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Progress Notes: behavior extractor
 // @namespace    mica.pcc
-// @version      1.9
+// @version      1.10
 // @description  On the Progress Notes View All page, reads the loaded notes and shows a Behavior tile under the Diagnoses tile: how many notes in the last 7 days mention each behavior/symptom signal (refusals, agitation, falls, poor sleep...). Negated mentions ("no agitation", "denies falling") and template labels do not count. Display + Copy only; nothing is clicked or filled.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -543,7 +543,7 @@
     return null;
   }
 
-  function insertBox() {
+  function insertBox(skipScan) {
     var all = viewLink('All Notes');
     if (!all) return;
     var box = document.getElementById('pnBehBox');
@@ -622,7 +622,20 @@
       var bs = box.parentElement.querySelectorAll(':scope > .pcc-g-badge');
       for (var i2 = 0; i2 < bs.length; i2++) bs[i2].style.display = 'none';
     }
-    render(analyze(behDays));
+    if (!skipScan) render(analyze(behDays));
+  }
+
+  // Speed (v1.10): re-scanning every note on every pass was
+  // the page's main drag. The scan now runs only when the
+  // notes table actually changed (rows + total text length);
+  // repeat passes cost almost nothing.
+  var lastFp = '';
+  function notesFp() {
+    var links = viewLinks();
+    if (!links.length) return '';
+    var table = links[0].closest('table');
+    if (!table) return '';
+    return table.rows.length + ':' + (table.textContent || '').length;
   }
 
   function tick() {
@@ -638,7 +651,14 @@
       all.click();
       return;
     }
-    insertBox();
+    var fp = notesFp();
+    if (fp && fp === lastFp && document.getElementById('pnBehBox')) {
+      // unchanged notes: still keep the wrap/badge housekeeping
+      insertBox(true);
+      return;
+    }
+    if (fp) lastFp = fp;
+    insertBox(false);
   }
 
   [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(tick, ms); });
