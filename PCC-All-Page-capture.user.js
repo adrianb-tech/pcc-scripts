@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.6
+// @version      1.7
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -69,13 +69,13 @@
     if (!Array.isArray(all)) all = [];
     var unsent = all.filter(function (r) { return !r.sent; });
     var payload = JSON.stringify({ total: all.length, unsent: unsent }).replace(/<\//g, '<\\/');
-    var block = '\n\n<!-- ================= PN FEEDBACK STORE (unsent judgements ride here) ================= -->\n' +
+    // Since v1.7 the HTML capture embeds a COPY of the unsent
+    // judgements but does NOT mark them sent: REVIEW is the
+    // delivery channel now, and a one-off capture photo must
+    // not empty the pile before the batch goes out. (This
+    // competition is why his fresh judgement 'vanished'.)
+    return '\n\n<!-- ================= PN FEEDBACK STORE (copy of unsent judgements; REVIEW delivers them) ================= -->\n' +
       '<script type="application/json" id="pn-feedback-store">' + payload + '</' + 'script>';
-    if (unsent.length) {
-      all.forEach(function (r) { r.sent = true; });
-      try { localStorage.setItem('pnFeedback', JSON.stringify(all)); } catch (e) {}
-    }
-    return block;
   }
 
   // Auto-redaction (v1.5; name format fixed v1.6): every
@@ -106,6 +106,12 @@
   function learnNamesFromText(text) {
     var m = /Resident:\s*([A-Z][A-Za-z' -]+),\s*([A-Z][A-Za-z]+)/.exec(text || '');
     if (m) return nameVariants(m[1].trim(), m[2].trim());
+    var hi = (text || '').indexOf('Progress Notes - View All');
+    if (hi !== -1) {
+      var near = (text || '').slice(hi, hi + 400);
+      var hm = /([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(near);
+      if (hm) return parseName(hm[1] + ', ' + hm[2], '');
+    }
     var W = "[A-Za-z][A-Za-z'\u2019.\-]+";
     for (var words = 1; words <= 3; words++) {
       var pat = '(' + W + '(?:\s+' + W + '){' + (words - 1) + '}' +
@@ -124,6 +130,24 @@
         if (/^clinical\s/i.test(tx)) continue;
         var em = NAME_EL.exec(tx);
         if (em) return parseName(em[1].trim(), em[2]);
+      }
+      // The Progress Notes header carries the name WITHOUT the
+      // (CODE) suffix: learn it inside that header block only -
+      // the block holding the 'Progress Notes - View All'
+      // title - from an element starting 'Last, First'.
+      var spans = doc.querySelectorAll('span');
+      for (var s = 0; s < spans.length; s++) {
+        if ((spans[s].textContent || '').replace(/\s+/g, ' ').trim() !== 'Progress Notes - View All') continue;
+        var block = spans[s].parentElement;
+        if (!block) break;
+        var inner = block.querySelectorAll('span, div, a, b, strong');
+        for (var j = 0; j < inner.length; j++) {
+          var itx = (inner[j].textContent || '').replace(/\s+/g, ' ').trim();
+          if (itx.length > 60 || itx.length < 5) continue;
+          var im = /^([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(itx);
+          if (im) return parseName(im[1] + ', ' + im[2], '');
+        }
+        break;
       }
     } catch (e) {}
     try { return learnNamesFromText((doc.body && doc.body.textContent) || ''); } catch (e) { return []; }
