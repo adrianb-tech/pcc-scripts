@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.10
+// @version      1.11
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -183,7 +183,46 @@
         break;
       }
     } catch (e) {}
+    // Path 4 (v1.11): the name's own element, wherever it sits -
+    // a SHORT element whose text starts 'Last, First' with no
+    // required suffix. Topmost on the page wins (the header
+    // zone), then shortest. Long prose can't qualify.
+    try {
+      var els4 = doc.querySelectorAll('span, div, td, a, b, strong, li, h1, h2, h3');
+      var hits = [];
+      for (var q = 0; q < els4.length; q++) {
+        var qtx = (els4[q].textContent || '').replace(/\s+/g, ' ').trim();
+        if (qtx.length > 80 || qtx.length < 5) continue;
+        if (/^clinical\s/i.test(qtx)) continue;
+        var qm = /^([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(qtx);
+        if (qm) {
+          var qr = null;
+          try { qr = els4[q].getBoundingClientRect(); } catch (e) {}
+          hits.push({ tx: qtx, top: qr ? qr.top : 9999, m: qm });
+        }
+      }
+      hits.sort(function (a, b) { return (a.top - b.top) || (a.tx.length - b.tx.length); });
+      if (hits.length) return parseName(hits[0].m[1] + ', ' + hits[0].m[2], '');
+    } catch (e) {}
     try { return learnNamesFromText((doc.body && doc.body.textContent) || ''); } catch (e) { return []; }
+  }
+
+  // Masked shapes of the name-candidate elements (v1.11):
+  // shows the redactor exactly how the name element is built
+  // on this page - punctuation visible, every word masked.
+  function nameShapes(doc) {
+    var out = [];
+    try {
+      var els = doc.querySelectorAll('span, div, td, a, b, strong, li');
+      for (var i = 0; i < els.length && out.length < 4; i++) {
+        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx.length > 80 || tx.length < 5) continue;
+        if (/^[A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?\s*,\s*[A-Z][A-Za-z'\u2019\-]+/.test(tx)) {
+          out.push(tx.replace(/[A-Za-z]{3,}/g, '###').replace(/\d{3,}/g, '###'));
+        }
+      }
+    } catch (e) {}
+    return out;
   }
   function redactStr(s, names) {
     var out = String(s);
@@ -233,11 +272,11 @@
         // As a real element at the top of the saved file it is
         // findable and copyable. The shape text stays masked.
         try {
-          var ptxt = probes(document);
-          var shm = /HEADER SHAPE: ([^\n]*)/.exec(ptxt);
+          var shapes = nameShapes(document);
           var banner = document.createElement('div');
           banner.setAttribute('style', 'border:2px solid #b91c1c;background:#fef2f2;color:#7f1d1d;padding:10px 12px;font:12px monospace;white-space:pre-wrap;word-break:break-all;');
-          banner.textContent = 'HEADER SHAPE (masked - safe to copy to Mica): ' + (shm ? shm[1] : 'title span not found');
+          banner.textContent = 'HEADER SHAPE (masked - safe to copy to Mica): ' +
+            (shapes.length ? shapes.join('  |  ') : 'no name-shaped element found');
           lines.push(banner.outerHTML);
         } catch (e) {}
         walk(document, 0, lines, { value: 0 });
