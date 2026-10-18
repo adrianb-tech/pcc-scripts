@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.18
+// @version      1.19
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -131,7 +131,7 @@
   function variantsFromPair(first, last) {
     var vs = [], seen = {};
     function add(s) { if (s && s.length > 2 && !seen[s]) { seen[s] = 1; vs.push(s); } }
-    add(last + ', ' + first); add(first + ' ' + last); add(last + ' ' + first);
+    add(last + ', ' + first); add(first + ', ' + last); add(first + ' ' + last); add(last + ' ' + first);
     add(last.toUpperCase() + ', ' + first); add(last); add(first);
     add(last.toUpperCase());
     vs.sort(function (a, b) { return b.length - a.length; });
@@ -139,8 +139,6 @@
   }
 
   function learnNamesFromText(text) {
-    var m = /Resident:\s*([A-Z][A-Za-z' -]+),\s*([A-Z][A-Za-z]+)/.exec(text || '');
-    if (m) return nameVariants(m[1].trim(), m[2].trim());
     var hi = (text || '').indexOf('Progress Notes - View All');
     if (hi !== -1) {
       var near = (text || '').slice(hi, hi + 400);
@@ -245,6 +243,34 @@
         }
         if (keep.length >= 2) return (LEARN_PATH = 'heading', variantsFromPair(keep[0], keep[keep.length - 1]));
         if (keep.length === 1 && toks.length === 1) return variantsFromPair('', keep[0]).filter(function (v) { return v.indexOf(',') === -1; });
+      }
+    } catch (e) {}
+    // Path 6 (v1.19): mine the name out of the page text
+    // itself. The resident's two name words are the pair that
+    // keeps appearing ADJACENT - in some order, with or
+    // without a comma - all over the notes. Count capitalized
+    // tokens (stoplist applied), then find the pair with the
+    // most adjacencies (needs 3+, one token 8+ mentions).
+    // Format-free: no header shape is assumed at all.
+    try {
+      var tx6 = treeText || (doc.body && doc.body.textContent) || '';
+      if (tx6.length > 4000) {
+        var STOP = { Progress: 1, Notes: 1, Note: 1, View: 1, All: 1, Clinical: 1, Nursing: 1, Behavior: 1, Medical: 1, Resident: 1, Residents: 1, Date: 1, Time: 1, Name: 1, Status: 1, Type: 1, Facility: 1, Center: 1, The: 1, And: 1, Plan: 1, Care: 1, Staff: 1, Patient: 1, Signed: 1, Document: 1, January: 1, February: 1, March: 1, April: 1, May: 1, June: 1, July: 1, August: 1, September: 1, October: 1, November: 1, December: 1 };
+        var counts = {}, toks = tx6.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
+        for (var ci = 0; ci < toks.length; ci++) { var tk = toks[ci]; if (!STOP[tk]) counts[tk] = (counts[tk] || 0) + 1; }
+        var top = Object.keys(counts).filter(function (k) { return counts[k] >= 5; })
+          .sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 12);
+        var escR = function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
+        var best = null;
+        for (var a = 0; a < top.length; a++) for (var b = 0; b < top.length; b++) {
+          if (a === b) continue;
+          var A = top[a], B = top[b];
+          var forms = [A + ' ' + B, A + ', ' + B, A + ' ' + B.toUpperCase(), A.toUpperCase() + ', ' + B];
+          var adj = 0;
+          for (var fi = 0; fi < forms.length; fi++) adj += (tx6.match(new RegExp(escR(forms[fi]), 'g')) || []).length;
+          if (adj >= 3 && Math.max(counts[A], counts[B]) >= 8 && (!best || adj > best.adj)) best = { A: A, B: B, adj: adj };
+        }
+        if (best) return (LEARN_PATH = 'mined', variantsFromPair(best.A, best.B));
       }
     } catch (e) {}
     try { return learnNamesFromText((doc.body && doc.body.textContent) || ''); } catch (e) { return []; }
