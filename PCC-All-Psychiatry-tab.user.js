@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.2
+// @version      1.3
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -121,22 +121,9 @@
         '<span style="font:400 12px ' + FONT + ';color:#94a3b8;">the one page — everything psychiatrically connected, in one place</span>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
-        miniTile('Admission', 'admission') + miniTile('Age/Sex', 'ageSex') + miniTile('Room', 'room') + miniTile('Allergies', 'allergies') +
-        buttonTile('tmPsychWeightBtn', 'Weight', 'weight') +
-        miniTile('Psych meds', 'psychMeds') +
-      '</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
-        buttonTile('tmPsychBimsBtn', 'BIMS — latest', 'bims') +
-        miniTile('Relationships', 'relations') + miniTile('Facesheet', 'facesheet') + miniTile('Diagnoses', 'diagnoses') +
+        miniTile('Diagnoses', 'diagnoses') + miniTile('Relationships', 'relations') + miniTile('Facesheet', 'facesheet') + miniTile('Admission facts', 'admissionFacts') +
       '</div>' +
       '<div id="tmPsychStamp" style="font:400 11px ' + FONT + ';color:#94a3b8;margin-bottom:8px;">Gatherer: waiting…</div>' +
-      '<div id="tmPsychPop" style="display:none;background:#f8fafc;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;margin-bottom:10px;">' +
-        '<div style="display:flex;justify-content:space-between;align-items:baseline;">' +
-          '<span id="tmPsychPopTitle" style="font:700 13px ' + FONT + ';color:#0f172a;"></span>' +
-          '<span id="tmPsychPopX" role="button" style="cursor:pointer;font:700 13px ' + FONT + ';color:#64748b;">✕</span>' +
-        '</div>' +
-        '<div id="tmPsychPopBody" style="font:400 12.5px ' + FONT + ';color:#94a3b8;margin-top:4px;"></div>' +
-      '</div>' +
       '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:10px;">' +
         '<div style="font:700 13px ' + FONT + ';color:#9a3412;">Your words</div>' +
         '<textarea id="tmPsychWords" rows="3" placeholder="Dictate or type here — verbatim, editable. Lives only on this page; nothing is saved or sent." ' +
@@ -144,39 +131,12 @@
           'padding:8px;font:400 14px ' + FONT + ';color:#0f172a;background:#ffffff;resize:vertical;"></textarea>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-        sectionTile('Script summary', 'summary') + sectionTile('Behaviors', 'behaviors') + sectionTile('Labs & monitoring', 'labs') +
+        sectionTile('Script summary', 'summary') + sectionTile('Behaviors', 'behaviors') + sectionTile('Labs & monitoring', 'labs') + sectionTile('Your prior notes', 'ownnotes') +
       '</div>';
     renderPacketInto(p);
     var ta = p.querySelector('#tmPsychWords');
     ta.value = words;
     ta.addEventListener('input', function () { words = ta.value; });
-    // Trend pop-outs (v1.1): one at a time; a second press of
-    // the same tile closes it; the other tile switches it.
-    var pop = p.querySelector('#tmPsychPop');
-    var popTitle = p.querySelector('#tmPsychPopTitle');
-    var popBody = p.querySelector('#tmPsychPopBody');
-    var popFor = '';
-    function togglePop(which, title, emptyText) {
-      if (popFor === which) {
-        pop.style.display = 'none';
-        popFor = '';
-        return;
-      }
-      popFor = which;
-      popTitle.textContent = title;
-      popBody.textContent = emptyText;
-      pop.style.display = '';
-    }
-    p.querySelector('#tmPsychWeightBtn').addEventListener('click', function () {
-      togglePop('weight', 'Weight trend', 'The trend — the line, the dated values, and the percent — arrives with the Gatherer.');
-    });
-    p.querySelector('#tmPsychBimsBtn').addEventListener('click', function () {
-      togglePop('bims', 'BIMS trend', 'The score trend — every BIMS, dated — arrives with the Gatherer.');
-    });
-    p.querySelector('#tmPsychPopX').addEventListener('click', function () {
-      pop.style.display = 'none';
-      popFor = '';
-    });
     return p;
   }
 
@@ -197,16 +157,7 @@
       var el = p.querySelector('[data-val-for="' + key + '"]');
       if (el && val) el.textContent = val;
     }
-    if (s.header && s.header.status === 'landed' && s.header.facts) {
-      setVal('admission', s.header.facts.admission);
-      setVal('ageSex', s.header.facts.ageSex);
-      setVal('room', s.header.facts.room);
-      setVal('allergies', s.header.facts.allergies);
-      setVal('weight', s.header.facts.weight);
-      setVal('psychMeds', s.header.facts.psychMeds);
-    }
     if (s.diagnoses && s.diagnoses.status === 'landed') setVal('diagnoses', (s.diagnoses.summary || '').slice(0, 90));
-    if (s.bims && s.bims.status === 'landed' && s.bims.facts) setVal('bims', s.bims.facts.latest || '');
     function setSection(key, stop) {
       var el = p.querySelector('[data-section-for="' + key + '"]');
       if (el && stop && stop.status === 'landed') {
@@ -216,6 +167,7 @@
     }
     setSection('behaviors', s.behaviors);
     setSection('labs', s.labs);
+    setSection('ownnotes', s.ownnotes);
     var stamp = p.querySelector('#tmPsychStamp');
     if (stamp) {
       var landed = Object.keys(s).filter(function (k) { return s[k].status === 'landed'; });
