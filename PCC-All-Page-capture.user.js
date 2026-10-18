@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.26
+// @version      1.29
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -290,11 +290,11 @@
     return out;
   }
 
-  function mineNames(tx6) {
+  function mineNames(tx6, doc) {
     try {
       if (!tx6 || tx6.length < 200) return [];
       {
-        var STOP = { Progress: 1, Notes: 1, Note: 1, View: 1, All: 1, Clinical: 1, Nursing: 1, Behavior: 1, Medical: 1, Resident: 1, Residents: 1, Date: 1, Time: 1, Name: 1, Status: 1, Type: 1, Facility: 1, Center: 1, The: 1, And: 1, Plan: 1, Care: 1, Staff: 1, Patient: 1, Signed: 1, Document: 1, January: 1, February: 1, March: 1, April: 1, May: 1, June: 1, July: 1, August: 1, September: 1, October: 1, November: 1, December: 1 };
+        var STOP = { Progress: 1, Notes: 1, Note: 1, View: 1, All: 1, Clinical: 1, Nursing: 1, Behavior: 1, Medical: 1, Resident: 1, Residents: 1, Date: 1, Time: 1, Name: 1, Status: 1, Type: 1, Facility: 1, Center: 1, The: 1, And: 1, Plan: 1, Care: 1, Staff: 1, Patient: 1, Signed: 1, Document: 1, Mrs: 1, Mr: 1, Ms: 1, Dr: 1, Miss: 1, January: 1, February: 1, March: 1, April: 1, May: 1, June: 1, July: 1, August: 1, September: 1, October: 1, November: 1, December: 1 };
         var counts = {}, toks = tx6.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
         for (var ci = 0; ci < toks.length; ci++) { var tk = toks[ci]; if (!STOP[tk]) counts[tk] = (counts[tk] || 0) + 1; }
         var top = Object.keys(counts).filter(function (k) { return counts[k] >= 5; })
@@ -318,10 +318,34 @@
           // window neighbors: no template chrome between them.
           try {
             var surR = surs[si6], rowCo = {}, rowsHit = 0;
-            var trs = doc.querySelectorAll('tr, li, p');
-            for (var ri = 0; ri < trs.length; ri++) {
-              var rtx = trs[ri].textContent || '';
-              if (rtx.indexOf(surR) === -1) continue;
+            // Note BLOCKS (v1.27): the innermost elements, of
+            // ANY tag, whose text holds the surname - the
+            // evergreen page builds notes from divs, not rows.
+            var candB = [];
+            var allB = doc.querySelectorAll('body *');
+            for (var bi6 = 0; bi6 < allB.length; bi6++) {
+              var btx = allB[bi6].textContent || '';
+              if (btx.length < surR.length || btx.length > 2000) continue;
+              if (btx.indexOf(surR) === -1) continue;
+              candB.push(allB[bi6]);
+            }
+            candB.sort(function (a, b) { return (a.textContent || '').length - (b.textContent || '').length; });
+            var blocks = [];
+            for (var bj = 0; bj < candB.length; bj++) {
+              var inside = false;
+              for (var bk = 0; bk < blocks.length; bk++) { if (candB[bj].contains(blocks[bk])) { inside = true; break; } }
+              if (!inside) blocks.push(candB[bj]);
+            }
+            // Keep only the INNERMOST blocks: a wrapper with
+            // the identical text (note > body) is the same note.
+            blocks = blocks.filter(function (bb) {
+              for (var bo = 0; bo < blocks.length; bo++) {
+                if (blocks[bo] !== bb && bb.contains(blocks[bo])) return false;
+              }
+              return true;
+            });
+            for (var ri = 0; ri < blocks.length; ri++) {
+              var rtx = blocks[ri].textContent || '';
               rowsHit++;
               var rt = rtx.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
               var inRow = {};
@@ -387,7 +411,7 @@
     var out = [], seen = {};
     function addAll(vs) { (vs || []).forEach(function (v) { if (!seen[v]) { seen[v] = 1; out.push(v); } }); }
     addAll(learnNamesFirst(doc, treeText));
-    var mined = mineNames(treeText || (doc.body && doc.body.textContent) || '');
+    var mined = mineNames(treeText || (doc.body && doc.body.textContent) || '', doc);
     if (mined.length) {
       var fresh = mined.filter(function (v) { return !seen[v]; });
       if (fresh.length) LEARN_PATH = (LEARN_PATH ? LEARN_PATH + '+' : '') + 'mined';
