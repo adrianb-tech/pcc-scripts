@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.24
+// @version      1.25
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -306,6 +306,7 @@
         // tokens that follow Mrs./Mr./Ms. (3+ times); the
         // first name is the frequent capitalized token that
         // shares the most sentences with that surname.
+        var MONTHS = { January: 1, February: 1, March: 1, April: 1, May: 1, June: 1, July: 1, August: 1, September: 1, October: 1, November: 1, December: 1 };
         var surCount = {};
         var hm6 = tx6.matchAll(/\b(?:Mrs|Mr|Ms)\.\s+([A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,})/g);
         for (var h6 of hm6) surCount[h6[1]] = (surCount[h6[1]] || 0) + 1;
@@ -320,12 +321,19 @@
             if (ix === -1) break;
             var win = tx6.slice(Math.max(0, ix - 300), ix + 300);
             var st = win.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
-            for (var sk = 0; sk < st.length; sk++) { if (st[sk] !== sur && !STOP[st[sk]]) co[st[sk]] = (co[st[sk]] || 0) + 1; }
+            for (var sk = 0; sk < st.length; sk++) { if (st[sk] !== sur && (!STOP[st[sk]] || MONTHS[st[sk]])) co[st[sk]] = (co[st[sk]] || 0) + 1; }
             pos = ix + sur.length;
           }
-          var firsts = Object.keys(co).filter(function (k) { return co[k] >= 3 && counts[k] >= 5; })
+          var firsts = Object.keys(co).filter(function (k) { return co[k] >= 3 && (counts[k] >= 5 || (MONTHS[k] && (tx6.match(new RegExp('\\b' + k + '\\b', 'g')) || []).length >= 5)); })
             .sort(function (a, b) { return co[b] - co[a]; });
-          if (firsts.length) return (LEARN_PATH = 'honorific', variantsFromPair(firsts[0], sur));
+          if (firsts.length) {
+            try {
+              CAPTURE_CANDS = Object.keys(co).filter(function (k) { return co[k] >= 2; })
+                .sort(function (a, b) { return co[b] - co[a]; }).slice(0, 5)
+                .map(function (k) { return [k.length, co[k]]; });
+            } catch (e) {}
+            return (LEARN_PATH = 'honorific', variantsFromPair(firsts[0], sur));
+          }
         }
         var best = null;
         for (var a = 0; a < top.length; a++) for (var b = 0; b < top.length; b++) {
@@ -393,6 +401,7 @@
   var CAPTURE_NAMES = null;
   var LEARN_PATH = '';
   var LEARN_PATH_USED = '';
+  var CAPTURE_CANDS = null;
   function learnUnion() {
     var docs = collectDocs();
     var treeText = '';
@@ -454,9 +463,14 @@
             bparts.push('DOC ' + bi + ': ' + (sh.length ? sh.join('  |  ') : 'no name-shaped element found') +
               (rg.length ? '\nHEADER REGION (doc ' + bi + '):\n' + rg.join('\n') : ''));
           });
+          var candLine = '';
+          try {
+            var ct = CAPTURE_CANDS || [];
+            if (ct.length) candLine = '\nfirst-name candidates [length x window-hits]: ' + ct.map(function (c) { return c[0] + 'x' + c[1]; }).join(', ');
+          } catch (e) {}
           banner.textContent = 'HEADER SHAPE (masked - safe to copy to Mica): learned ' +
             (CAPTURE_NAMES ? CAPTURE_NAMES.length : 0) + ' name forms via ' + (LEARN_PATH_USED || 'none') +
-            ' [lengths: ' + (CAPTURE_NAMES || []).map(function (v) { return v.length; }).join(', ') + ']\n' + bparts.join('\n');
+            ' [lengths: ' + (CAPTURE_NAMES || []).map(function (v) { return v.length; }).join(', ') + ']' + candLine + '\n' + bparts.join('\n');
           lines.push(banner.outerHTML);
         } catch (e) {}
         walk(document, 0, lines, { value: 0 });
