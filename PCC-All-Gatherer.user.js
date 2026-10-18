@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.0
+// @version      2.1
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -183,6 +183,10 @@
     return null;
   }
   function readWeightsPage(doc) {
+    // Only on the real Weights and Vitals page - an
+    // unguarded date+number scan false-positives on other
+    // grids (it did on Orders in harness49).
+    if (!/Weights and Vitals/i.test(doc.title || '')) return null;
     // Wts/Vitals history: rows carrying a date + a weight.
     var pts = [];
     var rows = doc.querySelectorAll('tr');
@@ -204,6 +208,16 @@
     if (dx) land('diagnoses', { source: 'Progress Notes', at: nowT(), summary: dx });
     var wp = readWeightsPage(document);
     if (wp) land('weights', { source: 'Wts/Vitals', at: nowT(), series: wp, summary: wp.length + ' dated weights; latest ' + wp[0].weight + ' lbs on ' + wp[0].date });
+    // The fetch readers also run against the LIVE page when
+    // he is standing on their page (v2.1 - the live test
+    // showed ordersChart's raw fetch returns a shell, and
+    // the relationships box lives in the rendered Profile).
+    // Each reader self-selects: it lands only when its
+    // markers are present, so these calls no-op elsewhere.
+    try { parseAssessments(document); } catch (e) {}
+    try { parseProfile(document); } catch (e) {}
+    try { parseOrders(document); } catch (e) {}
+    try { parseResults(document); } catch (e) {}
   }
 
   // ---------- fetch engine ----------
@@ -302,6 +316,14 @@
           if (pt.length > 14) { val = pt.replace(/^Relationships\s*/i, ''); break; }
         }
       }
+    }
+    if (!val && /Resident Profile/i.test(doc.title || '')) {
+      // Fetched Profile pages carry PCC's native contacts,
+      // not the tile box: collect the relation words.
+      var words = ['self', 'spouse', 'wife', 'husband', 'daughter', 'son', 'sister', 'brother', 'mother', 'father', 'friend', 'niece', 'nephew', 'partner', 'guardian'];
+      var bodyT = (doc.body && doc.body.textContent) || '';
+      var found = words.filter(function (wd) { return new RegExp('\\b' + wd + '\\b', 'i').test(bodyT); });
+      if (found.length) val = found.join(', ');
     }
     if (val) land('relations', { source: 'Profile', at: nowT(), summary: norm(val).slice(0, 300) });
   }
