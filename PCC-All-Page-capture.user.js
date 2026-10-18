@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.25
+// @version      1.26
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -312,6 +312,35 @@
         for (var h6 of hm6) surCount[h6[1]] = (surCount[h6[1]] || 0) + 1;
         var surs = Object.keys(surCount).filter(function (k) { return surCount[k] >= 3 && !STOP[k]; });
         for (var si6 = 0; si6 < surs.length; si6++) {
+          // First name by NOTE ROW (v1.26, primary): the notes
+          // are table rows - count capitalized tokens in the
+          // rows that contain the surname. Row-mates beat
+          // window neighbors: no template chrome between them.
+          try {
+            var surR = surs[si6], rowCo = {}, rowsHit = 0;
+            var trs = doc.querySelectorAll('tr, li, p');
+            for (var ri = 0; ri < trs.length; ri++) {
+              var rtx = trs[ri].textContent || '';
+              if (rtx.indexOf(surR) === -1) continue;
+              rowsHit++;
+              var rt = rtx.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
+              var inRow = {};
+              for (var rk = 0; rk < rt.length; rk++) {
+                if (rt[rk] === surR || (STOP[rt[rk]] && !MONTHS[rt[rk]])) continue;
+                if (!inRow[rt[rk]]) { inRow[rt[rk]] = 1; rowCo[rt[rk]] = (rowCo[rt[rk]] || 0) + 1; }
+              }
+            }
+            var rFirsts = Object.keys(rowCo).filter(function (k) { return rowCo[k] >= 2 && counts[k] >= 4; })
+              .sort(function (a, b) { return rowCo[b] - rowCo[a]; });
+            if (rFirsts.length && rowsHit >= 2) {
+              try {
+                CAPTURE_CANDS = Object.keys(rowCo).sort(function (a, b) { return rowCo[b] - rowCo[a]; }).slice(0, 5)
+                  .map(function (k) { return [k.length, rowCo[k]]; });
+              } catch (e) {}
+              return (LEARN_PATH = 'rowmate', variantsFromPair(rFirsts[0], surR));
+            }
+          } catch (e) {}
+
           // Co-occurrence by WINDOW (+/-300 chars around each
           // surname mention): the first name lives in the
           // sentences AROUND the honorific, rarely inside it.
