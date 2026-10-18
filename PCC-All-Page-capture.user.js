@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.7
+// @version      1.8
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -47,6 +47,27 @@
                  ' disabled=' + b.disabled);
       } else out.push('pn-view-all-btn: NOT FOUND');
     } catch (e) { out.push('pn-view-all-btn: ERROR ' + e.message); }
+    try {
+      // Header shape (v1.8): the header block's skeleton -
+      // tags, classes, punctuation - with every word of 3+
+      // letters masked to ### BY THE SCRIPT ITSELF, so the
+      // capture can teach the redactor the name's real shape
+      // without the name ever being in the file.
+      var tsp = null, allSp = doc.querySelectorAll('span');
+      for (var si = 0; si < allSp.length; si++) {
+        if ((allSp[si].textContent || '').replace(/\s+/g, ' ').trim() === 'Progress Notes - View All') { tsp = allSp[si]; break; }
+      }
+      var hroot = tsp;
+      for (var hu = 0; hroot && hu < 3; hu++) hroot = hroot.parentElement;
+      if (hroot) {
+        var shape = hroot.outerHTML
+          .replace(/<script[\s\S]*?<\/script>/gi, '')
+          .replace(/[A-Za-z]{3,}/g, '###')
+          .replace(/\s+/g, ' ')
+          .slice(0, 1600);
+        out.push('HEADER SHAPE: ' + shape);
+      } else out.push('HEADER SHAPE: title span not found');
+    } catch (e) { out.push('HEADER SHAPE: ERROR ' + e.message); }
     try {
       out.push('#tmPnViewAllF=' + doc.querySelectorAll('#tmPnViewAllF').length +
                ' .pcc-f-btn=' + doc.querySelectorAll('.pcc-f-btn').length +
@@ -139,13 +160,16 @@
       for (var s = 0; s < spans.length; s++) {
         if ((spans[s].textContent || '').replace(/\s+/g, ' ').trim() !== 'Progress Notes - View All') continue;
         var block = spans[s].parentElement;
-        if (!block) break;
-        var inner = block.querySelectorAll('span, div, a, b, strong');
-        for (var j = 0; j < inner.length; j++) {
-          var itx = (inner[j].textContent || '').replace(/\s+/g, ' ').trim();
-          if (itx.length > 60 || itx.length < 5) continue;
-          var im = /^([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(itx);
-          if (im) return parseName(im[1] + ', ' + im[2], '');
+        for (var up = 0; block && up < 3; up++) {
+          var inner = block.querySelectorAll('span, div, a, b, strong');
+          for (var j = 0; j < inner.length; j++) {
+            var itx = (inner[j].textContent || '').replace(/\s+/g, ' ').trim();
+            if (itx.length > 60 || itx.length < 5) continue;
+            if (itx === 'Progress Notes - View All') continue;
+            var im = /^([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(itx);
+            if (im) return parseName(im[1] + ', ' + im[2], '');
+          }
+          block = block.parentElement;
         }
         break;
       }
