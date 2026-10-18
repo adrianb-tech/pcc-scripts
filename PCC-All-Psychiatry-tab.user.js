@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.0
+// @version      1.1
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -92,6 +92,17 @@
       '<div style="font:600 14px ' + FONT + ';color:#0f172a;margin-top:2px;">—</div></div>';
   }
 
+  // A tile that is a BUTTON (his spec): press it and its trend
+  // pops out in place below the rows. Weight and BIMS work
+  // this way; the pop-outs fill with real trends when the
+  // Gatherer lands.
+  function buttonTile(id, label) {
+    return '<div id="' + id + '" role="button" style="flex:1 1 104px;min-width:96px;background:#ffffff;' +
+      'border:1.5px solid #cbd5e1;border-radius:10px;padding:7px 9px;cursor:pointer;">' +
+      '<div style="font:700 10.5px ' + FONT + ';letter-spacing:.04em;color:#64748b;text-transform:uppercase;">' + label + ' <span style="color:#94a3b8;">▾</span></div>' +
+      '<div style="font:600 14px ' + FONT + ';color:#0f172a;margin-top:2px;">—</div></div>';
+  }
+
   function sectionTile(title) {
     return '<div style="flex:1 1 260px;min-width:230px;background:#ffffff;border:1px solid #e2e8f0;' +
       'border-radius:12px;padding:10px 12px;min-height:74px;">' +
@@ -109,8 +120,21 @@
         '<span style="font:800 19px ' + FONT + ';color:#0f172a;">Psychiatry</span>' +
         '<span style="font:400 12px ' + FONT + ';color:#94a3b8;">the one page — everything psychiatrically connected, in one place</span>' +
       '</div>' +
-      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">' +
-        ['Admission', 'Age/Sex', 'Room', 'Allergies', 'Weight', 'BIMS', 'Relationships', 'Psych meds', 'Diagnoses'].map(miniTile).join('') +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
+        ['Admission', 'Age/Sex', 'Room', 'Allergies'].map(miniTile).join('') +
+        buttonTile('tmPsychWeightBtn', 'Weight') +
+        miniTile('Psych meds') +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
+        buttonTile('tmPsychBimsBtn', 'BIMS — latest') +
+        miniTile('Relationships') + miniTile('Facesheet') + miniTile('Diagnoses') +
+      '</div>' +
+      '<div id="tmPsychPop" style="display:none;background:#f8fafc;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;margin-bottom:10px;">' +
+        '<div style="display:flex;justify-content:space-between;align-items:baseline;">' +
+          '<span id="tmPsychPopTitle" style="font:700 13px ' + FONT + ';color:#0f172a;"></span>' +
+          '<span id="tmPsychPopX" role="button" style="cursor:pointer;font:700 13px ' + FONT + ';color:#64748b;">✕</span>' +
+        '</div>' +
+        '<div id="tmPsychPopBody" style="font:400 12.5px ' + FONT + ';color:#94a3b8;margin-top:4px;"></div>' +
       '</div>' +
       '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:10px;">' +
         '<div style="font:700 13px ' + FONT + ';color:#9a3412;">Your words</div>' +
@@ -119,11 +143,38 @@
           'padding:8px;font:400 14px ' + FONT + ';color:#0f172a;background:#ffffff;resize:vertical;"></textarea>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-        ['Script summary', 'Behaviors', 'Diagnoses', 'Psych meds', 'Labs & monitoring', 'Weight trend'].map(sectionTile).join('') +
+        ['Script summary', 'Behaviors', 'Labs & monitoring'].map(sectionTile).join('') +
       '</div>';
     var ta = p.querySelector('#tmPsychWords');
     ta.value = words;
     ta.addEventListener('input', function () { words = ta.value; });
+    // Trend pop-outs (v1.1): one at a time; a second press of
+    // the same tile closes it; the other tile switches it.
+    var pop = p.querySelector('#tmPsychPop');
+    var popTitle = p.querySelector('#tmPsychPopTitle');
+    var popBody = p.querySelector('#tmPsychPopBody');
+    var popFor = '';
+    function togglePop(which, title, emptyText) {
+      if (popFor === which) {
+        pop.style.display = 'none';
+        popFor = '';
+        return;
+      }
+      popFor = which;
+      popTitle.textContent = title;
+      popBody.textContent = emptyText;
+      pop.style.display = '';
+    }
+    p.querySelector('#tmPsychWeightBtn').addEventListener('click', function () {
+      togglePop('weight', 'Weight trend', 'The trend — the line, the dated values, and the percent — arrives with the Gatherer.');
+    });
+    p.querySelector('#tmPsychBimsBtn').addEventListener('click', function () {
+      togglePop('bims', 'BIMS trend', 'The score trend — every BIMS, dated — arrives with the Gatherer.');
+    });
+    p.querySelector('#tmPsychPopX').addEventListener('click', function () {
+      pop.style.display = 'none';
+      popFor = '';
+    });
     return p;
   }
 
