@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.14
+// @version      1.16
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -124,6 +124,20 @@
     return nameVariants(last, first);
   }
   var NAME_EL = /^([A-Za-z][A-Za-z'\u2019.\-]+(?:\s+[A-Za-z][A-Za-z'\u2019.\-]+)?\s*,\s*[A-Za-z][A-Za-z'\u2019.\- ]+?)\s*\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/;
+  // Variants from a known first/last pair, in the raw
+  // spellings found (no case-folding guesses beyond the
+  // full-uppercase form) - works for comma-free and
+  // non-ASCII names alike.
+  function variantsFromPair(first, last) {
+    var vs = [], seen = {};
+    function add(s) { if (s && s.length > 2 && !seen[s]) { seen[s] = 1; vs.push(s); } }
+    add(last + ', ' + first); add(first + ' ' + last); add(last + ' ' + first);
+    add(last.toUpperCase() + ', ' + first); add(last); add(first);
+    add(last.toUpperCase());
+    vs.sort(function (a, b) { return b.length - a.length; });
+    return vs;
+  }
+
   function learnNamesFromText(text) {
     var m = /Resident:\s*([A-Z][A-Za-z' -]+),\s*([A-Z][A-Za-z]+)/.exec(text || '');
     if (m) return nameVariants(m[1].trim(), m[2].trim());
@@ -205,6 +219,34 @@
       hits.sort(function (a, b) { return (a.top - b.top) || (a.tx.length - b.tx.length); });
       if (hits.length) return parseName(hits[0].m[1] + ', ' + hits[0].m[2], '');
     } catch (e) {}
+    // Path 5 (v1.15): the page's own headings. On his View
+    // All page the name sits in a heading with NO comma
+    // ('First Last'), which every comma pattern missed.
+    // Take the heading's word tokens and keep the ones that
+    // recur 3+ times in the page text - a heading that is
+    // just a page title is skipped by the stoplist, and a
+    // token that appears only in the heading can't qualify.
+    try {
+      var bodyTx = (doc.body && doc.body.textContent) || '';
+      var heads = doc.querySelectorAll('h1, h2, h3');
+      for (var hi = 0; hi < heads.length; hi++) {
+        var htx = (heads[hi].textContent || '').replace(/\s+/g, ' ').trim();
+        if (htx.length < 5 || htx.length > 60) continue;
+        if (/progress|notes|view all|dashboard|medical|orders|profile|assess|forms|summary|chart review/i.test(htx)) continue;
+        var hr = null;
+        try { hr = heads[hi].getBoundingClientRect(); } catch (e) {}
+        if (hr && hr.top > 420) continue;
+        var toks = htx.match(/[A-Za-z\u00C0-\u024F'\u2019\-]{3,}/g) || [];
+        var keep = [];
+        for (var ti = 0; ti < toks.length; ti++) {
+          var esc = toks[ti].replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          var cnt = (bodyTx.match(new RegExp(esc, 'g')) || []).length;
+          if (cnt >= 3) keep.push(toks[ti]);
+        }
+        if (keep.length >= 2) return variantsFromPair(keep[0], keep[keep.length - 1]);
+        if (keep.length === 1 && toks.length === 1) return variantsFromPair('', keep[0]).filter(function (v) { return v.indexOf(',') === -1; });
+      }
+    } catch (e) {}
     try { return learnNamesFromText((doc.body && doc.body.textContent) || ''); } catch (e) { return []; }
   }
   // Masked shapes of the name-candidate elements (v1.11):
@@ -218,7 +260,7 @@
         var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
         if (tx.length > 80 || tx.length < 5) continue;
         if (/^[A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?\s*,\s*[A-Z][A-Za-z'\u2019\-]+/.test(tx)) {
-          out.push(tx.replace(/[A-Za-z]{3,}/g, '###').replace(/\d{3,}/g, '###'));
+          out.push(tx.replace(/[A-Za-z\u00C0-\u024F]{3,}/g, '###').replace(/[\u00C0-\u024F]/g, '#').replace(/\d{3,}/g, '###'));
         }
       }
     } catch (e) {}
@@ -241,7 +283,7 @@
         var r = null;
         try { r = el.getBoundingClientRect(); } catch (e) {}
         if (!r || r.top < 0 || r.top > 340) continue;
-        var line = el.tagName + ': ' + tx.replace(/[A-Za-z]{3,}/g, '###').replace(/\d{3,}/g, '###');
+        var line = el.tagName + ': ' + tx.replace(/[A-Za-z\u00C0-\u024F]{3,}/g, '###').replace(/[\u00C0-\u024F]/g, '#').replace(/\d{3,}/g, '###');
         if (seen[line]) continue;
         seen[line] = 1;
         out.push(line);
