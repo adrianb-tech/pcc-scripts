@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.1
+// @version      1.2
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -85,29 +85,29 @@
     }
   }
 
-  function miniTile(label) {
+  function miniTile(label, key) {
     return '<div style="flex:1 1 104px;min-width:96px;background:#f8fafc;border:1px solid #e2e8f0;' +
       'border-radius:10px;padding:7px 9px;">' +
       '<div style="font:700 10.5px ' + FONT + ';letter-spacing:.04em;color:#64748b;text-transform:uppercase;">' + label + '</div>' +
-      '<div style="font:600 14px ' + FONT + ';color:#0f172a;margin-top:2px;">—</div></div>';
+      '<div data-val-for="' + (key || '') + '" style="font:600 14px ' + FONT + ';color:#0f172a;margin-top:2px;white-space:pre-wrap;">—</div></div>';
   }
 
   // A tile that is a BUTTON (his spec): press it and its trend
   // pops out in place below the rows. Weight and BIMS work
   // this way; the pop-outs fill with real trends when the
   // Gatherer lands.
-  function buttonTile(id, label) {
+  function buttonTile(id, label, key) {
     return '<div id="' + id + '" role="button" style="flex:1 1 104px;min-width:96px;background:#ffffff;' +
       'border:1.5px solid #cbd5e1;border-radius:10px;padding:7px 9px;cursor:pointer;">' +
       '<div style="font:700 10.5px ' + FONT + ';letter-spacing:.04em;color:#64748b;text-transform:uppercase;">' + label + ' <span style="color:#94a3b8;">▾</span></div>' +
-      '<div style="font:600 14px ' + FONT + ';color:#0f172a;margin-top:2px;">—</div></div>';
+      '<div data-val-for="' + (key || '') + '" style="font:600 14px ' + FONT + ';color:#0f172a;margin-top:2px;white-space:pre-wrap;">—</div></div>';
   }
 
-  function sectionTile(title) {
+  function sectionTile(title, key) {
     return '<div style="flex:1 1 260px;min-width:230px;background:#ffffff;border:1px solid #e2e8f0;' +
       'border-radius:12px;padding:10px 12px;min-height:74px;">' +
       '<div style="font:700 13px ' + FONT + ';color:#0f172a;">' + title + '</div>' +
-      '<div style="font:400 12.5px ' + FONT + ';color:#94a3b8;margin-top:4px;">Arrives with the Gatherer.</div></div>';
+      '<div data-section-for="' + (key || '') + '" style="font:400 12.5px ' + FONT + ';color:#94a3b8;margin-top:4px;white-space:pre-wrap;">Arrives with the Gatherer.</div></div>';
   }
 
   function buildPanel() {
@@ -121,14 +121,15 @@
         '<span style="font:400 12px ' + FONT + ';color:#94a3b8;">the one page — everything psychiatrically connected, in one place</span>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
-        ['Admission', 'Age/Sex', 'Room', 'Allergies'].map(miniTile).join('') +
-        buttonTile('tmPsychWeightBtn', 'Weight') +
-        miniTile('Psych meds') +
+        miniTile('Admission', 'admission') + miniTile('Age/Sex', 'ageSex') + miniTile('Room', 'room') + miniTile('Allergies', 'allergies') +
+        buttonTile('tmPsychWeightBtn', 'Weight', 'weight') +
+        miniTile('Psych meds', 'psychMeds') +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
-        buttonTile('tmPsychBimsBtn', 'BIMS — latest') +
-        miniTile('Relationships') + miniTile('Facesheet') + miniTile('Diagnoses') +
+        buttonTile('tmPsychBimsBtn', 'BIMS — latest', 'bims') +
+        miniTile('Relationships', 'relations') + miniTile('Facesheet', 'facesheet') + miniTile('Diagnoses', 'diagnoses') +
       '</div>' +
+      '<div id="tmPsychStamp" style="font:400 11px ' + FONT + ';color:#94a3b8;margin-bottom:8px;">Gatherer: waiting…</div>' +
       '<div id="tmPsychPop" style="display:none;background:#f8fafc;border:1px solid #cbd5e1;border-radius:12px;padding:10px 12px;margin-bottom:10px;">' +
         '<div style="display:flex;justify-content:space-between;align-items:baseline;">' +
           '<span id="tmPsychPopTitle" style="font:700 13px ' + FONT + ';color:#0f172a;"></span>' +
@@ -143,8 +144,9 @@
           'padding:8px;font:400 14px ' + FONT + ';color:#0f172a;background:#ffffff;resize:vertical;"></textarea>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-        ['Script summary', 'Behaviors', 'Labs & monitoring'].map(sectionTile).join('') +
+        sectionTile('Script summary', 'summary') + sectionTile('Behaviors', 'behaviors') + sectionTile('Labs & monitoring', 'labs') +
       '</div>';
+    renderPacketInto(p);
     var ta = p.querySelector('#tmPsychWords');
     ta.value = words;
     ta.addEventListener('input', function () { words = ta.value; });
@@ -178,6 +180,54 @@
     return p;
   }
 
+  // Render the Gatherer's packet into the page (v1.2).
+  // Values land per stop; a stop that has not landed leaves
+  // its tile at the honest dash.
+  function readPacket() {
+    try {
+      var n = document.getElementById('tmGatherPacket');
+      return n ? JSON.parse(n.textContent || '{}') : null;
+    } catch (e) { return null; }
+  }
+  function renderPacketInto(p) {
+    var pkt = readPacket();
+    if (!pkt || !pkt.stops) return;
+    var s = pkt.stops;
+    function setVal(key, val) {
+      var el = p.querySelector('[data-val-for="' + key + '"]');
+      if (el && val) el.textContent = val;
+    }
+    if (s.header && s.header.status === 'landed' && s.header.facts) {
+      setVal('admission', s.header.facts.admission);
+      setVal('ageSex', s.header.facts.ageSex);
+      setVal('room', s.header.facts.room);
+      setVal('allergies', s.header.facts.allergies);
+      setVal('weight', s.header.facts.weight);
+      setVal('psychMeds', s.header.facts.psychMeds);
+    }
+    if (s.diagnoses && s.diagnoses.status === 'landed') setVal('diagnoses', (s.diagnoses.summary || '').slice(0, 90));
+    if (s.bims && s.bims.status === 'landed' && s.bims.facts) setVal('bims', s.bims.facts.latest || '');
+    function setSection(key, stop) {
+      var el = p.querySelector('[data-section-for="' + key + '"]');
+      if (el && stop && stop.status === 'landed') {
+        el.style.color = '#0f172a';
+        el.textContent = (stop.summary || '') + '\n— ' + stop.source + ' · ' + stop.at;
+      }
+    }
+    setSection('behaviors', s.behaviors);
+    setSection('labs', s.labs);
+    var stamp = p.querySelector('#tmPsychStamp');
+    if (stamp) {
+      var landed = Object.keys(s).filter(function (k) { return s[k].status === 'landed'; });
+      stamp.textContent = 'Gatherer: ' + landed.length + ' of ' + Object.keys(s).length +
+        ' stops landed' + (landed.length ? ' · ' + landed.join(', ') : '') + ' · packet ' + (pkt.startedAt || '');
+    }
+  }
+  document.addEventListener('tm-gather-update', function () {
+    var p = document.getElementById('tmPsychPage');
+    if (p && open) renderPacketInto(p);
+  });
+
   function setOpen(v, bar) {
     open = v;
     var tile = document.getElementById('tmPsychTab');
@@ -187,7 +237,7 @@
       if (!panel && bar) {
         panel = buildPanel();
         bar.parentNode.insertBefore(panel, bar.nextSibling);
-      } else if (panel) panel.style.display = '';
+      } else if (panel) { panel.style.display = ''; renderPacketInto(panel); }
     } else if (panel) {
       panel.style.display = 'none';
     }
