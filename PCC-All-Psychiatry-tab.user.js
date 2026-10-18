@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.4
+// @version      1.5
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -160,6 +160,7 @@
       var el = p.querySelector('[data-val-for="' + key + '"]');
       if (el && val) el.textContent = val;
     }
+    if (s.relations && s.relations.status === 'landed') setVal('relations', (s.relations.summary || '').slice(0, 90));
     var dxFb = p.querySelector('[data-dx-fallback="1"]');
     if (dxFb && s.diagnoses && s.diagnoses.status === 'landed') {
       dxFb.style.color = '#0f172a';
