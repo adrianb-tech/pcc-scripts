@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.11
+// @version      1.12
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -206,7 +206,6 @@
     } catch (e) {}
     try { return learnNamesFromText((doc.body && doc.body.textContent) || ''); } catch (e) { return []; }
   }
-
   // Masked shapes of the name-candidate elements (v1.11):
   // shows the redactor exactly how the name element is built
   // on this page - punctuation visible, every word masked.
@@ -310,7 +309,17 @@
     'padding:12px 18px', 'font:700 15px -apple-system, "Segoe UI", Roboto, sans-serif',
     'cursor:pointer', 'box-shadow:0 4px 14px rgba(0,0,0,.35)'
   ].join(';'));
-  (document.body || document.documentElement).appendChild(rbtn);
+  // v1.12: if a page rebuild ever wipes the buttons, the
+  // next click anywhere quietly restores them (event-driven,
+  // no timers). They are never drawn twice.
+  function ensureBtns() {
+    try {
+      if (!btn.isConnected) (document.body || document.documentElement).appendChild(btn);
+      if (!rbtn.isConnected) (document.body || document.documentElement).appendChild(rbtn);
+    } catch (e) {}
+  }
+  ensureBtns();
+  document.addEventListener('click', ensureBtns, true);
 
   function download(name, text) {
     var blob = new Blob([text], { type: 'text/html' });
