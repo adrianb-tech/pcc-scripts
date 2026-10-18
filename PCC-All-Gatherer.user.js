@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.1
+// @version      2.2
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -188,15 +188,30 @@
     // grids (it did on Orders in harness49).
     if (!/Weights and Vitals/i.test(doc.title || '')) return null;
     // Wts/Vitals history: rows carrying a date + a weight.
-    var pts = [];
-    var rows = doc.querySelectorAll('tr');
-    for (var i = 0; i < rows.length; i++) {
-      var cells = rows[i].cells ? Array.prototype.map.call(rows[i].cells, txt) : [];
-      var d = cells.find(function (c) { return /^\d{1,2}\/\d{1,2}\/\d{4}/.test(c); });
-      var w = cells.find(function (c) { return /^[\d.]+\s*(lbs|lb|kg)?$/i.test(c) && parseFloat(c) > 40; });
-      if (d && w) pts.push({ date: d.slice(0, 10), weight: parseFloat(w) });
+    // The numbers must be ANCHORED to a Weight column: the
+    // vitals grid carries many numbers per row, and an
+    // unanchored scan landed '49 lbs' (not a weight) in his
+    // live test. Find the header cell that says Weight and
+    // read only its column; no anchor, no landing.
+    var tables = doc.querySelectorAll('table');
+    for (var ti = 0; ti < tables.length; ti++) {
+      var trows = tables[ti].querySelectorAll('tr');
+      if (!trows.length) continue;
+      var headCells = trows[0].cells ? Array.prototype.map.call(trows[0].cells, txt) : [];
+      var wIdx = headCells.findIndex(function (c) { return /weight/i.test(c); });
+      var dIdx = headCells.findIndex(function (c) { return /date/i.test(c); });
+      if (wIdx < 0) continue;
+      var pts = [];
+      for (var i = 1; i < trows.length; i++) {
+        var cells = trows[i].cells ? Array.prototype.map.call(trows[i].cells, txt) : [];
+        var wv = parseFloat((cells[wIdx] || '').replace(/[^\d.]/g, ''));
+        var dv = dIdx >= 0 ? (cells[dIdx] || '') : (cells.find(function (c) { return /\d{1,2}\/\d{1,2}\/\d{4}/.test(c); }) || '');
+        var dm = dv.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+        if (dm && wv >= 50 && wv <= 700) pts.push({ date: dm[0], weight: wv });
+      }
+      if (pts.length >= 2) return pts.slice(0, 40);
     }
-    return pts.length >= 2 ? pts.slice(0, 40) : null;
+    return null;
   }
   function gatherPage() {
     if (stopped) return;
@@ -325,7 +340,13 @@
       var found = words.filter(function (wd) { return new RegExp('\\b' + wd + '\\b', 'i').test(bodyT); });
       if (found.length) val = found.join(', ');
     }
-    if (val) land('relations', { source: 'Profile', at: nowT(), summary: norm(val).slice(0, 300) });
+    // A placeholder is not a fact: the tile row shows '-'
+    // until a grab, and landing it first would block the
+    // real value (land is first-wins). His live Dash test
+    // landed relations as '-' - never again.
+    if (val && !/^[—–-]+$/.test(norm(val)) && !/^N\/?A$/i.test(norm(val))) {
+      land('relations', { source: 'Profile', at: nowT(), summary: norm(val).slice(0, 300) });
+    }
   }
   function parseResults(doc) {
     var reports = [];
