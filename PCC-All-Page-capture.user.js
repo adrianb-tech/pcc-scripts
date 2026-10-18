@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.9
+// @version      1.10
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -226,7 +226,20 @@
     // the page at +3s, not in the click itself.
     setTimeout(function () {
       try {
-        var lines = [redactStr('<!-- PCC TREE CAPTURE v1.5 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->', learnNames(document))];
+        var lines = [redactStr('<!-- PCC TREE CAPTURE v1.10 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->', learnNames(document))];
+        // The header shape as a VISIBLE banner (v1.10): it used
+        // to live only inside an HTML comment, which a browser
+        // renders invisibly - his Cmd+F could never find it.
+        // As a real element at the top of the saved file it is
+        // findable and copyable. The shape text stays masked.
+        try {
+          var ptxt = probes(document);
+          var shm = /HEADER SHAPE: ([^\n]*)/.exec(ptxt);
+          var banner = document.createElement('div');
+          banner.setAttribute('style', 'border:2px solid #b91c1c;background:#fef2f2;color:#7f1d1d;padding:10px 12px;font:12px monospace;white-space:pre-wrap;word-break:break-all;');
+          banner.textContent = 'HEADER SHAPE (masked - safe to copy to Mica): ' + (shm ? shm[1] : 'title span not found');
+          lines.push(banner.outerHTML);
+        } catch (e) {}
         walk(document, 0, lines, { value: 0 });
         lines.push(redactStr(feedbackBlock(), learnNames(document)));
         var blob = new Blob([lines.join('\n')], { type: 'text/html' });
