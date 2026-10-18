@@ -7,6 +7,8 @@
 // @match        https://*.pointclickcare.ca/*
 // @run-at       document-idle
 // @grant        none
+// @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Page-capture.user.js
+// @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Page-capture.user.js
 // ==/UserScript==
 (function () {
   'use strict';
