@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.5
+// @version      1.6
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -78,46 +78,55 @@
     return block;
   }
 
-  // Auto-redaction (v1.5, Phase 0 of the note-system build):
-  // every SAVED file is stripped before it exists - the
-  // resident's name (learned from the page's own header) ->
-  // RESIDENT, DOB and MRN numbers -> X, chart id out of URLs.
-  // The live page is never touched; only the file is.
+  // Auto-redaction (v1.5; name format fixed v1.6): every
+  // SAVED file is stripped before it exists. The resident's
+  // name is learned the way the S key finds it (proven on the
+  // live pages): an element whose text STARTS with
+  // 'Last, First (CODE)' - there is no 'Resident:' label in
+  // PCC's header, which is why v1.5 learned nothing. Name ->
+  // RESIDENT everywhere; the chart code, DOB, MRN -> X; the
+  // chart id comes out of URLs. Live page never touched.
+  var learnedCodes = [];
+  function nameVariants(last, first) {
+    var lastTitle = last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
+    var out = [];
+    [last + ', ' + first, first + ' ' + last, lastTitle, last, first]
+      .forEach(function (n) { if (n && n.length > 2) out.push(n); });
+    return out.sort(function (a, b) { return b.length - a.length; });
+  }
+  function parseName(raw, code) {
+    var parts = String(raw).split(',');
+    if (parts.length < 2) return [];
+    var last = parts[0].trim();
+    var first = parts.slice(1).join(',').trim().split(/\s+/)[0];
+    if (code && learnedCodes.indexOf(code) === -1) learnedCodes.push(code);
+    return nameVariants(last, first);
+  }
+  var NAME_EL = /^([A-Za-z][A-Za-z'\u2019.\-]+(?:\s+[A-Za-z][A-Za-z'\u2019.\-]+)?\s*,\s*[A-Za-z][A-Za-z'\u2019.\- ]+?)\s*\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/;
   function learnNamesFromText(text) {
-    var names = [];
     var m = /Resident:\s*([A-Z][A-Za-z' -]+),\s*([A-Z][A-Za-z]+)/.exec(text || '');
-    if (m) {
-      var last = m[1].trim();
-      var first = m[2].trim();
-      var lastTitle = last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
-      [last + ', ' + first, first + ' ' + last, lastTitle, last, first]
-        .forEach(function (n) { if (n && n.length > 2) names.push(n); });
+    if (m) return nameVariants(m[1].trim(), m[2].trim());
+    var W = "[A-Za-z][A-Za-z'\u2019.\-]+";
+    for (var words = 1; words <= 3; words++) {
+      var pat = '(' + W + '(?:\s+' + W + '){' + (words - 1) + '}' +
+        '\\s*,\\s*[A-Za-z][A-Za-z\'\u2019.\\- ]*?)\\s*\\(\\s*([A-Za-z]{0,5}\\d{3,})\\s*\\)';
+      var mm = new RegExp(pat).exec(text || '');
+      if (mm) return parseName(mm[1].replace(/\s+/g, ' ').trim(), mm[2]);
     }
-    return names.sort(function (a, b) { return b.length - a.length; });
+    return [];
   }
   function learnNames(doc) {
-    // Learn from the element carrying 'Resident:' - shortest
-    // text first, and reject a parse whose first name runs
-    // straight into more letters (page text glues the name to
-    // the next label and corrupts it, e.g. 'WendyDOB').
     try {
-      var els = doc.querySelectorAll('span, div, td, th, li, a');
-      var cands = [];
+      var els = doc.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
       for (var i = 0; i < els.length; i++) {
         var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
-        if (tx.indexOf('Resident:') !== -1 && tx.length < 90) cands.push(tx);
+        if (tx.length > 70 || tx.length < 5) continue;
+        if (/^clinical\s/i.test(tx)) continue;
+        var em = NAME_EL.exec(tx);
+        if (em) return parseName(em[1].trim(), em[2]);
       }
-      cands.sort(function (a, b) { return a.length - b.length; });
-      for (var c = 0; c < cands.length; c++) {
-        var got = learnNamesFromText(cands[c]);
-        if (!got.length) continue;
-        var m = /Resident:\s*[A-Z][A-Za-z' -]+,\s*([A-Z][A-Za-z]+)/.exec(cands[c]);
-        var after = m ? cands[c].slice(m.index + m[0].length) : '';
-        if (/^[A-Za-z]/.test(after)) continue; // glued - not this element
-        return got;
-      }
-      return learnNamesFromText((doc.body && doc.body.textContent) || '');
-    } catch (e) { return []; }
+    } catch (e) {}
+    try { return learnNamesFromText((doc.body && doc.body.textContent) || ''); } catch (e) { return []; }
   }
   function redactStr(s, names) {
     var out = String(s);
@@ -125,6 +134,7 @@
       var rx = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
       out = out.replace(rx, 'RESIDENT');
     });
+    learnedCodes.forEach(function (c) { out = out.split(c).join('X'); });
     out = out.replace(/ESOLclientid=\d+/g, 'ESOLclientid=X');
     out = out.replace(/\b(DOB|Date of Birth)[:\s]*\d{1,2}\/\d{1,2}\/\d{2,4}/gi, '$1: X');
     out = out.replace(/\b(MRN|Medical Record #|Chart #)[:\s]*\d{4,}/gi, '$1: X');
