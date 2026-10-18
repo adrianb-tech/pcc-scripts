@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.23
+// @version      1.24
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -306,17 +306,22 @@
         // tokens that follow Mrs./Mr./Ms. (3+ times); the
         // first name is the frequent capitalized token that
         // shares the most sentences with that surname.
-        var sents = tx6.split(/(?<=[.!?])\s+/);
         var surCount = {};
         var hm6 = tx6.matchAll(/\b(?:Mrs|Mr|Ms)\.\s+([A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,})/g);
         for (var h6 of hm6) surCount[h6[1]] = (surCount[h6[1]] || 0) + 1;
         var surs = Object.keys(surCount).filter(function (k) { return surCount[k] >= 3 && !STOP[k]; });
         for (var si6 = 0; si6 < surs.length; si6++) {
-          var sur = surs[si6], co = {};
-          for (var sj = 0; sj < sents.length; sj++) {
-            if (sents[sj].indexOf(sur) === -1) continue;
-            var st = sents[sj].match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
+          // Co-occurrence by WINDOW (+/-300 chars around each
+          // surname mention): the first name lives in the
+          // sentences AROUND the honorific, rarely inside it.
+          var sur = surs[si6], co = {}, pos = 0;
+          while (true) {
+            var ix = tx6.indexOf(sur, pos);
+            if (ix === -1) break;
+            var win = tx6.slice(Math.max(0, ix - 300), ix + 300);
+            var st = win.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
             for (var sk = 0; sk < st.length; sk++) { if (st[sk] !== sur && !STOP[st[sk]]) co[st[sk]] = (co[st[sk]] || 0) + 1; }
+            pos = ix + sur.length;
           }
           var firsts = Object.keys(co).filter(function (k) { return co[k] >= 3 && counts[k] >= 5; })
             .sort(function (a, b) { return co[b] - co[a]; });
