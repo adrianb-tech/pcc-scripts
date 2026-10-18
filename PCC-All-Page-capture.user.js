@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.4
+// @version      1.5
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -78,6 +78,59 @@
     return block;
   }
 
+  // Auto-redaction (v1.5, Phase 0 of the note-system build):
+  // every SAVED file is stripped before it exists - the
+  // resident's name (learned from the page's own header) ->
+  // RESIDENT, DOB and MRN numbers -> X, chart id out of URLs.
+  // The live page is never touched; only the file is.
+  function learnNamesFromText(text) {
+    var names = [];
+    var m = /Resident:\s*([A-Z][A-Za-z' -]+),\s*([A-Z][A-Za-z]+)/.exec(text || '');
+    if (m) {
+      var last = m[1].trim();
+      var first = m[2].trim();
+      var lastTitle = last.charAt(0).toUpperCase() + last.slice(1).toLowerCase();
+      [last + ', ' + first, first + ' ' + last, lastTitle, last, first]
+        .forEach(function (n) { if (n && n.length > 2) names.push(n); });
+    }
+    return names.sort(function (a, b) { return b.length - a.length; });
+  }
+  function learnNames(doc) {
+    // Learn from the element carrying 'Resident:' - shortest
+    // text first, and reject a parse whose first name runs
+    // straight into more letters (page text glues the name to
+    // the next label and corrupts it, e.g. 'WendyDOB').
+    try {
+      var els = doc.querySelectorAll('span, div, td, th, li, a');
+      var cands = [];
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx.indexOf('Resident:') !== -1 && tx.length < 90) cands.push(tx);
+      }
+      cands.sort(function (a, b) { return a.length - b.length; });
+      for (var c = 0; c < cands.length; c++) {
+        var got = learnNamesFromText(cands[c]);
+        if (!got.length) continue;
+        var m = /Resident:\s*[A-Z][A-Za-z' -]+,\s*([A-Z][A-Za-z]+)/.exec(cands[c]);
+        var after = m ? cands[c].slice(m.index + m[0].length) : '';
+        if (/^[A-Za-z]/.test(after)) continue; // glued - not this element
+        return got;
+      }
+      return learnNamesFromText((doc.body && doc.body.textContent) || '');
+    } catch (e) { return []; }
+  }
+  function redactStr(s, names) {
+    var out = String(s);
+    (names || []).forEach(function (n) {
+      var rx = new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+      out = out.replace(rx, 'RESIDENT');
+    });
+    out = out.replace(/ESOLclientid=\d+/g, 'ESOLclientid=X');
+    out = out.replace(/\b(DOB|Date of Birth)[:\s]*\d{1,2}\/\d{1,2}\/\d{2,4}/gi, '$1: X');
+    out = out.replace(/\b(MRN|Medical Record #|Chart #)[:\s]*\d{4,}/gi, '$1: X');
+    return out;
+  }
+
   function walk(doc, depth, lines, counter) {
     var n = counter.value++;
     var head = '\n\n<!-- ================= DOC ' + n + ' (depth ' + depth + ') url=' +
@@ -87,7 +140,8 @@
     var html = '';
     try { html = doc.documentElement ? doc.documentElement.outerHTML : '(no documentElement)'; }
     catch (e) { html = '(outerHTML failed: ' + e.message + ')'; }
-    lines.push(head + html);
+    var names = learnNames(doc);
+    lines.push(redactStr(head, names) + redactStr(html, names));
     var frames = doc.querySelectorAll('iframe');
     for (var i = 0; i < frames.length; i++) {
       var cd = null;
@@ -105,9 +159,9 @@
     // the page at +3s, not in the click itself.
     setTimeout(function () {
       try {
-        var lines = ['<!-- PCC TREE CAPTURE v1.3 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->'];
+        var lines = [redactStr('<!-- PCC TREE CAPTURE v1.5 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->', learnNames(document))];
         walk(document, 0, lines, { value: 0 });
-        lines.push(feedbackBlock());
+        lines.push(redactStr(feedbackBlock(), learnNames(document)));
         var blob = new Blob([lines.join('\n')], { type: 'text/html' });
         var a = document.createElement('a');
         var d = new Date();
@@ -166,13 +220,21 @@
     function finish(snaps) {
       var byKey = {};
       (snaps || []).forEach(function (s) { byKey[s.k] = s; });
-      var lines = ['<!-- PCC REVIEW v1.4 ' + new Date().toISOString() + ' - ' + unsent.length + ' unsent judgements, each followed by the page frozen when it was made -->'];
+      // Redact the review file too (v1.5): names learned from
+      // every snapshot's own header + this page, applied to all.
+      var allNames = learnNames(document);
+      (snaps || []).forEach(function (s) {
+        learnNamesFromText(String(s.html || '').replace(/<[^>]+>/g, ' '))
+          .forEach(function (n) { if (allNames.indexOf(n) === -1) allNames.push(n); });
+      });
+      allNames.sort(function (a, b) { return b.length - a.length; });
+      var lines = ['<!-- PCC REVIEW v1.5 ' + new Date().toISOString() + ' - ' + unsent.length + ' unsent judgements, each followed by the page frozen when it was made; auto-redacted -->'];
       unsent.forEach(function (r, i) {
         lines.push('\n\n<!-- ================= JUDGEMENT ' + (i + 1) + ' of ' + unsent.length + ' ================= -->');
-        lines.push('<script type="application/json" class="pn-review-rec">' +
-          JSON.stringify(r).replace(/<\//g, '<\\/') + '</' + 'script>');
+        lines.push(redactStr('<script type="application/json" class="pn-review-rec">' +
+          JSON.stringify(r).replace(/<\//g, '<\\/') + '</' + 'script>', allNames));
         var s = byKey[r.k];
-        lines.push(s && s.html ? s.html : '<!-- (no page snapshot stored for this judgement) -->');
+        lines.push(s && s.html ? redactStr(s.html, allNames) : '<!-- (no page snapshot stored for this judgement) -->');
       });
       download('pcc-review-' + stamp() + '.html', lines.join('\n'));
       all.forEach(function (r) { r.sent = true; });
