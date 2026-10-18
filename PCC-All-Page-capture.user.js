@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.12
+// @version      1.13
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -192,7 +192,7 @@
       var hits = [];
       for (var q = 0; q < els4.length; q++) {
         var qtx = (els4[q].textContent || '').replace(/\s+/g, ' ').trim();
-        if (qtx.length > 80 || qtx.length < 5) continue;
+        if (qtx.length > 220 || qtx.length < 5) continue;
         if (/^clinical\s/i.test(qtx)) continue;
         var qm = /^([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(qtx);
         if (qm) {
@@ -223,6 +223,32 @@
     } catch (e) {}
     return out;
   }
+  // Header region dump (v1.13): every element type near the
+  // top of the page, text masked by the script itself. When
+  // no single element matches the name patterns, this shows
+  // how the header is ACTUALLY built - which tag holds the
+  // name, whether it is split, how long its container is.
+  function headerRegion(doc) {
+    var out = [], seen = {};
+    try {
+      var els = doc.querySelectorAll('body *');
+      for (var i = 0; i < els.length && out.length < 14; i++) {
+        var el = els[i];
+        if (!el.children || el.children.length > 3) continue;
+        var tx = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx.length < 4 || tx.length > 140) continue;
+        var r = null;
+        try { r = el.getBoundingClientRect(); } catch (e) {}
+        if (!r || r.top < 0 || r.top > 340) continue;
+        var line = el.tagName + ': ' + tx.replace(/[A-Za-z]{3,}/g, '###').replace(/\d{3,}/g, '###');
+        if (seen[line]) continue;
+        seen[line] = 1;
+        out.push(line);
+      }
+    } catch (e) {}
+    return out;
+  }
+
   function redactStr(s, names) {
     var out = String(s);
     (names || []).forEach(function (n) {
@@ -274,8 +300,10 @@
           var shapes = nameShapes(document);
           var banner = document.createElement('div');
           banner.setAttribute('style', 'border:2px solid #b91c1c;background:#fef2f2;color:#7f1d1d;padding:10px 12px;font:12px monospace;white-space:pre-wrap;word-break:break-all;');
+          var region = headerRegion(document);
           banner.textContent = 'HEADER SHAPE (masked - safe to copy to Mica): ' +
-            (shapes.length ? shapes.join('  |  ') : 'no name-shaped element found');
+            (shapes.length ? shapes.join('  |  ') : 'no name-shaped element found') +
+            (region.length ? '\nHEADER REGION:\n' + region.join('\n') : '');
           lines.push(banner.outerHTML);
         } catch (e) {}
         walk(document, 0, lines, { value: 0 });
