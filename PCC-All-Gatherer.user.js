@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      1.0
+// @version      1.2
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel from the pages already proven readable and publishes one stamped packet (JSON in a page node + a tm-gather-update event) for the Psychiatry page to render. Read-only: reads, presents, writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -78,30 +78,150 @@
     try { document.dispatchEvent(new CustomEvent('tm-gather-update')); } catch (e) {}
   }
 
-  // The copy-table header tiles: a label element inside a
-  // small tile; the value is the tile's text minus the label.
-  function readHeader() {
-    var labels = {
-      'ADMISSION': 'admission', 'ADMISSION (RE-ENTRY)': 'admission',
-      'AGE / SEX': 'ageSex', 'AGE/SEX': 'ageSex',
-      'ROOM': 'room', 'ALLERGIES': 'allergies', 'WEIGHT': 'weight',
-      'PSYCH MEDS': 'psychMeds'
-    };
+  // The header facts (v1.2). His first live test landed
+  // only Admission + Allergies by scraping the tile row.
+  // The tile row is SELF-SOURCED (More/Less script): it
+  // computes its values from PCC's native header with
+  // proven finders. The Gatherer now uses THE SAME
+  // finders, so a fact on the Psychiatry page is the same
+  // fact as on his tiles by construction (his consistency
+  // rule: a fact stated anywhere must match everywhere).
+  // The v1.1 tile climb stays as a fallback.
+  function fmtAllergies(raw) {
+    if (!raw) return '';
+    var cleaned = raw.trim();
+    if (/^no\s+known\s+(?:drug\s+)?allergies/i.test(cleaned) || /^nkda?/i.test(cleaned)) return 'NKA';
+    var list = cleaned.split(/[,;\/\n]+/);
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i].replace(/\s+/g, ' ').trim();
+      item = item.replace(/(?:Copy|Copied)$/i, '').trim();
+      if (!item) continue;
+      item = item.replace(/\bpen[ie]cill?in\b/gi, 'PCN');
+      out.push(item);
+    }
+    return out.join(', ');
+  }
+  function isCrownHeights() {
+    try {
+      var els = document.querySelectorAll('select, button, a, span, div, td');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').trim();
+        if (tx.length > 90 || tx.length < 6) continue;
+        if (!/crown\s*heights/i.test(tx)) continue;
+        var r = null;
+        try { r = els[i].getBoundingClientRect(); } catch (e) {}
+        if (r && r.top >= -50 && r.top < 300) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  function roomBedNumber(withWing) {
+    try {
+      var txt = (document.body && document.body.textContent) ? document.body.textContent : '';
+      var v = '';
+      var m = txt.match(/\bLocation\s*:?\s*([^\n]*?)(?=\s*(?:Status|Code Status|Physician|DOB|Admission|Initial Admission|Discharge|Allergies|Special Instructions)\b|\n|$)/);
+      if (m) v = m[1].replace(/\s+/g, ' ').trim();
+      if (!v) {
+        var li = txt.search(/\bLocation\b/i);
+        if (li !== -1) v = txt.substr(li, 40).replace(/\s+/g, ' ').trim();
+      }
+      var rm = v.match(/\b(\d{2,4})\s*-?\s*([A-Za-z])?\b/);
+      if (!rm) return '';
+      var pre = '';
+      if (withWing) {
+        var tok = v.slice(0, rm.index).match(/([A-Za-z]+)\s*$/);
+        if (tok && /^(east|west)$/i.test(tok[1])) pre = tok[1].charAt(0).toUpperCase();
+        else if (tok && tok[1].length === 1 && /[ew]/i.test(tok[1])) pre = tok[1].toUpperCase();
+      }
+      return pre + rm[1] + (rm[2] ? rm[2].toUpperCase() : '');
+    } catch (e) { return ''; }
+  }
+  function weightBlock() {
+    var blocks = document.querySelectorAll('.vitalDetails');
+    for (var i = 0; i < blocks.length; i++) {
+      var b = blocks[i].querySelector('b');
+      var v = blocks[i].querySelector('.vitalValue');
+      if (b && v && /^weight$/i.test((b.textContent || '').trim())) {
+        var m = (v.textContent || '').match(/([\d.]+)\s*lbs/i);
+        if (m) {
+          var td = blocks[i].closest ? blocks[i].closest('td') : null;
+          return { value: m[1] + ' lbs', flagged: !!(td && td.classList && td.classList.contains('vitalWithException')) };
+        }
+      }
+    }
+    return null;
+  }
+  function selfHeader() {
+    var out = {};
+    try {
+      var txt = (document.body && document.body.textContent) ? document.body.textContent : '';
+      var m = txt.match(/\((\d{1,3})\/(Male|Female)\)/);
+      if (m) out.ageSex = m[1] + (m[2] === 'Male' ? 'M' : 'F');
+      var room = roomBedNumber(isCrownHeights());
+      if (room) out.room = room;
+      var al = document.querySelector('.residentAllergies .residentDetailValue');
+      if (al) { var fa = fmtAllergies((al.textContent || '').trim()); if (fa) out.allergies = fa; }
+      var a1 = txt.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (a1) out.admission = a1[1];
+      else {
+        var a2 = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+        if (a2) out.admission = a2[1];
+      }
+      var wb = weightBlock();
+      if (wb) { out.weight = wb.value; if (wb.flagged) out.weightFlagged = true; }
+      var btn = document.getElementById('copyMedListBtn');
+      if (btn) {
+        var bNode = btn.parentElement;
+        for (var bUp = 0; bUp < 3 && bNode; bUp++) {
+          var bTx = norm(bNode.textContent);
+          if (/psych med list/i.test(bTx) && bTx.length > 30) {
+            var meds2 = bTx.replace(/^Psych med list\s*(Copy\s*)?/i, '').trim();
+            if (meds2) { out.psychMeds = meds2.slice(0, 300); break; }
+          }
+          bNode = bNode.parentElement;
+        }
+      }
+    } catch (e) {}
+    return out;
+  }
+  function tileClimbHeader() {
+    var labels = [
+      ['ADMISSION (RE-ENTRY)', 'admission'], ['ADMISSION', 'admission'],
+      ['AGE / SEX', 'ageSex'], ['AGE/SEX', 'ageSex'],
+      ['ROOM', 'room'], ['ALLERGIES', 'allergies'],
+      ['WEIGHT', 'weight'], ['PSYCH MEDS', 'psychMeds']
+    ];
     var facts = {}, found = 0;
-    var els = document.querySelectorAll('div,span,td');
+    var els = document.querySelectorAll('div,span,td,th');
     for (var i = 0; i < els.length; i++) {
       var el = els[i];
-      if (el.children.length > 1) continue;
-      var key = labels[norm(el.textContent).toUpperCase()];
-      if (!key || facts[key]) continue;
-      var tile = el.parentElement;
-      if (!tile) continue;
-      var tileText = norm(tile.textContent);
-      var labelText = norm(el.textContent);
-      var value = tileText.slice(tileText.toUpperCase().indexOf(labelText.toUpperCase()) + labelText.length).trim();
-      if (value) { facts[key] = value.slice(0, 300); found++; }
+      var et = norm(el.textContent).toUpperCase();
+      if (!et || et.length > 60) continue;
+      var hit = null;
+      for (var j = 0; j < labels.length; j++) {
+        if (et === labels[j][0] || et.indexOf(labels[j][0]) === 0) { hit = labels[j]; break; }
+      }
+      if (!hit || facts[hit[1]]) continue;
+      var node = el;
+      for (var up = 0; up < 4 && node; up++) {
+        var tt = norm(node.textContent);
+        var rest = tt.toUpperCase().indexOf(hit[0]) === 0 ? tt.slice(hit[0].length).trim() : '';
+        rest = rest.replace(/^Copy(?=\s|[A-Z])\s*/, '');
+        if (rest && rest.length <= 600 && rest.toUpperCase() !== et) { facts[hit[1]] = rest.slice(0, 600); found++; break; }
+        node = node.parentElement;
+      }
     }
-    return found >= 2 ? facts : null;
+    return found ? facts : null;
+  }
+  function readHeader() {
+    var out = selfHeader();
+    var n = Object.keys(out).length;
+    if (n < 4) {
+      var fb = tileClimbHeader();
+      if (fb) Object.keys(fb).forEach(function (k) { if (!out[k]) { out[k] = fb[k]; n++; } });
+    }
+    return n >= 2 ? out : null;
   }
 
   // An extractor tile's compact text by its title.
