@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.3
+// @version      1.4
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -121,9 +121,11 @@
         '<span style="font:400 12px ' + FONT + ';color:#94a3b8;">the one page — everything psychiatrically connected, in one place</span>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
-        miniTile('Diagnoses', 'diagnoses') + miniTile('Relationships', 'relations') + miniTile('Facesheet', 'facesheet') + miniTile('Admission facts', 'admissionFacts') +
+        miniTile('Relationships', 'relations') + miniTile('Facesheet', 'facesheet') + miniTile('Admission facts', 'admissionFacts') +
       '</div>' +
       '<div id="tmPsychStamp" style="font:400 11px ' + FONT + ';color:#94a3b8;margin-bottom:8px;">Gatherer: waiting…</div>' +
+      '<div id="tmPsychDxSlot" style="margin-bottom:8px;"></div>' +
+      '<div id="tmPsychBehSlot" style="margin-bottom:8px;"></div>' +
       '<div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:10px;">' +
         '<div style="font:700 13px ' + FONT + ';color:#9a3412;">Your words</div>' +
         '<textarea id="tmPsychWords" rows="3" placeholder="Dictate or type here — verbatim, editable. Lives only on this page; nothing is saved or sent." ' +
@@ -131,8 +133,9 @@
           'padding:8px;font:400 14px ' + FONT + ';color:#0f172a;background:#ffffff;resize:vertical;"></textarea>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-        sectionTile('Script summary', 'summary') + sectionTile('Behaviors', 'behaviors') + sectionTile('Labs & monitoring', 'labs') + sectionTile('Your prior notes', 'ownnotes') +
+        sectionTile('Script summary', 'summary') + sectionTile('Labs & monitoring', 'labs') + sectionTile('Your prior notes', 'ownnotes') +
       '</div>';
+    fillSlots(p);
     renderPacketInto(p);
     var ta = p.querySelector('#tmPsychWords');
     ta.value = words;
@@ -157,7 +160,16 @@
       var el = p.querySelector('[data-val-for="' + key + '"]');
       if (el && val) el.textContent = val;
     }
-    if (s.diagnoses && s.diagnoses.status === 'landed') setVal('diagnoses', (s.diagnoses.summary || '').slice(0, 90));
+    var dxFb = p.querySelector('[data-dx-fallback="1"]');
+    if (dxFb && s.diagnoses && s.diagnoses.status === 'landed') {
+      dxFb.style.color = '#0f172a';
+      dxFb.textContent = (s.diagnoses.summary || '') + '\n— ' + s.diagnoses.source + ' · ' + s.diagnoses.at;
+    }
+    var behFb = p.querySelector('[data-beh-fallback="1"]');
+    if (behFb && s.behaviors && s.behaviors.status === 'landed') {
+      behFb.style.color = '#0f172a';
+      behFb.textContent = (s.behaviors.summary || '') + '\n— ' + s.behaviors.source + ' · ' + s.behaviors.at;
+    }
     function setSection(key, stop) {
       var el = p.querySelector('[data-section-for="' + key + '"]');
       if (el && stop && stop.status === 'landed') {
@@ -165,7 +177,6 @@
         el.textContent = (stop.summary || '') + '\n— ' + stop.source + ' · ' + stop.at;
       }
     }
-    setSection('behaviors', s.behaviors);
     setSection('labs', s.labs);
     setSection('ownnotes', s.ownnotes);
     var stamp = p.querySelector('#tmPsychStamp');
@@ -180,6 +191,66 @@
     if (p && open) renderPacketInto(p);
   });
 
+  // Live tiles (v1.4, his ask from the TREE capture): on the
+  // Progress Notes page the REAL Diagnoses and Behavior tiles
+  // move into the tab while it is open - the same nodes, so
+  // their buttons, range pills, jump-to-note entries and
+  // feedback marks all keep working - and they return to
+  // their exact spots when the tab closes. On other pages
+  // the slots show fallback cards the Gatherer fills.
+  var adopted = [];
+  function adoptTiles(p) {
+    adopted = [];
+    var jobs = [
+      { slot: 'tmPsychDxSlot', ids: ['pnDxBtnRow', 'pnDxBox'] },
+      { slot: 'tmPsychBehSlot', ids: ['pnBehBox'] }
+    ];
+    jobs.forEach(function (job) {
+      var slot = p.querySelector('#' + job.slot);
+      if (!slot) return;
+      if (slot.dataset.live === '1') return;
+      slot.innerHTML = '';
+      job.ids.forEach(function (id) {
+        var node = document.getElementById(id);
+        if (!node || !node.parentNode) return;
+        var marker = document.createComment('tmPsychSpot-' + id);
+        node.parentNode.insertBefore(marker, node);
+        slot.appendChild(node);
+        adopted.push({ node: node, marker: marker });
+      });
+      if (slot.children.length) slot.dataset.live = '1';
+    });
+    fillSlots(p);
+  }
+  function restoreTiles(p) {
+    adopted.forEach(function (a) {
+      if (a.marker.parentNode) {
+        a.marker.parentNode.insertBefore(a.node, a.marker);
+        a.marker.parentNode.removeChild(a.marker);
+      }
+    });
+    adopted = [];
+    ['tmPsychDxSlot', 'tmPsychBehSlot'].forEach(function (id) {
+      var slot = p.querySelector('#' + id);
+      if (slot) delete slot.dataset.live;
+    });
+    fillSlots(p);
+  }
+  function fillSlots(p) {
+    var dx = p.querySelector('#tmPsychDxSlot');
+    if (dx && !dx.children.length && dx.dataset.live !== '1') {
+      dx.innerHTML = '<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;">' +
+        '<div style="font:700 13px ' + FONT + ';color:#0f172a;">Diagnoses</div>' +
+        '<div data-dx-fallback="1" style="font:400 12.5px ' + FONT + ';color:#94a3b8;margin-top:4px;white-space:pre-wrap;">The live tile joins here when you open this tab on the Progress Notes page.</div></div>';
+    }
+    var beh = p.querySelector('#tmPsychBehSlot');
+    if (beh && !beh.children.length && beh.dataset.live !== '1') {
+      beh.innerHTML = '<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;">' +
+        '<div style="font:700 13px ' + FONT + ';color:#0f172a;">Behaviors</div>' +
+        '<div data-beh-fallback="1" style="font:400 12.5px ' + FONT + ';color:#94a3b8;margin-top:4px;white-space:pre-wrap;">The live tile joins here when you open this tab on the Progress Notes page.</div></div>';
+    }
+  }
+
   function setOpen(v, bar) {
     open = v;
     var tile = document.getElementById('tmPsychTab');
@@ -189,8 +260,10 @@
       if (!panel && bar) {
         panel = buildPanel();
         bar.parentNode.insertBefore(panel, bar.nextSibling);
-      } else if (panel) { panel.style.display = ''; renderPacketInto(panel); }
+      } else if (panel) panel.style.display = '';
+      if (panel) { adoptTiles(panel); renderPacketInto(panel); }
     } else if (panel) {
+      restoreTiles(panel);
       panel.style.display = 'none';
     }
   }
