@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.22
+// @version      1.23
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -300,6 +300,28 @@
         var top = Object.keys(counts).filter(function (k) { return counts[k] >= 5; })
           .sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 12);
         var escR = function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
+        // Path 6a (v1.23): honorific mining. Clinical notes
+        // constantly write 'Mrs. LAST' / 'Mr. LAST' while the
+        // full pair is rarely adjacent - so: surnames are the
+        // tokens that follow Mrs./Mr./Ms. (3+ times); the
+        // first name is the frequent capitalized token that
+        // shares the most sentences with that surname.
+        var sents = tx6.split(/(?<=[.!?])\s+/);
+        var surCount = {};
+        var hm6 = tx6.matchAll(/\b(?:Mrs|Mr|Ms)\.\s+([A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,})/g);
+        for (var h6 of hm6) surCount[h6[1]] = (surCount[h6[1]] || 0) + 1;
+        var surs = Object.keys(surCount).filter(function (k) { return surCount[k] >= 3 && !STOP[k]; });
+        for (var si6 = 0; si6 < surs.length; si6++) {
+          var sur = surs[si6], co = {};
+          for (var sj = 0; sj < sents.length; sj++) {
+            if (sents[sj].indexOf(sur) === -1) continue;
+            var st = sents[sj].match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
+            for (var sk = 0; sk < st.length; sk++) { if (st[sk] !== sur && !STOP[st[sk]]) co[st[sk]] = (co[st[sk]] || 0) + 1; }
+          }
+          var firsts = Object.keys(co).filter(function (k) { return co[k] >= 3 && counts[k] >= 5; })
+            .sort(function (a, b) { return co[b] - co[a]; });
+          if (firsts.length) return (LEARN_PATH = 'honorific', variantsFromPair(firsts[0], sur));
+        }
         var best = null;
         for (var a = 0; a < top.length; a++) for (var b = 0; b < top.length; b++) {
           if (a === b) continue;
