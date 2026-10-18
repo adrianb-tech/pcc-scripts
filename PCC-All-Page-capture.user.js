@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.13
+// @version      1.14
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -188,9 +188,10 @@
     // required suffix. Topmost on the page wins (the header
     // zone), then shortest. Long prose can't qualify.
     try {
-      var els4 = doc.querySelectorAll('span, div, td, a, b, strong, li, h1, h2, h3');
+      var els4 = doc.querySelectorAll('body *');
       var hits = [];
       for (var q = 0; q < els4.length; q++) {
+        if (els4[q].children && els4[q].children.length > 2) continue;
         var qtx = (els4[q].textContent || '').replace(/\s+/g, ' ').trim();
         if (qtx.length > 220 || qtx.length < 5) continue;
         if (/^clinical\s/i.test(qtx)) continue;
@@ -212,7 +213,7 @@
   function nameShapes(doc) {
     var out = [];
     try {
-      var els = doc.querySelectorAll('span, div, td, a, b, strong, li');
+      var els = doc.querySelectorAll('body *');
       for (var i = 0; i < els.length && out.length < 4; i++) {
         var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
         if (tx.length > 80 || tx.length < 5) continue;
