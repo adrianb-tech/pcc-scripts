@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.16
+// @version      1.17
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -156,7 +156,7 @@
     }
     return [];
   }
-  function learnNames(doc) {
+  function learnNames(doc, treeText) {
     try {
       var els = doc.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
       for (var i = 0; i < els.length; i++) {
@@ -227,7 +227,7 @@
     // just a page title is skipped by the stoplist, and a
     // token that appears only in the heading can't qualify.
     try {
-      var bodyTx = (doc.body && doc.body.textContent) || '';
+      var bodyTx = treeText || (doc.body && doc.body.textContent) || '';
       var heads = doc.querySelectorAll('h1, h2, h3');
       for (var hi = 0; hi < heads.length; hi++) {
         var htx = (heads[hi].textContent || '').replace(/\s+/g, ' ').trim();
@@ -305,6 +305,36 @@
     return out;
   }
 
+  // v1.17: the resident is the same person in every frame -
+  // learn the name from the WHOLE tree (heading in the shell,
+  // notes in the child) and redact every doc with the union.
+  function collectDocs() {
+    var docs = [];
+    (function add(doc) {
+      if (!doc || docs.indexOf(doc) !== -1) return;
+      docs.push(doc);
+      var fr = doc.querySelectorAll('iframe');
+      for (var i = 0; i < fr.length; i++) {
+        var cd = null;
+        try { cd = fr[i].contentDocument; } catch (e) {}
+        if (cd) add(cd);
+      }
+    })(document);
+    return docs;
+  }
+  var CAPTURE_NAMES = null;
+  function learnUnion() {
+    var docs = collectDocs();
+    var treeText = '';
+    docs.forEach(function (d) { treeText += '\n' + ((d.body && d.body.textContent) || ''); });
+    var seen = {}, out = [];
+    docs.forEach(function (d) {
+      learnNames(d, treeText).forEach(function (v) { if (!seen[v]) { seen[v] = 1; out.push(v); } });
+    });
+    out.sort(function (a, b) { return b.length - a.length; });
+    return out;
+  }
+
   function walk(doc, depth, lines, counter) {
     var n = counter.value++;
     var head = '\n\n<!-- ================= DOC ' + n + ' (depth ' + depth + ') url=' +
@@ -314,7 +344,7 @@
     var html = '';
     try { html = doc.documentElement ? doc.documentElement.outerHTML : '(no documentElement)'; }
     catch (e) { html = '(outerHTML failed: ' + e.message + ')'; }
-    var names = learnNames(doc);
+    var names = CAPTURE_NAMES || learnNames(doc);
     lines.push(redactStr(head, names) + redactStr(html, names));
     var frames = doc.querySelectorAll('iframe');
     for (var i = 0; i < frames.length; i++) {
@@ -333,24 +363,30 @@
     // the page at +3s, not in the click itself.
     setTimeout(function () {
       try {
-        var lines = [redactStr('<!-- PCC TREE CAPTURE v1.10 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->', learnNames(document))];
+        CAPTURE_NAMES = learnUnion();
+        var lines = [redactStr('<!-- PCC TREE CAPTURE v1.17 (delayed 3s) ' + new Date().toISOString() + ' top=' + location.href + ' -->', CAPTURE_NAMES)];
         // The header shape as a VISIBLE banner (v1.10): it used
         // to live only inside an HTML comment, which a browser
         // renders invisibly - his Cmd+F could never find it.
         // As a real element at the top of the saved file it is
         // findable and copyable. The shape text stays masked.
         try {
-          var shapes = nameShapes(document);
           var banner = document.createElement('div');
           banner.setAttribute('style', 'border:2px solid #b91c1c;background:#fef2f2;color:#7f1d1d;padding:10px 12px;font:12px monospace;white-space:pre-wrap;word-break:break-all;');
-          var region = headerRegion(document);
-          banner.textContent = 'HEADER SHAPE (masked - safe to copy to Mica): ' +
-            (shapes.length ? shapes.join('  |  ') : 'no name-shaped element found') +
-            (region.length ? '\nHEADER REGION:\n' + region.join('\n') : '');
+          var bdocs = collectDocs();
+          var bparts = [];
+          bdocs.forEach(function (bd, bi) {
+            var sh = nameShapes(bd);
+            var rg = headerRegion(bd);
+            bparts.push('DOC ' + bi + ': ' + (sh.length ? sh.join('  |  ') : 'no name-shaped element found') +
+              (rg.length ? '\nHEADER REGION (doc ' + bi + '):\n' + rg.join('\n') : ''));
+          });
+          banner.textContent = 'HEADER SHAPE (masked - safe to copy to Mica): learned ' +
+            (CAPTURE_NAMES ? CAPTURE_NAMES.length : 0) + ' name forms\n' + bparts.join('\n');
           lines.push(banner.outerHTML);
         } catch (e) {}
         walk(document, 0, lines, { value: 0 });
-        lines.push(redactStr(feedbackBlock(), learnNames(document)));
+        lines.push(redactStr(feedbackBlock(), CAPTURE_NAMES));
         var blob = new Blob([lines.join('\n')], { type: 'text/html' });
         var a = document.createElement('a');
         var d = new Date();
@@ -421,7 +457,7 @@
       (snaps || []).forEach(function (s) { byKey[s.k] = s; });
       // Redact the review file too (v1.5): names learned from
       // every snapshot's own header + this page, applied to all.
-      var allNames = learnNames(document);
+      var allNames = learnUnion();
       (snaps || []).forEach(function (s) {
         learnNamesFromText(String(s.html || '').replace(/<[^>]+>/g, ' '))
           .forEach(function (n) { if (allNames.indexOf(n) === -1) allNames.push(n); });
