@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.19
+// @version      1.20
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -254,7 +254,7 @@
     // Format-free: no header shape is assumed at all.
     try {
       var tx6 = treeText || (doc.body && doc.body.textContent) || '';
-      if (tx6.length > 4000) {
+      if (tx6.length > 800) {
         var STOP = { Progress: 1, Notes: 1, Note: 1, View: 1, All: 1, Clinical: 1, Nursing: 1, Behavior: 1, Medical: 1, Resident: 1, Residents: 1, Date: 1, Time: 1, Name: 1, Status: 1, Type: 1, Facility: 1, Center: 1, The: 1, And: 1, Plan: 1, Care: 1, Staff: 1, Patient: 1, Signed: 1, Document: 1, January: 1, February: 1, March: 1, April: 1, May: 1, June: 1, July: 1, August: 1, September: 1, October: 1, November: 1, December: 1 };
         var counts = {}, toks = tx6.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
         for (var ci = 0; ci < toks.length; ci++) { var tk = toks[ci]; if (!STOP[tk]) counts[tk] = (counts[tk] || 0) + 1; }
