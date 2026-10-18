@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.21
+// @version      1.22
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -154,7 +154,7 @@
     }
     return [];
   }
-  function learnNames(doc, treeText) {
+  function learnNamesFirst(doc, treeText) {
     try {
       var els = doc.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
       for (var i = 0; i < els.length; i++) {
@@ -245,34 +245,6 @@
         if (keep.length === 1 && toks.length === 1) return variantsFromPair('', keep[0]).filter(function (v) { return v.indexOf(',') === -1; });
       }
     } catch (e) {}
-    // Path 6 (v1.19): mine the name out of the page text
-    // itself. The resident's two name words are the pair that
-    // keeps appearing ADJACENT - in some order, with or
-    // without a comma - all over the notes. Count capitalized
-    // tokens (stoplist applied), then find the pair with the
-    // most adjacencies (needs 3+, one token 8+ mentions).
-    // Format-free: no header shape is assumed at all.
-    try {
-      var tx6 = treeText || (doc.body && doc.body.textContent) || '';
-      {
-        var STOP = { Progress: 1, Notes: 1, Note: 1, View: 1, All: 1, Clinical: 1, Nursing: 1, Behavior: 1, Medical: 1, Resident: 1, Residents: 1, Date: 1, Time: 1, Name: 1, Status: 1, Type: 1, Facility: 1, Center: 1, The: 1, And: 1, Plan: 1, Care: 1, Staff: 1, Patient: 1, Signed: 1, Document: 1, January: 1, February: 1, March: 1, April: 1, May: 1, June: 1, July: 1, August: 1, September: 1, October: 1, November: 1, December: 1 };
-        var counts = {}, toks = tx6.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
-        for (var ci = 0; ci < toks.length; ci++) { var tk = toks[ci]; if (!STOP[tk]) counts[tk] = (counts[tk] || 0) + 1; }
-        var top = Object.keys(counts).filter(function (k) { return counts[k] >= 5; })
-          .sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 12);
-        var escR = function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
-        var best = null;
-        for (var a = 0; a < top.length; a++) for (var b = 0; b < top.length; b++) {
-          if (a === b) continue;
-          var A = top[a], B = top[b];
-          var forms = [A + ' ' + B, A + ', ' + B, A + ' ' + B.toUpperCase(), A.toUpperCase() + ', ' + B];
-          var adj = 0;
-          for (var fi = 0; fi < forms.length; fi++) adj += (tx6.match(new RegExp(escR(forms[fi]), 'g')) || []).length;
-          if (adj >= 3 && Math.max(counts[A], counts[B]) >= 8 && (!best || adj > best.adj)) best = { A: A, B: B, adj: adj };
-        }
-        if (best) return (LEARN_PATH = 'mined', variantsFromPair(best.A, best.B));
-      }
-    } catch (e) {}
     try { return learnNamesFromText((doc.body && doc.body.textContent) || ''); } catch (e) { return []; }
   }
   // Masked shapes of the name-candidate elements (v1.11):
@@ -315,6 +287,49 @@
         out.push(line);
       }
     } catch (e) {}
+    return out;
+  }
+
+  function mineNames(tx6) {
+    try {
+      if (!tx6 || tx6.length < 200) return [];
+      {
+        var STOP = { Progress: 1, Notes: 1, Note: 1, View: 1, All: 1, Clinical: 1, Nursing: 1, Behavior: 1, Medical: 1, Resident: 1, Residents: 1, Date: 1, Time: 1, Name: 1, Status: 1, Type: 1, Facility: 1, Center: 1, The: 1, And: 1, Plan: 1, Care: 1, Staff: 1, Patient: 1, Signed: 1, Document: 1, January: 1, February: 1, March: 1, April: 1, May: 1, June: 1, July: 1, August: 1, September: 1, October: 1, November: 1, December: 1 };
+        var counts = {}, toks = tx6.match(/[A-Z][a-z\u00C0-\u024F'\u2019\-]+|[A-Z\u00C0-\u024F]{3,}/g) || [];
+        for (var ci = 0; ci < toks.length; ci++) { var tk = toks[ci]; if (!STOP[tk]) counts[tk] = (counts[tk] || 0) + 1; }
+        var top = Object.keys(counts).filter(function (k) { return counts[k] >= 5; })
+          .sort(function (a, b) { return counts[b] - counts[a]; }).slice(0, 12);
+        var escR = function (s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
+        var best = null;
+        for (var a = 0; a < top.length; a++) for (var b = 0; b < top.length; b++) {
+          if (a === b) continue;
+          var A = top[a], B = top[b];
+          var forms = [A + ' ' + B, A + ', ' + B, A + ' ' + B.toUpperCase(), A.toUpperCase() + ', ' + B];
+          var adj = 0;
+          for (var fi = 0; fi < forms.length; fi++) adj += (tx6.match(new RegExp(escR(forms[fi]), 'g')) || []).length;
+          if (adj >= 3 && Math.max(counts[A], counts[B]) >= 8 && (!best || adj > best.adj)) best = { A: A, B: B, adj: adj };
+        }
+        if (best) return variantsFromPair(best.A, best.B);
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  // v1.22: UNION learning - every path contributes, mining
+  // included. One path's wrong guess can no longer starve
+  // the others; a bogus extra pair only over-redacts, which
+  // is the safe direction.
+  function learnNames(doc, treeText) {
+    var out = [], seen = {};
+    function addAll(vs) { (vs || []).forEach(function (v) { if (!seen[v]) { seen[v] = 1; out.push(v); } }); }
+    addAll(learnNamesFirst(doc, treeText));
+    var mined = mineNames(treeText || (doc.body && doc.body.textContent) || '');
+    if (mined.length) {
+      var fresh = mined.filter(function (v) { return !seen[v]; });
+      if (fresh.length) LEARN_PATH = (LEARN_PATH ? LEARN_PATH + '+' : '') + 'mined';
+      addAll(mined);
+    }
+    out.sort(function (a, b) { return b.length - a.length; });
     return out;
   }
 
