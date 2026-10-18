@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Page capture (temporary diagnostic)
 // @namespace    mica.pcc
-// @version      1.8
+// @version      1.9
 // @description  Page capture + review courier (v1.4): the green HTML button downloads the frame tree with live probes and embeds unsent feedback records. The REVIEW button downloads the periodic review file: every unsent judgement paired with the pruned page snapshot stored at the moment he judged (snapshots live in IndexedDB 'pnReview'); both are marked sent so each rides exactly once.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -159,6 +159,11 @@
       var spans = doc.querySelectorAll('span');
       for (var s = 0; s < spans.length; s++) {
         if ((spans[s].textContent || '').replace(/\s+/g, ' ').trim() !== 'Progress Notes - View All') continue;
+        // Candidates from up to 3 ancestor levels, SHORTEST
+        // text first: a wrapper div glues the name to the
+        // next label ('WendyDOB'), corrupting the parse - the
+        // name's own small element always parses clean.
+        var cands = [];
         var block = spans[s].parentElement;
         for (var up = 0; block && up < 3; up++) {
           var inner = block.querySelectorAll('span, div, a, b, strong');
@@ -166,10 +171,14 @@
             var itx = (inner[j].textContent || '').replace(/\s+/g, ' ').trim();
             if (itx.length > 60 || itx.length < 5) continue;
             if (itx === 'Progress Notes - View All') continue;
-            var im = /^([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(itx);
-            if (im) return parseName(im[1] + ', ' + im[2], '');
+            cands.push(itx);
           }
           block = block.parentElement;
+        }
+        cands.sort(function (a, b) { return a.length - b.length; });
+        for (var c = 0; c < cands.length; c++) {
+          var im = /^([A-Z][A-Za-z'\u2019\-]+(?:\s+[A-Z][A-Za-z'\u2019\-]+)?)\s*,\s*([A-Z][A-Za-z'\u2019\-]+)/.exec(cands[c]);
+          if (im) return parseName(im[1] + ', ' + im[2], '');
         }
         break;
       }
