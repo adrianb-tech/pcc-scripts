@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.7
+// @version 1.8
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -131,9 +131,25 @@
   }
 
   function chartId(){
-    var m = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
-    return m ? m[1] : '';
+    // The resident's chart number from the header name
+    // element ('Last, First (CH...)') - the Gatherer's
+    // way. NOT the first parenthesized number anywhere
+    // in the body: on the assessments list that was
+    // '929', a random form number, so verdicts keyed by
+    // it never matched the same resident on other tabs.
+    try {
+      var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx.length > 70 || tx.length < 5) continue;
+        if (/^clinical\s/i.test(tx)) continue;
+        var em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}(\d{3,})\s*\)/);
+        if (em) return em[1];
+      }
+    } catch (e) {}
+    return '';
   }
+
   function publishVerdict(verdict, reStr, lastFormStr){
     // One verdict record, keyed to this resident + this
     // re-entry date, read on every tab (v1.7, his ask):
@@ -164,14 +180,19 @@
       return;
     }
     if (rd >= lf.d) {
+      // A readmission alert must be STABLE: the forms
+      // grid populates in stages, and a half-loaded list
+      // can show a bogus old 'latest' date on an early
+      // pass. Publish only when two passes agree.
+      var cand = re.str + '|' + lf.s;
+      if (update._cand !== cand) { update._cand = cand; return; }
       publishVerdict('readmit', re.str, lf.s);
       render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
       // Publish the verdict so the tile-row script can show the same
       // warning beside the G button in the header bar (his ask,
       // 2026-10-14). Keyed to this resident + this re-entry date.
       try {
-        var idm = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
-        localStorage.setItem('tmReadmitNote', JSON.stringify({ id: idm ? idm[1] : '', date: re.str, ts: Date.now() }));
+        localStorage.setItem('tmReadmitNote', JSON.stringify({ id: chartId(), date: re.str, ts: Date.now() }));
       } catch (e) {}
     } else {
       publishVerdict('ok', re.str, lf.s);
