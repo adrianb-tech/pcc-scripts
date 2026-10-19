@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.11
+// @version 1.12
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -43,10 +43,12 @@
   // the overflow tabs under MORE are plain small white tiles; the
   // MORE/LESS toggle is a tile too.
   var MAINS = {
-    'DASH': '#2563eb', 'PROFILE': '#7c3aed', 'FORMS': '#d97706',
+    'DASH': '#2563eb', 'FORMS': '#d97706',
     'ASSMNTS': '#d97706', 'PROG NOTES': '#059669'
   };
-  var SECOND = { 'ORDERS': 1, 'WTS/VITALS': 1, 'RESULTS': 1, 'MED DIAG': 1, 'MISC': 1 };
+  // His call (2026-10-19): PROFILE leaves the big colored
+  // mains and joins the red second tier, like ORDERS.
+  var SECOND = { 'PROFILE': 1, 'ORDERS': 1, 'WTS/VITALS': 1, 'RESULTS': 1, 'MED DIAG': 1, 'MISC': 1 };
 
   function setKids(el, color, size) {
     var kids = el.querySelectorAll('*');
