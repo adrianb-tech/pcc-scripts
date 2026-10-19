@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.5
+// @version      1.6
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
 // @run-at       document-idle
+// @allFrames    true
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Psychiatry-tab.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Psychiatry-tab.user.js
@@ -200,6 +201,23 @@
   // their exact spots when the tab closes. On other pages
   // the slots show fallback cards the Gatherer fills.
   var adopted = [];
+  // The chart is a shell: the extractor tiles live in the
+  // Progress Notes FRAME, the tab lives in the shell. Find
+  // a node by id in this document or any same-origin frame
+  // document (v1.6, from his 2138 capture: the notes page
+  // itself carries no tab bar at all).
+  function findInFrames(id) {
+    var n = document.getElementById(id);
+    if (n) return n;
+    var frames = document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) {
+      try {
+        var fd = frames[i].contentDocument;
+        if (fd) { var fn = fd.getElementById(id); if (fn) return fn; }
+      } catch (e) {}
+    }
+    return null;
+  }
   function adoptTiles(p) {
     adopted = [];
     var jobs = [
@@ -212,9 +230,9 @@
       if (slot.dataset.live === '1') return;
       slot.innerHTML = '';
       job.ids.forEach(function (id) {
-        var node = document.getElementById(id);
+        var node = findInFrames(id);
         if (!node || !node.parentNode) return;
-        var marker = document.createComment('tmPsychSpot-' + id);
+        var marker = node.ownerDocument.createComment('tmPsychSpot-' + id);
         node.parentNode.insertBefore(marker, node);
         slot.appendChild(node);
         adopted.push({ node: node, marker: marker });
@@ -225,9 +243,14 @@
   }
   function restoreTiles(p) {
     adopted.forEach(function (a) {
-      if (a.marker.parentNode) {
+      if (a.marker.isConnected && a.marker.parentNode) {
         a.marker.parentNode.insertBefore(a.node, a.marker);
         a.marker.parentNode.removeChild(a.marker);
+      } else if (a.node.parentNode) {
+        // The frame that owned the tile is gone; the tile
+        // goes with its page (the extractors rebuild it on
+        // the next notes load).
+        a.node.parentNode.removeChild(a.node);
       }
     });
     adopted = [];
