@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.12
+// @version      3.13
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -635,7 +635,7 @@
     return '';
   }
   function bimsValue() {
-    return crossValue(function (doc) {
+    var bv = crossValue(function (doc) {
       var box = doc.getElementById('custom-bims-badge');
       if (!box) return '';
       var btn = box.querySelector('.pcc-fill-copy');
@@ -643,6 +643,33 @@
       var vv = box.querySelector('.bims-value');
       return vv ? (vv.textContent || '').trim() : '';
     });
+    if (bv) return bv;
+    return scopedFeed('tmBimsFor:');
+  }
+  // The Gatherer's scoped feeds (tmRelFor:/tmBimsFor:),
+  // keyed by a resident token (chart number, or the
+  // session EID as fallback). Accept a stored value
+  // only when its token provably belongs to THIS page:
+  // the token must appear in the page's text or in one
+  // of its links. No name-shape guessing (v3.13 - the
+  // strict header regex missed real headers).
+  function scopedFeed(prefix) {
+    try {
+      var hrefs = '';
+      var as = document.querySelectorAll('a[href]');
+      for (var ai = 0; ai < as.length; ai++) hrefs += ' ' + (as[ai].getAttribute('href') || '');
+      var bodyT = (document.body && document.body.textContent) || '';
+      for (var i = 0; i < localStorage.length; i++) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf(prefix) !== 0) continue;
+        var token = k.slice(prefix.length).replace(/^(chart|eid):/, '');
+        if (!token || token.length < 4) continue;
+        if (bodyT.indexOf(token) === -1 && hrefs.indexOf(token) === -1) continue;
+        var f = JSON.parse(localStorage.getItem(k) || 'null');
+        if (f && f.value && Date.now() - (f.ts || 0) < 24 * 3600 * 1000) return String(f.value);
+      }
+    } catch (e) {}
+    return '';
   }
   function relValue() {
     var v = crossValue(function (doc) {
@@ -650,28 +677,7 @@
       return btn ? (btn.getAttribute('data-fill-value') || '') : '';
     });
     if (v) return v;
-    // Gatherer feed (v3.12, his ruling 2026-10-19:
-    // Relationships visible at all times on the row).
-    // The Gatherer fetches the Profile itself and stores
-    // the value under a key scoped to THIS resident's
-    // chart number - read it only when the chart number
-    // in this page's header matches, so one resident's
-    // relationships can never show on another's row.
-    try {
-      var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
-      for (var i = 0; i < els.length; i++) {
-        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
-        if (tx.length > 70 || tx.length < 5) continue;
-        if (/^clinical\s/i.test(tx)) continue;
-        var em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
-        if (em) {
-          var f = JSON.parse(localStorage.getItem('tmRelFor:chart:' + em[1].toUpperCase()) || 'null');
-          if (f && f.value && Date.now() - (f.ts || 0) < 24 * 3600 * 1000) return String(f.value);
-          return '';
-        }
-      }
-    } catch (e) {}
-    return '';
+    return scopedFeed('tmRelFor:');
   }
 
   // READMISSION chip beside the G button (his ask, 2026-10-14: he
