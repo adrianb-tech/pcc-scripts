@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.0
+// @version      2.0.5
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -6509,6 +6509,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			"tourettes disorder": "tourette's disorder"
 		};
 		var FORCED_IND = {
+			"Namenda": "dementia",
+			"Aricept": "dementia",
+			"Rivastigmine": "dementia",
+			"Razadyne": "dementia",
 			"Melatonin": "sleep",
 			"Remeron": "depression",
 			"Trazodone": "depression",
@@ -7559,61 +7563,23 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				pop.remove();
 			}
 		}
-		function sortMeds(doc) {
-			var tbody = doc.querySelector("table.scrollTable > tbody");
-			if (!tbody) return;
-			var groups = getMedGroups(tbody);
-			if (!groups.length) return;
-			var on = isOn("pccPsychFirst");
-			tbody.__po = tbody.__po || 0;
-			var psychOnly = 0, tier2c = 0, tier2u = 0, painCount = 0;
-			groups.forEach(function(g) {
-				var r = g.rows[0];
-				if (!r.hasAttribute("data-po")) r.setAttribute("data-po", tbody.__po++);
-				g.po = +r.getAttribute("data-po");
-				var isPsych = PSYCH.test(r.innerText);
-				var isT2c = !isPsych && TIER2_COUNTED.test(r.innerText);
-				var isT2u = !isPsych && !isT2c && TIER2_UNCOUNTED.test(r.innerText);
-				var isPain = !isPsych && !isT2c && !isT2u && PAIN.test(r.innerText);
-				if (isPsych) {
-					g.tier = 0;
-					psychOnly++;
-				} else if (isT2c) {
-					g.tier = 1;
-					tier2c++;
-				} else if (isT2u) {
-					g.tier = 1;
-					tier2u++;
-				} else if (isPain) {
-					g.tier = 3;
-					painCount++;
-				} else g.tier = 2;
-				g.listed = !!matchMed(headerText(g));
-			});
-			var psychCount = psychOnly + tier2c;
-			var sorted = groups.slice().sort(function(a, b) {
+		function medTierOf(rowText) {
+			var t = rowText || "";
+			var isPsych = PSYCH.test(t);
+			var isT2c = !isPsych && TIER2_COUNTED.test(t);
+			var isT2u = !isPsych && !isT2c && TIER2_UNCOUNTED.test(t);
+			var isPain = !isPsych && !isT2c && !isT2u && PAIN.test(t);
+			if (isPsych) return 0;
+			if (isT2c || isT2u) return 1;
+			if (isPain) return 3;
+			return 2;
+		}
+		function sortMedDisplay(groups, on) {
+			return groups.slice().sort(function(a, b) {
 				return (on ? a.tier : 2) - (on ? b.tier : 2) || a.po - b.po;
 			});
-			if (sorted.some(function(g, i) {
-				return g !== groups[i];
-			})) sorted.forEach(function(g) {
-				g.rows.forEach(function(r) {
-					tbody.appendChild(r);
-				});
-			});
-			var noExp = 0;
-			if (on) groups.forEach(function(g) {
-				var isPsychTier = g.tier === 0;
-				if (!isPsychTier && (g.tier > 1 && !g.listed || !isCollapsed(doc, g))) return;
-				if (isPsychTier && !isCollapsed(doc, g)) return;
-				var key = medKey(g.rows[0]);
-				if (!isPsychTier && !shouldOpen(doc, key)) return;
-				var x = findExpander(doc, g.rows[0]);
-				if (x) {
-					noteOpened(doc, key);
-					x.click();
-				} else noExp++;
-			});
+		}
+		function paintMedRows(doc, groups, sorted, on) {
 			groups.forEach(function(g) {
 				clearRowStyle(g);
 				if (g.tier <= 1) applyColor(g, COLOR_PSYCH);
@@ -7630,6 +7596,66 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					return g.tier <= 1;
 				}, "#2563eb");
 				boxTier(sorted, 3, "#ea580c");
+			}
+		}
+		function sortMeds(doc) {
+			var tbody = doc.querySelector("table.scrollTable > tbody");
+			if (!tbody) return;
+			var groups = getMedGroups(tbody);
+			if (!groups.length) return;
+			var on = isOn("pccPsychFirst");
+			tbody.__po = tbody.__po || 0;
+			var psychOnly = 0, tier2c = 0, tier2u = 0, painCount = 0;
+			groups.forEach(function(g) {
+				var r = g.rows[0];
+				if (!r.hasAttribute("data-po")) r.setAttribute("data-po", tbody.__po++);
+				g.po = +r.getAttribute("data-po");
+				g.tier = medTierOf(r.innerText);
+				if (g.tier === 0) psychOnly++;
+				else if (g.tier === 1) {
+					if (TIER2_COUNTED.test(r.innerText)) tier2c++;
+					else tier2u++;
+				} else if (g.tier === 3) painCount++;
+				g.listed = !!matchMed(headerText(g));
+			});
+			var psychCount = psychOnly + tier2c;
+			var sorted = sortMedDisplay(groups, on);
+			if (sorted.some(function(g, i) {
+				return g !== groups[i];
+			})) sorted.forEach(function(g) {
+				g.rows.forEach(function(r) {
+					tbody.appendChild(r);
+				});
+			});
+			var noExp = 0;
+			if (on) groups.forEach(function(g) {
+				var isPsychTier = g.tier <= 1;
+				if (!isPsychTier && (g.tier > 1 && !g.listed || !isCollapsed(doc, g))) return;
+				if (isPsychTier && !isCollapsed(doc, g)) return;
+				var key = medKey(g.rows[0]);
+				if (!isPsychTier && !shouldOpen(doc, key)) return;
+				var x = findExpander(doc, g.rows[0]);
+				if (x) {
+					noteOpened(doc, key);
+					x.click();
+				} else noExp++;
+			});
+			paintMedRows(doc, groups, sorted, on);
+			if (!tbody.__tmBorderWatch) {
+				tbody.__tmBorderWatch = true;
+				tbody.addEventListener("click", function(ev) {
+					var t = ev.target && ev.target.closest ? ev.target.closest("a.row_toggle, .row_toggle") : null;
+					if (!t || !tbody.contains(t)) return;
+					setTimeout(function() {
+						var gs = getMedGroups(tbody);
+						gs.forEach(function(g) {
+							var r = g.rows[0];
+							g.tier = medTierOf(r.innerText);
+							g.po = +(r.getAttribute("data-po") || 0);
+						});
+						paintMedRows(doc, gs, sortMedDisplay(gs, isOn("pccPsychFirst")), isOn("pccPsychFirst"));
+					}, 150);
+				});
 			}
 			var flagged = flagAll(groups);
 			flagged.forEach(function(g) {
@@ -7686,7 +7712,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					})(flags[fi]);
 				}
 			} catch (e) {}
-			var medRes = buildMedList(groups);
+			var medRes = buildMedList(sorted);
 			setBox(doc, "medListBox", MED_BOX_CSS, buildMedListHtml(medRes));
 			setButton(doc, "psychToggle", psychToggleHtml, function() {
 				setOn("pccPsychFirst", !isOn("pccPsychFirst"));
@@ -8286,7 +8312,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					if (!tbody) return null;
 					var groups = getMedGroups(tbody);
 					if (!groups.length) return null;
-					var res = buildMedList(groups);
+					groups.forEach(function(g, i) {
+						g.tier = medTierOf(g.rows[0].innerText);
+						g.po = i;
+					});
+					var res = buildMedList(sortMedDisplay(groups, isOn("pccPsychFirst")));
 					if (!res || !res.lines || !res.lines.length) return null;
 					return res.lines.join("\n");
 				} catch (e) {
@@ -8343,7 +8373,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				};
 			});
 			return {
-				v: 2,
+				v: 3,
 				startedAt: nowT(),
 				stops
 			};
@@ -8386,6 +8416,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			} catch (e) {}
 		}
+		function badRelations(stop) {
+			return !!(stop && stop.summary && /^relationships\b[\s:—–-]*$/i.test(norm(stop.summary)));
+		}
 		function loadStored() {
 			try {
 				storeKey = residentKey();
@@ -8394,8 +8427,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (!raw) return;
 				var stored = JSON.parse(raw);
 				if (!stored || !stored.stops) return;
+				if (stored.v !== 3) return;
 				STOP_KEYS.forEach(function(k) {
-					if (stored.stops[k] && stored.stops[k].status === "landed") packet.stops[k] = stored.stops[k];
+					if (stored.stops[k] && stored.stops[k].status === "landed") {
+						if (k === "relations" && badRelations(stored.stops[k])) return;
+						packet.stops[k] = stored.stops[k];
+					}
 				});
 			} catch (e) {}
 		}
@@ -8407,9 +8444,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (!raw) return;
 				var stored = JSON.parse(raw);
 				if (!stored || !stored.stops) return;
+				if (stored.v !== 3) return;
 				var changed = false;
 				STOP_KEYS.forEach(function(k) {
 					if (packet.stops[k].status !== "landed" && stored.stops[k] && stored.stops[k].status === "landed") {
+						if (k === "relations" && badRelations(stored.stops[k])) return;
 						packet.stops[k] = stored.stops[k];
 						changed = true;
 					}
@@ -8784,8 +8823,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				hasScore = true;
 				break;
 			}
-			if (!hasScore) return;
-			var bims = [], visits = [], mdAck = "";
+			if (!hasScore) {
+				try {
+					packet.stops.bims.why = "no Score column in fetched list";
+					publish();
+				} catch (e) {}
+				return;
+			}
+			var bims = [], visits = [], mdAck = "", bimsRowsSeen = 0;
 			var rows = doc.querySelectorAll("tr");
 			for (var r = 0; r < rows.length; r++) {
 				var row = rows[r];
@@ -8803,6 +8848,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				else if (t.some(function(c) {
 					return BIMS_RE.test(c);
 				}) && score !== void 0) {
+					bimsRowsSeen++;
 					var n = parseFloat(score);
 					if (n >= 0 && n <= 15) bims.push({
 						date: dateStr,
@@ -8810,6 +8856,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					});
 				}
 			}
+			if (!bims.length) try {
+				packet.stops.bims.why = "Score column present; BIMS-like rows matched=" + bimsRowsSeen + " (0 = the fetched list holds no BIMS rows)";
+				publish();
+			} catch (e) {}
 			if (bims.length) {
 				bims.sort(function(a, b2) {
 					return new Date(b2.date) - new Date(a.date);
@@ -8876,6 +8926,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		function landRelations(summary) {
 			var cur = packet.stops.relations;
 			summary = norm(summary).slice(0, 300);
+			if (/^relationships\b[\s:—–-]*$/i.test(summary)) return;
 			if (cur.status !== "landed") {
 				land("relations", {
 					source: "Profile",
@@ -8915,7 +8966,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			niece: 1,
 			nephew: 1,
 			partner: 1,
-			guardian: 1
+			guardian: 1,
+			cousin: 1,
+			grandson: 1,
+			granddaughter: 1,
+			aunt: 1,
+			uncle: 1,
+			"daughter-in-law": 1,
+			"son-in-law": 1,
+			"mother-in-law": 1,
+			"father-in-law": 1,
+			"sister-in-law": 1,
+			"brother-in-law": 1
 		};
 		function parseContacts(doc) {
 			var tables = doc.querySelectorAll("table");
@@ -8966,6 +9028,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		function parseProfile(doc) {
 			var el = doc.querySelector("[data-fill-label=\"Relationships\"]");
+			if (el && (el.tagName && el.tagName.toLowerCase() === "tm-tile" || el.closest && el.closest("tm-tile"))) el = null;
 			var val = el ? el.getAttribute("data-fill-value") || txt(el) : "";
 			if (!val || /^[—–-]+$/.test(norm(val)) || /^N\/?A$/i.test(norm(val))) {
 				var cv = parseContacts(doc);
@@ -8991,7 +9054,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (el) return;
 			if (!val && /Resident Profile/i.test(doc.title || "")) {
 				var words = [
-					"self",
 					"spouse",
 					"wife",
 					"husband",
@@ -9005,7 +9067,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					"niece",
 					"nephew",
 					"partner",
-					"guardian"
+					"guardian",
+					"cousin",
+					"grandson",
+					"granddaughter",
+					"aunt",
+					"uncle"
 				];
 				var bodyT = doc.body && doc.body.textContent || "";
 				var found = words.filter(function(wd) {
@@ -9150,8 +9217,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (eid || shellUrl) jobs.push((function() {
 					function curateAndLand(medDoc, tag) {
 						if (stopped || !medDoc) return false;
-						var cur = typeof window.__tmDashCurateMeds === "function" ? window.__tmDashCurateMeds(medDoc) : null;
-						if (!cur) return false;
+						var hasFn = typeof window.__tmDashCurateMeds === "function";
+						var cur = null;
+						if (hasFn) try {
+							cur = window.__tmDashCurateMeds(medDoc);
+						} catch (e) {
+							cur = null;
+						}
+						if (!cur) {
+							try {
+								packet.stops.dashmeds.why = !hasFn ? "export-missing" : "curate-null (tables=" + (medDoc.querySelectorAll ? medDoc.querySelectorAll("table").length : "?") + ", scrollTable=" + (medDoc.querySelector && medDoc.querySelector("table.scrollTable") ? "yes" : "no") + ")";
+								publish();
+							} catch (e) {}
+							return false;
+						}
 						land("dashmeds", {
 							source: "Dash (fetched)",
 							at: nowT(),
