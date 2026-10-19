@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.7
+// @version      1.8
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -318,7 +318,15 @@
         });
         styleTile(tile, open);
       }
-      if (!bar.contains(tile)) bar.appendChild(tile);
+      // His ruling (2026-10-19): Psychiatry sits on the
+      // LEFT, first in the bar, on every tab - the ASSMNTS
+      // page had drifted it to the far right because the
+      // tile was appended and PCC's own rendering ordered
+      // the rest around it. Seat it first, and re-seat it
+      // first on every pass.
+      if (!bar.contains(tile) || bar.firstElementChild !== tile) {
+        bar.insertBefore(tile, bar.firstChild);
+      }
       // A re-rendered bar loses the panel too; if the page was
       // open, re-seat it under the new bar.
       if (open && !document.getElementById('tmPsychPage')) {
