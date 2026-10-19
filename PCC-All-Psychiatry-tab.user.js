@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.9
+// @version      1.10
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -187,7 +187,7 @@
       var on = bimsWin === w[0];
       return '<button type="button" data-bims-win="' + w[0] + '" style="border:1px solid ' + (on ? '#0f172a' : '#cbd5e1') + ';background:' + (on ? '#0f172a' : '#ffffff') + ';color:' + (on ? '#ffffff' : '#334155') + ';border-radius:999px;padding:3px 10px;font:600 11.5px ' + FONT + ';cursor:pointer;">' + w[1] + '</button>';
     }).join(' ');
-    if (!pts.length) { pop.innerHTML = '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font:400 12.5px ' + FONT + ';color:#94a3b8;">No scored BIMS in this window.</div>'; wireBimsPop(p); return; }
+    if (!pts.length) { pop.innerHTML = '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;max-width:520px;font:400 12.5px ' + FONT + ';color:#94a3b8;">No scored BIMS in this window.</div>'; wireBimsPop(p); return; }
     var W = 560, H = 168, PL = 26, PR = 10, PT = 10, PB = 30;
     var t0 = pts[0].d.getTime(), t1 = pts[pts.length - 1].d.getTime();
     if (t1 === t0) { t0 -= 15 * 864e5; t1 += 15 * 864e5; }
@@ -210,7 +210,10 @@
         '<td style="padding:4px 8px;border-top:1px solid #f1f5f9;color:#64748b;">' + b.name + '</td></tr>';
     }).join('');
     var first = pts[0], lastP = pts[pts.length - 1];
-    pop.innerHTML = '<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;">' +
+    // His sizing ruling (2026-10-19): the pop-out is a
+    // tile-sized thing - capped at a double tile's width,
+    // never the full panel.
+    pop.innerHTML = '<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;max-width:520px;">' +
       '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font:700 13px ' + FONT + ';color:#0f172a;">BIMS trend</span>' +
       '<span style="font:400 12px ' + FONT + ';color:#64748b;">' + first.score + ' \u2192 ' + lastP.score + ' \u00b7 ' + spanText(first.d, lastP.d) + '</span>' +
       '<span style="margin-left:auto;display:flex;gap:4px;">' + seg + '</span></div>' +
