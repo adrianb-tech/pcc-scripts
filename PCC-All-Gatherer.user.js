@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.15
+// @version      2.16
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -504,7 +504,8 @@
   // and no path can be missed. (Relations was arriving
   // by stored merge, which fed nothing; BIMS landed
   // directly, which is why BIMS alone worked.)
-  function feedFromPacket() {
+  function feedFromPacket(force) {
+    if (force) fedSent = {};
     var s = packet.stops;
     if (s.relations.status === 'landed' && s.relations.summary) feedEvent({ rel: s.relations.summary });
     if (s.bims.status === 'landed') { var bl = bimsLine(s.bims); if (bl) feedEvent({ bims: bl }); }
@@ -703,12 +704,12 @@
     stopped = true;
     controllers.forEach(function (c) { try { c.abort(); } catch (err) {} });
   }, true);
-  document.addEventListener('click', function () { gatherPage(); gatherFetches(); }, true);
+  document.addEventListener('click', function () { gatherPage(); gatherFetches(); feedFromPacket(true); }, true);
 
   loadStored();
   if (packet.stops.relations.status === 'landed') feedEvent({ rel: packet.stops.relations.summary });
   if (packet.stops.bims.status === 'landed') feedBimsTile(packet.stops.bims);
-  [0, 600, 1500, 3000].forEach(function (ms) { setTimeout(function () { gatherPage(); gatherFetches(); }, ms); });
+  [0, 600, 1500, 3000].forEach(function (ms) { setTimeout(function () { gatherPage(); gatherFetches(); if (ms === 3000) feedFromPacket(true); }, ms); });
   publish();
 
   // Harness hook (inert in the browser): lets the offline
