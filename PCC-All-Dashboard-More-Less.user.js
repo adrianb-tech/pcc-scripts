@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.30
+// @version      3.31
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -332,10 +332,22 @@
       var ncols = Math.max(1, Math.ceil(lines.length / 4));
       var per = Math.ceil(lines.length / ncols);
       v.style.cssText = 'margin-top:9px;display:flex;gap:26px;min-width:0;';
+      v.setAttribute('data-medsfit', '1');
       for (var ci = 0; ci < ncols; ci++) {
         var col = document.createElement('div');
-        col.style.cssText = fontCss + 'white-space:pre-line;max-width:300px;flex:1 1 0;min-width:0;overflow-wrap:break-word;';
-        col.textContent = lines.slice(ci * per, (ci + 1) * per).join('\n');
+        col.style.cssText = 'max-width:300px;flex:1 1 0;min-width:0;';
+        var slice = lines.slice(ci * per, (ci + 1) * per);
+        for (var li = 0; li < slice.length; li++) {
+          var ln = document.createElement('div');
+          ln.className = 'tmMedLine';
+          // One medication per line, never split (his ask,
+          // 2026-10-19): 'Wellbutrin 450mg QHS for
+          // depression' stays whole; fitMeds steps the
+          // font down until the longest line fits.
+          ln.style.cssText = fontCss + 'white-space:nowrap;';
+          ln.textContent = slice[li];
+          col.appendChild(ln);
+        }
         v.appendChild(col);
       }
     } else {
@@ -603,7 +615,7 @@
     // later rebuild snapped them back - the visible lag
     // he reported. One deferred fit, measured on the
     // settled layout, lands at the final size directly.
-    var fitIt = function () { fitAllergies(row); };
+    var fitIt = function () { fitAllergies(row); fitMeds(row); };
     if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(fitIt); });
     else setTimeout(fitIt, 60);
     addFaceSheetButton(bar, row);
@@ -707,6 +719,36 @@
         size -= 1;
         el.style.fontSize = size + 'px';
         guard++;
+      }
+    }
+  }
+
+  // Meds one-line fit: step the tile's font down until
+  // every medication line fits its column whole. A line
+  // still too wide at the floor is allowed to wrap -
+  // better wrapped than cut off.
+  function fitMeds(row) {
+    var boxes = row.querySelectorAll('[data-medsfit="1"]');
+    for (var b = 0; b < boxes.length; b++) {
+      var lines = boxes[b].querySelectorAll('.tmMedLine');
+      if (!lines.length) continue;
+      var size = parseFloat(lines[0].style.fontSize) || 13;
+      var guard = 0;
+      var over = function () {
+        for (var i = 0; i < lines.length; i++) {
+          if (lines[i].scrollWidth > lines[i].clientWidth + 2) return true;
+        }
+        return false;
+      };
+      while (guard < 5 && size > 10 && over()) {
+        size -= 1;
+        for (var j = 0; j < lines.length; j++) lines[j].style.fontSize = size + 'px';
+        guard++;
+      }
+      if (over()) {
+        for (var k = 0; k < lines.length; k++) {
+          if (lines[k].scrollWidth > lines[k].clientWidth + 2) lines[k].style.whiteSpace = 'normal';
+        }
       }
     }
   }
