@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.11
+// @version      2.12
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -457,6 +457,14 @@
   // always-there tile is also the always-correct one.
   function feedRowTile(summary) {
     try { localStorage.setItem('pccFillRelationships', JSON.stringify({ value: summary, ts: Date.now() })); } catch (e) {}
+    // The row's own reader (More/Less v3.12) takes the
+    // value from a RESIDENT-SCOPED key: the pccFill key
+    // is global, and an always-visible tile must never
+    // show the previous resident's relationships.
+    try {
+      var k = storeKey || residentKey();
+      if (k) localStorage.setItem('tmRelFor:' + k, JSON.stringify({ value: summary, ts: Date.now() }));
+    } catch (e) {}
   }
   function landRelations(summary) {
     var cur = packet.stops.relations;
