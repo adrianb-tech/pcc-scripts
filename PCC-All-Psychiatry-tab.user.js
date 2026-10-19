@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.6
+// @version      1.7
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -122,7 +122,7 @@
         '<span style="font:400 12px ' + FONT + ';color:#94a3b8;">the one page — everything psychiatrically connected, in one place</span>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
-        miniTile('Relationships', 'relations') + miniTile('Facesheet', 'facesheet') + miniTile('Admission facts', 'admissionFacts') +
+        miniTile('Relationships', 'relations') + miniTile('BIMS', 'bims') + miniTile('Facesheet', 'facesheet') + miniTile('Admission facts', 'admissionFacts') +
       '</div>' +
       '<div id="tmPsychStamp" style="font:400 11px ' + FONT + ';color:#94a3b8;margin-bottom:8px;">Gatherer: waiting…</div>' +
       '<div id="tmPsychDxSlot" style="margin-bottom:8px;"></div>' +
@@ -162,6 +162,12 @@
       if (el && val) el.textContent = val;
     }
     if (s.relations && s.relations.status === 'landed') setVal('relations', (s.relations.summary || '').slice(0, 90));
+    if (s.bims && s.bims.status === 'landed') {
+      var bl = (s.bims.facts && s.bims.facts.latest) || s.bims.summary || '';
+      var ser = (s.bims.series || []).slice(1).map(function (x) { return x.score; });
+      if (ser.length) bl += '\nprior: ' + ser.join(' · ');
+      setVal('bims', bl);
+    }
     var dxFb = p.querySelector('[data-dx-fallback="1"]');
     if (dxFb && s.diagnoses && s.diagnoses.status === 'landed') {
       dxFb.style.color = '#0f172a';
