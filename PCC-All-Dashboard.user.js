@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.31
+// @version      2.32
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -2266,6 +2266,43 @@
       } catch (e) {}
     });
   }
+
+  // Curator export (v2.32): the Gatherer fetches the
+  // medications frame document in the background - the
+  // frame itself only loads when the Dash tab is viewed,
+  // which is why every other tab fell back to raw order
+  // text. It runs THIS pipeline on the fetched document,
+  // so the curated Dash-format list exists on every tab,
+  // instantly, without opening the Dash first. One
+  // pipeline, one format - no raw fallback anywhere.
+  try {
+    window.__tmDashCurateMeds = function (doc) {
+      try {
+        // A fetched (DOMParser) document may report no
+        // innerText; the pipeline reads it in a few
+        // places. Fall back to textContent there - it
+        // only makes classification more inclusive, and
+        // the one place hidden cells matter (status) is
+        // already read from textContent by buildMedList.
+        // Give every element in the fetched document a
+        // plain innerText (its textContent) as an own
+        // property. Deterministic in every browser,
+        // unlike the prototype, and the pipeline only
+        // reads the medications table's subtree.
+        var all = doc.querySelectorAll('*');
+        for (var ai = 0; ai < all.length; ai++) {
+          try { Object.defineProperty(all[ai], 'innerText', { value: all[ai].textContent, configurable: true }); } catch (e2) {}
+        }
+        var tbody = doc.querySelector('table.scrollTable > tbody');
+        if (!tbody) return null;
+        var groups = getMedGroups(tbody);
+        if (!groups.length) return null;
+        var res = buildMedList(groups);
+        if (!res || !res.lines || !res.lines.length) return null;
+        return res.lines.join('\n');
+      } catch (e) { return null; }
+    };
+  } catch (e) {}
 
   // The widget frames announce themselves: run a pass just after
   // each one loads, plus early clock passes and one late safety.
