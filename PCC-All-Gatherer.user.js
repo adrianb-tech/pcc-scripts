@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.17
+// @version      2.18
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -48,7 +48,7 @@
   function norm(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
   function txt(el) { return norm(el && (el.innerText !== undefined ? el.innerText : el.textContent)); }
 
-  var STOP_KEYS = ['header', 'behaviors', 'diagnoses', 'bims', 'relations', 'facesheet', 'admission', 'labs', 'ownnotes', 'orders', 'weights'];
+  var STOP_KEYS = ['header', 'behaviors', 'diagnoses', 'bims', 'relations', 'facesheet', 'admission', 'labs', 'ownnotes', 'orders', 'weights', 'dashmeds'];
   function emptyPacket() {
     var stops = {};
     STOP_KEYS.forEach(function (k) { stops[k] = { status: 'not-loaded', source: '', at: '' }; });
@@ -525,7 +525,12 @@
     var s = packet.stops;
     if (s.relations.status === 'landed' && s.relations.summary) feedEvent({ rel: s.relations.summary });
     if (s.bims.status === 'landed') { var bl = bimsLine(s.bims); if (bl) feedEvent({ bims: bl }); }
-    var ml = (s.header.status === 'landed' && s.header.medsList) ? s.header.medsList : (s.orders.status === 'landed' ? medsLines(s.orders) : '');
+    // Dash view ONLY (his rule, 2026-10-19): the tile
+    // shows the curated Dash-format list or nothing -
+    // never the orders-derived raw order text, which is
+    // what every non-Dash tab used to fall back to.
+    var ml = (s.header.status === 'landed' && s.header.medsList) ? s.header.medsList :
+      (s.dashmeds && s.dashmeds.status === 'landed' && s.dashmeds.lines) ? s.dashmeds.lines : '';
     if (ml) feedEvent({ meds: ml });
   }
   function feedRowTile(summary) {
@@ -710,6 +715,36 @@
     add('results', urls.results, parseResults, ['labs']);
     add('orders', urls.orders, parseOrders, ['orders']);
     add('weights', urls.weights, parseWeights, ['weights']);
+    // Dash meds (v2.18): fetch the chart shell, find the
+    // medications frame URL inside it, fetch that frame,
+    // and let the Dashboard script's own pipeline curate
+    // it (window.__tmDashCurateMeds). Runs only while no
+    // curated list exists for this resident yet.
+    var haveCurated = (packet.stops.header.medsList) ||
+      (packet.stops.dashmeds && packet.stops.dashmeds.status === 'landed');
+    if (!haveCurated) {
+      var dashUrl = '';
+      try { if (/cp_residentdashboard\.jsp/.test(window.top.location.href)) dashUrl = window.top.location.href; } catch (e) {}
+      if (dashUrl) {
+        jobs.push(fetchDoc(dashUrl).then(function (dashDoc) {
+          noteFetch('dash', dashUrl, dashDoc);
+          if (stopped) return;
+          var frames = dashDoc.querySelectorAll('iframe');
+          var medsUrl = '';
+          for (var fi = 0; fi < frames.length; fi++) {
+            var fsrc = frames[fi].getAttribute('src') || frames[fi].getAttribute('data-src') || '';
+            if (/res_medications\.jsp/.test(fsrc)) { try { medsUrl = new URL(fsrc, dashUrl).href; } catch (e) {} break; }
+          }
+          if (!medsUrl) return;
+          return fetchDoc(medsUrl).then(function (medDoc) {
+            noteFetch('dashmeds', medsUrl, medDoc);
+            if (stopped) return;
+            var cur = (typeof window.__tmDashCurateMeds === 'function') ? window.__tmDashCurateMeds(medDoc) : null;
+            if (cur) land('dashmeds', { source: 'Dash (fetched)', at: nowT(), lines: cur.slice(0, 2000), summary: 'curated psych meds (Dash format)' });
+          });
+        }).catch(function (e) { noteFetch('dash', dashUrl, null, e); }));
+      }
+    }
     if (jobs.length) { lastFetchAt = now; Promise.allSettled(jobs); }
   }
 
