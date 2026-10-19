@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.17
+// @version      3.18
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -597,6 +597,57 @@
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
     fitRow(row);
+    addFaceSheetButton(bar, row);
+  }
+
+  // ---------- Face Sheet button on the Dash (v3.18) ----------
+  // His ask (2026-10-19): the Profile carries PCC's yellow
+  // Face Sheet button (the report that opens as a PDF);
+  // he wants the same button on the Dash - yellow, same
+  // document icon, and F opens it. The label is exactly
+  // 'Face Sheet' so the Keys scripts' existing F finder
+  // (which searches every frame for that text) clicks it
+  // with zero Keys changes. A click copies the REAL
+  // report URL out of the Profile page's own button -
+  // facility-proof, since the name and report differ by
+  // facility but the Profile button always knows.
+  var faceUrlCache = '';
+  function addFaceSheetButton(bar, row) {
+    try {
+      if (document.getElementById('tmFaceBtn')) return;
+      if (location.pathname.indexOf('cp_residentdashboard') === -1) return; // the Dash only
+      var line = document.createElement('div');
+      line.id = 'tmFaceLine';
+      line.style.cssText = 'display:flex;justify-content:flex-end;margin:10px 0 0;';
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.id = 'tmFaceBtn';
+      btn.setAttribute('data-tooltip', 'Face Sheet Report');
+      btn.style.cssText = 'background:linear-gradient(135deg,#fef9c3,#fde68a);border:2px solid #eab308;border-radius:6px;padding:4px 8px;box-shadow:0 2px 8px rgba(234,179,8,.4);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:15px;font-weight:600;color:#1c2430;cursor:pointer;display:inline-flex;align-items:center;gap:2px;';
+      btn.innerHTML = '<svg aria-hidden="true" style="width:18px;height:18px;flex-shrink:0;margin-right:4px;" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.833 1.83301L18.333 7.33301V18.333C18.333 19.3413 17.5083 20.167 16.5 20.167H5.49121C4.48288 20.167 3.66699 19.3413 3.66699 18.333L3.67578 3.66699C3.67578 2.65866 4.49167 1.83301 5.5 1.83301H12.833ZM7.33301 14.667V16.5H14.667V14.667H7.33301ZM7.33301 11V12.833H14.667V11H7.33301ZM11.917 8.25H16.958L11.917 3.20801V8.25Z" fill="currentColor"></path></svg>Face Sheet';
+      var badge = document.createElement('button');
+      badge.type = 'button';
+      badge.title = 'Open Admission Record (same as F key)';
+      badge.textContent = 'F';
+      badge.style.cssText = 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(135deg,#ef4444,#dc2626);border:none;border-radius:999px;width:20px;height:20px;margin-left:8px;align-self:center;cursor:pointer;padding:0;';
+      var open = function () { openFaceSheet(); };
+      btn.addEventListener('click', open);
+      badge.addEventListener('click', open);
+      line.appendChild(btn);
+      line.appendChild(badge);
+      row.parentNode.insertBefore(line, row);
+    } catch (e) {}
+  }
+  function openFaceSheet() {
+    if (faceUrlCache) { window.open(faceUrlCache, '_blank'); return; }
+    var a = document.querySelector('a[href*="cp_careclientprofile"]');
+    if (!a) return;
+    fetch(a.href, { credentials: 'include' }).then(function (r) { return r.text(); }).then(function (html) {
+      var m = /admissionRecord\.xhtml\?[^'"<\s]+/.exec(html.replace(/&amp;/g, '&'));
+      if (!m) return;
+      faceUrlCache = '/reporting/setup/runtime/' + m[0];
+      window.open(faceUrlCache, '_blank');
+    }).catch(function () {});
   }
 
   // Single-row fit (v3.17): if the row is wider than its
