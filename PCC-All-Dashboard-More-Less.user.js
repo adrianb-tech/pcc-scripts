@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.14
+// @version      3.15
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -533,9 +533,9 @@
     if (d) {
       d.weight = weightValue();
       d.weightRed = weightFlagged();
-      d.meds = medsDisplay();
+      d.meds = medsDisplay() || feedMeds || '';
       var mp = medsPanel();
-      d.medsFill = (mp && mp.btn && mp.btn.hasAttribute('data-fill-value')) ? mp.btn.getAttribute('data-fill-value') : null;
+      d.medsFill = (mp && mp.btn && mp.btn.hasAttribute('data-fill-value')) ? mp.btn.getAttribute('data-fill-value') : (feedMeds || null);
       d.bims = bimsValue();
       d.rel = relValue();
     }
@@ -675,12 +675,13 @@
   // The Gatherer's same-document feed (v3.14): values
   // gathered in THIS document, for THIS resident, held
   // in memory - no storage keys to mismatch.
-  var feedRel = '', feedBims = '';
+  var feedRel = '', feedBims = '', feedMeds = '';
   document.addEventListener('tm-gather-feed', function (e) {
     var d = (e && e.detail) || {};
     var changed = false;
     if (d.rel && d.rel !== feedRel) { feedRel = d.rel; changed = true; }
     if (d.bims && d.bims !== feedBims) { feedBims = d.bims; changed = true; }
+    if (d.meds && d.meds !== feedMeds) { feedMeds = d.meds; changed = true; }
     if (changed) setTimeout(function () { buildCards(); }, 350);
   });
   function relValue() {
