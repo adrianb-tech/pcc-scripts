@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.2
+// @version      2.3
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -55,6 +55,46 @@
   }
   var packet = emptyPacket();
 
+  // Per-resident persistence (v2.3, from his 'i don't see
+  // any information gathered'): PCC's JSP pages return
+  // shells to fetch, so several stops can only be read on
+  // their own page. The packet now PERSISTS per resident
+  // (localStorage, keyed by the chart's EID - the same
+  // pattern as the G engine's per-resident storage): a
+  // stop read once, on its own page, rides in the packet
+  // on every other page afterwards, keeping its original
+  // source + time stamp. Facts stay in his browser.
+  function residentKey() {
+    var m = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+    if (m) return m[1];
+    var as = document.querySelectorAll('a[href*="ESOLclientid="]');
+    for (var i = 0; i < as.length; i++) {
+      var mm = (as[i].getAttribute('href') || '').match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+      if (mm) return mm[1];
+    }
+    return null;
+  }
+  var storeKey = null;
+  function loadStored() {
+    try {
+      storeKey = residentKey();
+      if (!storeKey) return;
+      var raw = localStorage.getItem('tmGatherV2:' + storeKey);
+      if (!raw) return;
+      var stored = JSON.parse(raw);
+      if (!stored || !stored.stops) return;
+      STOP_KEYS.forEach(function (k) {
+        if (stored.stops[k] && stored.stops[k].status === 'landed') packet.stops[k] = stored.stops[k];
+      });
+    } catch (e) {}
+  }
+  function saveStored() {
+    try {
+      if (!storeKey) storeKey = residentKey();
+      if (storeKey) localStorage.setItem('tmGatherV2:' + storeKey, JSON.stringify(packet));
+    } catch (e) {}
+  }
+
   function publish() {
     var node = document.getElementById(NODE_ID);
     if (!node) {
@@ -73,6 +113,7 @@
     data.status = 'landed';
     packet.stops[key] = data;
     publish();
+    saveStored();
   }
 
   // ---------- page-read stops (v1, proven finders) ----------
@@ -425,6 +466,7 @@
   }, true);
   document.addEventListener('click', function () { gatherPage(); gatherFetches(); }, true);
 
+  loadStored();
   [0, 600, 1500, 3000].forEach(function (ms) { setTimeout(function () { gatherPage(); gatherFetches(); }, ms); });
   publish();
 
