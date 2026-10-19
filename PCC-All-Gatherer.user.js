@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.18
+// @version      2.19
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -92,6 +92,27 @@
     return null;
   }
   var storeKey = null;
+  // Key upgrade (v2.19): at load, a late-rendering page
+  // (the JSF Progress Notes page renders its resident
+  // header after document-idle) can only offer the EID
+  // fallback key - and the packet stored under the chart
+  // number then never seeds, so tiles that only ride the
+  // packet (Psych meds above all) never appear on that
+  // page at all. Whenever a pass runs and the header has
+  // since appeared, adopt the chart key and load its
+  // stored packet.
+  function refreshKey() {
+    try {
+      if (storeKey && storeKey.indexOf('chart:') === 0) return;
+      var k = residentKey();
+      if (k && k.indexOf('chart:') === 0 && k !== storeKey) {
+        storeKey = k;
+        loadStored();
+        mergeStored();
+        publish();
+      }
+    } catch (e) {}
+  }
   function loadStored() {
     try {
       storeKey = residentKey();
@@ -696,6 +717,7 @@
 
   var lastFetchAt = 0;
   function gatherFetches() {
+    refreshKey();
     if (stopped) return;
     var now = Date.now();
     if (now - lastFetchAt < 4000) return;
@@ -725,6 +747,26 @@
     if (!haveCurated) {
       var dashUrl = '';
       try { if (/cp_residentdashboard\.jsp/.test(window.top.location.href)) dashUrl = window.top.location.href; } catch (e) {}
+      // From any other resident page (v2.19 - the
+      // Progress Notes page above all, which has no tab
+      // bar and therefore no chart links to discover):
+      // the chart shell answers to this page's own
+      // ESOLclientid, so build its URL directly. Without
+      // this, the meds fetch could only ever start from
+      // the Dash itself and every other page waited on a
+      // Dash visit that might never come.
+      if (!dashUrl) {
+        var eid = null, em2 = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+        if (em2) eid = em2[1];
+        if (!eid) {
+          var as2 = document.querySelectorAll('a[href*="ESOLclientid="]');
+          for (var ai2 = 0; ai2 < as2.length; ai2++) {
+            var mm2 = (as2[ai2].getAttribute('href') || '').match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+            if (mm2) { eid = mm2[1]; break; }
+          }
+        }
+        if (eid) dashUrl = location.origin + '/admin/client/cp_residentdashboard.jsp?ESOLclientid=' + eid;
+      }
       if (dashUrl) {
         jobs.push(fetchDoc(dashUrl).then(function (dashDoc) {
           noteFetch('dash', dashUrl, dashDoc);
