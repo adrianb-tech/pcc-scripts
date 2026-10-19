@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.29
+// @version      3.30
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -624,21 +624,46 @@
   function addFaceSheetButton(bar, row) {
     try {
       if (location.pathname.indexOf('cp_residentdashboard') === -1) return; // the Dash only
-      // His placement (2026-10-19, final): on the header's
-      // first line, right after the patient's name and
-      // chart number - the same element the S key and the
-      // Gatherer read. The Keys' F badge follows the
-      // button on its own; we plant none.
+      // His order on the header's first line (2026-10-19):
+      // picture, name, chart number, Face Sheet, F. So the
+      // button goes IN THE FLOW, as the next thing after
+      // the name element in the header's row - not floated
+      // by coordinates (v3.29 anchored to a hidden copy of
+      // the name and landed before the picture). The name
+      // element chosen is the VISIBLE one; insertion climbs
+      // to the header row's flex container and seats the
+      // button right after the child holding the name.
       var nameEl = null;
       var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
       for (var i = 0; i < els.length; i++) {
         var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
         if (tx.length > 70 || tx.length < 5) continue;
         if (/^clinical\s/i.test(tx)) continue;
-        if (/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) { nameEl = els[i]; break; }
+        if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
+        var r = els[i].getBoundingClientRect();
+        if (!r || r.width < 50) continue; // visible copies only
+        nameEl = els[i];
+        break;
       }
-      if (!nameEl || !nameEl.parentNode) return;
-      var host = nameEl.parentNode;
+      if (!nameEl) return;
+      var seat = nameEl, hops = 0;
+      while (seat.parentNode && hops < 4) {
+        var p = seat.parentNode;
+        if (!p || p.nodeType !== 1 || p.tagName === 'BODY' || p.tagName === 'HTML') break;
+        var disp = '';
+        try { disp = getComputedStyle(p).display; } catch (e3) {}
+        if (disp === 'flex' || disp === 'inline-flex') break; // seat is the flex child holding the name
+        seat = p; hops++;
+      }
+      // If the climb found no flex row, seat stays at the
+      // deepest element whose parent is a real container:
+      // walk back down is unnecessary - insert after the
+      // highest climbed element that still has an element
+      // parent, else after the name itself.
+      while (seat && seat !== nameEl && (!seat.parentNode || seat.parentNode.nodeType !== 1)) seat = seat.firstElementChild || nameEl;
+      var host = seat.parentNode;
+      if (!host) { seat = nameEl; host = nameEl.parentNode; }
+      if (!host) return;
       var btn = document.getElementById('tmFaceBtn');
       if (!btn) {
         btn = document.createElement('button');
@@ -648,13 +673,10 @@
         btn.innerHTML = '<svg aria-hidden="true" style="width:18px;height:18px;flex-shrink:0;margin-right:4px;" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.833 1.83301L18.333 7.33301V18.333C18.333 19.3413 17.5083 20.167 16.5 20.167H5.49121C4.48288 20.167 3.66699 19.3413 3.66699 18.333L3.67578 3.66699C3.67578 2.65866 4.49167 1.83301 5.5 1.83301H12.833ZM7.33301 14.667V16.5H14.667V14.667H7.33301ZM7.33301 11V12.833H14.667V11H7.33301ZM11.917 8.25H16.958L11.917 3.20801V8.25Z" fill="currentColor"></path></svg>Face Sheet';
         btn.addEventListener('click', function () { openFaceSheet(); });
       }
-      btn.style.cssText = 'position:absolute;z-index:6;background:linear-gradient(135deg,#fef9c3,#fde68a);border:2px solid #eab308;border-radius:6px;padding:4px 8px;box-shadow:0 2px 8px rgba(234,179,8,.4);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:15px;font-weight:600;color:#1c2430;cursor:pointer;display:inline-flex;align-items:center;gap:2px;';
-      if (btn.parentNode !== host) host.appendChild(btn);
-      if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
-      var hr = host.getBoundingClientRect();
-      var nr = nameEl.getBoundingClientRect();
-      btn.style.left = Math.round(nr.right - hr.left + host.scrollLeft + 14) + 'px';
-      btn.style.top = Math.round(nr.top - hr.top + host.scrollTop + Math.max(0, (nr.height - 34) / 2)) + 'px';
+      btn.style.cssText = 'position:static;background:linear-gradient(135deg,#fef9c3,#fde68a);border:2px solid #eab308;border-radius:6px;padding:4px 8px;box-shadow:0 2px 8px rgba(234,179,8,.4);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:15px;font-weight:600;color:#1c2430;cursor:pointer;display:inline-flex;align-items:center;gap:2px;margin-left:14px;vertical-align:middle;flex:none;align-self:center;';
+      if (btn.previousElementSibling !== seat || btn.parentNode !== host) {
+        host.insertBefore(btn, seat.nextSibling);
+      }
     } catch (e) {}
   }
   function openFaceSheet() {
