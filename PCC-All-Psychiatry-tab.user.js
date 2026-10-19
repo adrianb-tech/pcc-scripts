@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.12
+// @version      1.13
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -519,8 +519,13 @@
   }
 
   // Clicking a real PCC tab means he is navigating - close.
+  // (v1.13) ensureTab() no longer runs on clicks: it
+  // re-seated the tile and rebuilt the panel inside the
+  // click's own dispatch - work that can shift the bar
+  // mid-click and eat the very navigation click he just
+  // made (his report: tab clicks not registering). The
+  // tile is seated by the load passes; clicks only close.
   document.addEventListener('click', function (e) {
-    ensureTab();
     if (!open) return;
     var bar = findBar();
     if (bar && bar.contains(e.target) && !document.getElementById('tmPsychTab').contains(e.target)) {
