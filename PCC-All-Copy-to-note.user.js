@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.11
+// @version      1.12
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -410,6 +410,13 @@
   function publishTileWarn() {
     var chart = null;
     try { chart = JSON.parse(localStorage.getItem('tmTileChart') || 'null'); } catch (e) {}
+    // Basis rule (v1.12, his words): a tile may only go
+    // red when there is information present to contradict
+    // it - this resident's chart values, published by a
+    // living tile row (it heartbeats every ~20s). A stale
+    // record - a previous resident's leftovers, or a
+    // chart long closed - is no basis at all: no verdicts.
+    if (chart && chart.ts && Date.now() - chart.ts > 45000) chart = null;
     var field = findNoteField();
     if (!chart || !field) { clearTileWarn(); return; }
     var txt = field.value || '';
@@ -424,7 +431,7 @@
     if (s !== tileWarnLast || Date.now() - tileWarnTs > 20000) {
       tileWarnLast = s;
       tileWarnTs = Date.now();
-      try { localStorage.setItem('tmTileWarn', JSON.stringify({ age: v.age, allergies: v.allergies, meds: v.meds, rel: v.rel, ts: tileWarnTs })); } catch (e) {}
+      try { localStorage.setItem('tmTileWarn', JSON.stringify({ age: v.age, allergies: v.allergies, meds: v.meds, rel: v.rel, key: (chart && chart.key) || null, ts: tileWarnTs })); } catch (e) {}
     }
     tileWarnPublished = true;
     // Open-proof (v1.11): while his note is provably open
