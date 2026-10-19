@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.18
+// @version      3.19
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -312,12 +312,12 @@
     d.style.cssText = 'background:' + (opts.warn ? '#ff1a1a' : (opts.rose ? '#fdf3f2' : '#fff')) + ';border:1px solid ' +
       (opts.warn ? '#ff8080' : (opts.rose ? '#f0c8c2' : '#e2e8f0')) + ';border-radius:12px;box-shadow:' +
       (opts.warn ? '0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)' : '0 1px 3px rgba(15,23,42,.05)') + ';' +
-      'padding:' + (opts.pad || '12px 16px 14px') + ';min-width:0;' + (opts.wide ? 'flex:1 1 520px;min-width:0;' : (opts.grow ? 'flex:1 1 400px;min-width:0;' : (opts.fixedW ? 'flex:0 1 ' + opts.fixedW + 'px;width:' + opts.fixedW + 'px;' : 'flex:none;')));
+      'padding:' + (opts.pad || '12px 16px 14px') + ';min-width:' + (opts.minW || 0) + 'px;' + (opts.wide ? 'flex:1 1 520px;min-width:0;' : (opts.grow ? 'flex:1 1 400px;min-width:0;' : (opts.fixedW ? 'flex:0 1 ' + opts.fixedW + 'px;width:' + opts.fixedW + 'px;' : 'flex:none;')));
     var lab = document.createElement('div');
     lab.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;';
     var ls = document.createElement('span');
     ls.textContent = labelText;
-    ls.style.cssText = 'font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:' +
+    ls.style.cssText = 'white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:' +
       (opts.warn ? '#ffe1e1' : (opts.rose ? '#a05a52' : '#8494a7')) + ';';
     lab.appendChild(ls);
     if (opts.btn) lab.appendChild(opts.btn);
@@ -343,6 +343,7 @@
       v.style.cssText = 'margin-top:9px;' + fontCss + (opts.multi ? 'white-space:pre-line;' : '');
     }
     if (opts.fit) v.setAttribute('data-fit', '1');
+    if (opts.nowrap) v.style.whiteSpace = 'nowrap';
     d.appendChild(lab); d.appendChild(v);
     if (opts.fill) {
       // Carry the Copy-button contract on the tile itself, so G
@@ -570,7 +571,7 @@
     }
     if (d.ageSex) row.appendChild(tile('Age / Sex', d.ageSex, { pad: '12px 13px 14px', warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex }, fill: { label: 'Age/Sex', value: d.ageSex } }));
     if (d.room) row.appendChild(tile('Room', d.room, {}));
-    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { fixedW: 340, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
+    if (d.allergies) row.appendChild(tile('Allergies', d.allergies, { fixedW: 230, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies }, fill: { label: 'Allergies', value: d.allergies } }));
     function medCountChip(txt) {
       var c = document.createElement('span');
       c.textContent = txt;
@@ -580,8 +581,8 @@
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true, color: d.weightRed ? '#a33327' : undefined }));
     // His order (2026-10-19): BIMS and Relationships sit
     // right after Weight; Psych meds follows them.
-    if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 200, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
-    if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 250, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
+    if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 215, minW: 198, nowrap: true, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
+    if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 210, minW: 168, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
     if (d.meds) {
       // Design A in the row, right after Weight (his pick): a wide
       // banner tile whose lines flow into columns. First-class tile
