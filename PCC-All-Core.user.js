@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.6.0
+// @version      2.7.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5742,7 +5742,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		render() {
 			const o = this.opts || {};
 			const clickable = !!(o.click || o.delegate || o.nav || o.action);
-			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.full ? "flex:none;width:100%;min-width:0;" : o.wide ? "flex:1 1 520px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
 			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
 			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
 			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
@@ -8879,6 +8879,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					key: "weights",
 					label: /wts|weights/i,
 					href: /weightsandvitals/i
+				},
+				{
+					key: "notes",
+					label: /prog/i,
+					href: /progressnotesviewall|progressnotes\.xhtml/i
 				}
 			];
 			var map = {};
@@ -8990,6 +8995,53 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}));
 			} catch (e) {}
 		}
+		function parseNotesPage(doc) {
+			if (!doc || !doc.getElementById) return;
+			var dxBox = doc.getElementById("pnDxBox");
+			if (dxBox) {
+				var dx = norm(dxBox.textContent).slice(0, 700);
+				if (dx) land("diagnoses", {
+					source: "Progress Notes",
+					at: nowT(),
+					summary: dx
+				});
+			}
+			var behBox = doc.getElementById("pnBehBox");
+			if (behBox) {
+				var b = norm(behBox.textContent).slice(0, 700);
+				if (b) land("behaviors", {
+					source: "Progress Notes",
+					at: nowT(),
+					summary: b
+				});
+			}
+		}
+		function notesUrl(urls) {
+			if (urls.notes) {
+				if (/progressnotesviewall/i.test(urls.notes)) return urls.notes;
+				var u = urls.notes.replace(/progressnotes\.xhtml/i, "progressnotesviewall.xhtml");
+				var setP = function(url, name, val) {
+					var re = new RegExp("([?&])" + name + "=[^&]*");
+					return re.test(url) ? url.replace(re, "$1" + name + "=" + val) : url + (url.indexOf("?") === -1 ? "?" : "&") + name + "=" + val;
+				};
+				return setP(setP(u, "ESOLshowEMARPN", "Y"), "viewAllOption", "0");
+			}
+			var eid = null;
+			var m = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+			if (m) eid = m[1];
+			if (!eid) {
+				var as = document.querySelectorAll("a[href*=\"ESOLclientid=\"]");
+				for (var i = 0; i < as.length; i++) {
+					var mm = (as[i].getAttribute("href") || "").match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+					if (mm) {
+						eid = mm[1];
+						break;
+					}
+				}
+			}
+			if (!eid) return "";
+			return location.origin + "/clinical/client/progressnotesviewall.xhtml?ESOLclientid=" + eid + "&ESOLshowEMARPN=Y&viewAllOption=0";
+		}
 		function parseWeights(doc) {
 			var wp = readWeightsPage(doc);
 			if (wp) land("weights", {
@@ -9036,6 +9088,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			add("results", urls.results, parseResults, ["labs"]);
 			add("orders", urls.orders, parseOrders, ["orders"]);
 			add("weights", urls.weights, parseWeights, ["weights"]);
+			add("notes", notesUrl(urls), parseNotesPage, ["diagnoses", "behaviors"]);
 			if (!(packet.stops.header.medsList || packet.stops.dashmeds && packet.stops.dashmeds.status === "landed")) {
 				var eid = null;
 				var dashLink = document.querySelector("a[href*=\"cp_residentdashboard.jsp?ESOLclientid=\"]");
@@ -10329,6 +10382,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						meds: d.medsFill !== null && d.medsFill !== void 0 ? d.medsFill : d.meds || null,
 						rel: d.rel || null,
 						bims: d.bims || null,
+						bimsPrev: (function() {
+							try {
+								var sr = lastStops && lastStops.bims && lastStops.bims.series;
+								if (sr && sr[1]) {
+									var q = new Date(sr[1].date);
+									if (!isNaN(q.getTime())) return sr[1].score + " on " + (q.getMonth() + 1) + "/" + q.getDate() + "/" + String(q.getFullYear()).slice(2);
+								}
+							} catch (e) {}
+							return null;
+						})(),
+						readmit: (function() {
+							try {
+								var bx = document.getElementById("tmReadmitBox");
+								return !!(bx && bx.__mode === "alert");
+							} catch (e) {
+								return false;
+							}
+						})(),
 						dx: d.dx || null,
 						key: chartNumMatch() || null,
 						ts: window.__tmChartTs
@@ -10382,7 +10453,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			row.id = ROW_ID;
 			var row2 = document.createElement("div");
 			row2.id = "tmCardsRow2";
-			row2.style.cssText = "display:flex;flex-direction:column;gap:10px;margin:0 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+			row2.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin:0 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
 			row.setAttribute("data-sig", sig);
 			row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
 			function mkTile(label, value, opts, chip, stamp) {
@@ -11210,30 +11281,34 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					}
 				}
 			}
-			if (chart.bims) {
-				var cm2 = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
-				if (cm2) {
-					var parseD = function(ds) {
-						var p = ds.split("/");
-						var y = +p[2];
-						if (y < 100) y += 2e3;
-						return new Date(y, +p[0] - 1, +p[1]);
-					};
-					var chartDate = parseD(cm2[1]);
-					var threshold = new Date(chartDate);
-					threshold.setMonth(threshold.getMonth() - 6);
-					var noteLatest = null;
-					var blines = txt.split("\n");
-					for (var bi = 0; bi < blines.length; bi++) {
-						if (!/BIMS/i.test(blines[bi])) continue;
-						var scan = blines[bi] + "\n" + (blines[bi + 1] || "");
-						var re2 = /(\d{1,2})\s+on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/g, mm;
-						while (mm = re2.exec(scan)) {
-							var dt = parseD(mm[2]);
-							if (!noteLatest || dt > noteLatest) noteLatest = dt;
-						}
-					}
-					v.bims = !noteLatest || noteLatest < threshold;
+			var parseD = function(ds) {
+				var p = String(ds).split("/");
+				var y = +p[2];
+				if (y < 100) y += 2e3;
+				return new Date(y, +p[0] - 1, +p[1]);
+			};
+			var noteLatest = null;
+			var blines = txt.split("\n");
+			for (var bi = 0; bi < blines.length; bi++) {
+				if (!/BIMS/i.test(blines[bi])) continue;
+				var scan = blines[bi] + "\n" + (blines[bi + 1] || "");
+				var re2 = /(\d{1,2})\s+on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/g, mm;
+				while (mm = re2.exec(scan)) {
+					var dt = parseD(mm[2]);
+					if (!noteLatest || dt > noteLatest) noteLatest = dt;
+				}
+			}
+			var sixAgo = new Date();
+			sixAgo.setMonth(sixAgo.getMonth() - 6);
+			v.bims = !noteLatest || noteLatest < sixAgo;
+			if (!v.bims && chart.readmit && chart.bims && chart.bimsPrev) {
+				var cn = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+				var cp = String(chart.bimsPrev).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+				if (cn && cp) {
+					var newest = parseD(cn[1]), prev = parseD(cp[1]);
+					var winStart = new Date(newest);
+					winStart.setMonth(winStart.getMonth() - 6);
+					if (prev < winStart) v.bims = true;
 				}
 			}
 			if (chart.dx) {
