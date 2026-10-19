@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.24
+// @version      3.25
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -528,6 +528,7 @@
   }
 
   function buildCards() {
+    pullFromPacket();
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar || !bar.parentNode) return;
     var d = cardData();
@@ -776,7 +777,17 @@
     } catch (e) {}
   }
   document.addEventListener('tm-gather-update', pullFromPacket);
-  setTimeout(pullFromPacket, 1200);
+  // Instant, not eventual (v3.25): the Gatherer (script 1)
+  // has usually ALREADY published the resident's stored
+  // packet into the page before this script (3) runs -
+  // so pull immediately, then on two early passes, instead
+  // of first looking at 1200ms. That wait was the whole
+  // lag for Relationships and the feed-fed Psych meds;
+  // BIMS only looked instant because its older storage
+  // path happened to hit at the first build.
+  pullFromPacket();
+  setTimeout(pullFromPacket, 300);
+  setTimeout(pullFromPacket, 900);
   setTimeout(pullFromPacket, 3500);
   document.addEventListener('tm-gather-feed', function (e) {
     var d = (e && e.detail) || {};
