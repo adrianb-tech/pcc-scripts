@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Focus keeper (pop-ups)
-// @version      1.2
+// @version      1.3
 // @description  His rule (2026-10-19): when a pop-up appears, the pop-up takes the focus; when the pop-up disappears, focus returns to the place it was before the pop-up. Built because after signing a note, focus stayed parked in the closed signature flow and every letter key went dead until he clicked the page. Detection is click-driven with bounded follow-up checks (no permanent observers, no timers): a trusted click arms a few quick looks for a dialog; while one is tracked, later clicks/keys check whether it has gone.
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Focus-keeper.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Focus-keeper.user.js
@@ -33,11 +33,21 @@
   }
 
   function visible(el) {
+    // v1.3: the pop-up counts as GONE when it has no
+    // up the ancestor chain. v1.2 only read the tracked
+    // node's OWN display style - but PCC closes dialogs
+    // by hiding a WRAPPER around them, and a child's own
+    // computed style still says 'block' while an ancestor
+    // is display:none, so the keeper waited forever and
+    // never gave the focus back.
     if (!el || !el.isConnected) return false;
-    var cs = window.getComputedStyle(el);
-    if (cs.display === 'none' || cs.visibility === 'hidden') return false;
-    var r = el.getBoundingClientRect();
-    return r.width > 40 && r.height > 30;
+    var n = el;
+    while (n && n !== document.documentElement) {
+      var cs = window.getComputedStyle(n);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      n = n.parentElement;
+    }
+    return true;
   }
 
   function findPopup() {
@@ -183,7 +193,11 @@
   }
 
   function armChecks() {
-    [120, 450, 1100, 2200].forEach(function (ms) { setTimeout(checkAfterAction, ms); });
+    // One extra late check (v1.3): PCC's dialogs often
+    // wait on a server round-trip and can open past the
+    // old 2.2s window, in which case the keeper never
+    // engaged at all and the close went unwatched.
+    [120, 450, 1100, 2200, 4000].forEach(function (ms) { setTimeout(checkAfterAction, ms); });
   }
 
   document.addEventListener('click', function (e) {
