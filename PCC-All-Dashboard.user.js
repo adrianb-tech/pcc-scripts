@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.33
+// @version      2.34
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -538,7 +538,18 @@
     if (/\bmonthly\b/i.test(t)) return 'monthly';
     if (/\bweekly\b/i.test(t)) return 'weekly';
     var l = t.toLowerCase();
-    if (/\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(l)) return 'PRN';
+    // A NEGATED PRN is not a PRN order (v2.34, his
+    // Klonopin report): the sig says 'every morning and
+    // at bedtime ... it is not PRN' - the bare word PRN
+    // used to trigger here AND in the suffix test, and
+    // the tile printed 'PRN PRN' for a standing q12h
+    // order. Strip the negation before testing, and let
+    // any standing schedule in the sig win over the PRN
+    // mention (a true standing+PRN sig still gets its
+    // ' PRN' suffix from buildMedList's isPrn test).
+    var lNoNeg = l.replace(/\b(?:it\s+is\s+)?not\s+(?:a\s+)?prn\b/g, '').replace(/\bno\s+prn\b/g, '');
+    var hasStanding = /\bmorning\b|\bbedtime\b|\bnight\b|\bevening\b|\bdaily\b|\btimes a day\b|\bevery\s|\bq\d|\bbid\b|\btid\b|\bqid\b|\bqhs\b|\bqam\b|\bqpm\b|\bweekly\b|\bmonthly\b/.test(l);
+    if (!hasStanding && /\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(lNoNeg)) return 'PRN';
     if (/\bbefore meals?\b|\bante cibum\b|\ba\.c\.?|\bac\b/.test(l)) return 'AC';
     if (/\bafter meals?\b|\bpost cibum\b|\bp\.c\.?|\bpc\b/.test(l)) return 'PC';
     // Morning + night in ONE sig = twice daily (his ruling, 2026-10-14:
@@ -717,8 +728,12 @@
 
       if (!pairs.length) return;
       // Detect PRN: "as needed", "prn", "p.r.n.", "as necessary", "when needed", "if needed"
-      var isPrn = /\bas\s+needed\b|\bprn\b|p\.r\.n\.|\bas\s+necessary\b|\bwhen\s+needed\b|\bif\s+needed\b/i.test(c.r0.raw);
-      var freqWithPrn = pairs.join(' and ') + (isPrn ? ' PRN' : '');
+      var rawNoNeg = c.r0.raw.replace(/\b(?:it\s+is\s+)?not\s+(?:a\s+)?prn\b/gi, '').replace(/\bno\s+prn\b/gi, '');
+      var isPrn = /\bas\s+needed\b|\bprn\b|p\.r\.n\.|\bas\s+necessary\b|\bwhen\s+needed\b|\bif\s+needed\b/i.test(rawNoNeg);
+      // No double PRN (v2.34): when the frequency itself
+      // IS PRN, the pair already says so - appending the
+      // suffix printed 'PRN PRN' on every pure-PRN med.
+      var freqWithPrn = pairs.join(' and ') + (isPrn && c.list.indexOf('PRN') === -1 ? ' PRN' : '');
       var entry = '- ' + c.r0.disp + ' ' + freqWithPrn + ' for ' + c.r0.ind;
       if (seen[entry]) return;
       seen[entry] = 1;
