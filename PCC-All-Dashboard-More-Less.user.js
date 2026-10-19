@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.35
+// @version      3.36
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -930,6 +930,7 @@
     var note = null;
     try { note = JSON.parse(localStorage.getItem('tmReadmitNote') || 'null'); } catch (e) {}
     var show = false;
+    var chipMode = '';
     // The flag script's verdict record (v1.7) outranks
     // the legacy note: an 'ok' or 'new' verdict for THIS
     // resident + re-entry date suppresses the chip even
@@ -941,7 +942,8 @@
       var adm0 = selfData().admission || '';
       var cur0 = adm0.replace(/\s*\((re-entry|initial)\)/i, '');
       if (idm0 && idm0[1] === verdict.id && cur0 === verdict.reentry) {
-        show = verdict.verdict === 'readmit';
+        show = verdict.verdict === 'readmit' || verdict.verdict === 'new';
+        chipMode = verdict.verdict;
         note = null; // decided - do not fall through to the note
       }
     }
@@ -952,13 +954,25 @@
       show = !!idm && idm[1] === note.id && curDate === note.date;
     }
     if (!show) { if (old) old.remove(); return; }
-    if (old) return;
+    if (old && old.getAttribute('data-mode') === chipMode) return;
+    if (old) old.remove();
     var chip = document.createElement('span');
     chip.id = 'tmReadmitChip';
-    chip.textContent = 'READMISSION';
-    chip.style.cssText = 'display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;' +
-      'border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;' +
-      'font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;';
+    chip.setAttribute('data-mode', chipMode);
+    if (chipMode === 'new') {
+      // NEW ADMISSION (his ask, 2026-10-19): no previous
+      // psych forms/notes - an informational green chip,
+      // same place and shape as READMISSION, no alarm.
+      chip.textContent = 'NEW ADMISSION';
+      chip.style.cssText = 'display:inline-block;margin-left:10px;padding:5px 14px;background:#059669;color:#fff;' +
+        'border:3px solid #6ee7b7;border-radius:8px;' +
+        'font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;';
+    } else {
+      chip.textContent = 'READMISSION';
+      chip.style.cssText = 'display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;' +
+        'border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;' +
+        'font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;';
+    }
     g.parentNode.insertBefore(chip, g.nextSibling);
   }
 
