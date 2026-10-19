@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.9
+// @version      1.10
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -303,7 +303,7 @@
       }
     }
     if (q.relationships) {
-      var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/m);
+      var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/mi);
       if (cm && !/^xx\b/i.test(cm[1].trim()) &&
           cm[1].trim().toLowerCase() !== String(q.relationships).trim().toLowerCase()) out.push('contact');
     }
@@ -390,7 +390,7 @@
       }
     }
     if (chart.rel) {
-      var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/m);
+      var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/mi);
       if (!cm || !cm[1].trim() || /^xx\b/i.test(cm[1].trim())) v.rel = true;
       else v.rel = cm[1].trim().toLowerCase() !== String(chart.rel).trim().toLowerCase();
     }
