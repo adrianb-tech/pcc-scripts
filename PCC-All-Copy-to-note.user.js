@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.10
+// @version      1.11
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -397,8 +397,12 @@
     return v;
   }
 
-  var tileWarnPublished = false, tileWarnLast = '', tileWarnTs = 0;
+  var tileWarnPublished = false, tileWarnLast = '', tileWarnTs = 0, weHoldOpen = false, openChain = false;
   function clearTileWarn() {
+    // Only the document that proved the note open may
+    // un-prove it (his rule, 2026-10-19): instances in
+    // other windows never erase the form window's proof.
+    if (weHoldOpen) { try { localStorage.removeItem('tmNoteOpen'); } catch (e) {} weHoldOpen = false; }
     if (!tileWarnPublished) return;
     tileWarnPublished = false; tileWarnLast = '';
     try { localStorage.removeItem('tmTileWarn'); } catch (e) {}
@@ -423,6 +427,20 @@
       try { localStorage.setItem('tmTileWarn', JSON.stringify({ age: v.age, allergies: v.allergies, meds: v.meds, rel: v.rel, ts: tileWarnTs })); } catch (e) {}
     }
     tileWarnPublished = true;
+    // Open-proof (v1.11): while his note is provably open
+    // in THIS document, stamp tmNoteOpen and keep a
+    // bounded 15s heartbeat chain alive. The chain lives
+    // only while the note field exists - when the form
+    // closes, the next pass fails the field check, clears
+    // both records, and the chain stops. The dashboard
+    // row paints red only while a fresh open-proof
+    // exists: no open note, no red tiles - ever.
+    try { localStorage.setItem('tmNoteOpen', JSON.stringify({ ts: Date.now() })); } catch (e) {}
+    weHoldOpen = true;
+    if (!openChain) {
+      openChain = true;
+      setTimeout(function () { openChain = false; try { checkAndApply(); } catch (e) {} }, 15000);
+    }
   }
   var tileInputLast = 0;
   document.addEventListener('input', function (e) {
