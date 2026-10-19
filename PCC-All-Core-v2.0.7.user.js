@@ -1,0 +1,11275 @@
+// ==UserScript==
+// @name         Every facility — PCC Core (tiles & gather)
+// @version      2.0.7
+// @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
+// @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
+// @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
+// @match        https://*.pointclickcare.com/*
+// @match        https://*.pointclickcare.ca/*
+// @run-at       document-idle
+// ==/UserScript==
+
+(function() {
+	"use strict";
+	function getEnumValues(entries) {
+		const numericValues = Object.values(entries).filter((v) => typeof v === "number");
+		return Object.entries(entries).filter(([k, _]) => numericValues.indexOf(+k) === -1).map(([_, v]) => v);
+	}
+	function joinValues(array, separator = "|") {
+		return array.map((val) => stringifyPrimitive(val)).join(separator);
+	}
+	function jsonStringifyReplacer(_, value) {
+		if (typeof value === "bigint") return value.toString();
+		return value;
+	}
+	var Cached = class {
+		constructor(getter) {
+			this._getter = getter;
+			this._value = void 0;
+		}
+		get value() {
+			const getter = this._getter;
+			if (getter !== void 0) {
+				this._value = getter();
+				this._getter = void 0;
+			}
+			return this._value;
+		}
+	};
+	function cached(getter) {
+		return new Cached(getter);
+	}
+	function nullish(input) {
+		return input === null || input === void 0;
+	}
+	function cleanRegex(source) {
+		const start = source.startsWith("^") ? 1 : 0;
+		const end = source.endsWith("$") ? source.length - 1 : source.length;
+		return source.slice(start, end);
+	}
+	function floatSafeRemainder(val, step) {
+		const ratio = val / step;
+		const roundedRatio = Math.round(ratio);
+		const tolerance = 4 * Number.EPSILON * Math.max(Math.abs(ratio), 1);
+		if (Math.abs(ratio - roundedRatio) < tolerance) return 0;
+		return ratio - roundedRatio;
+	}
+	function assignProp(target, prop, value) {
+		Object.defineProperty(target, prop, {
+			value,
+			writable: true,
+			enumerable: true,
+			configurable: true
+		});
+	}
+	function rawShape(def) {
+		const desc = Object.getOwnPropertyDescriptor(def, "shape");
+		return desc?.get ? desc.get.raw : desc?.value;
+	}
+	function sourceShape(schema) {
+		return rawShape(schema._zod.def) ?? schema._zod.def.shape;
+	}
+	function deferProp(target, key, getter) {
+		Object.defineProperty(target, key, {
+			get() {
+				const value = getter();
+				assignProp(this, key, value);
+				return value;
+			},
+			enumerable: true,
+			configurable: true
+		});
+	}
+	function putProp(target, key, value) {
+		if (key in target) assignProp(target, key, value);
+		else target[key] = value;
+	}
+	function mirrorShape(target, source, keys, wrap) {
+		const raw = sourceShape(source);
+		for (const key of keys) {
+			const desc = Object.getOwnPropertyDescriptor(raw, key);
+			if (!desc.enumerable) continue;
+			if (desc.get) deferProp(target, key, () => {
+				const value = source._zod.def.shape[key];
+				return wrap ? wrap(value, key) : value;
+			});
+			else putProp(target, key, wrap ? wrap(desc.value, key) : desc.value);
+		}
+	}
+	function mirrorProps(target, source) {
+		for (const key of Reflect.ownKeys(source)) {
+			const desc = Object.getOwnPropertyDescriptor(source, key);
+			if (!desc.enumerable) continue;
+			if (desc.get) deferProp(target, key, () => source[key]);
+			else putProp(target, key, desc.value);
+		}
+	}
+	function mergeDefs(...defs) {
+		const mergedDescriptors = {};
+		for (const def of defs) {
+			const descriptors = Object.getOwnPropertyDescriptors(def);
+			Object.assign(mergedDescriptors, descriptors);
+		}
+		return Object.defineProperties({}, mergedDescriptors);
+	}
+	function esc(str) {
+		return JSON.stringify(str);
+	}
+	function slugify(input) {
+		return input.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
+	}
+	var captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {};
+	function isObject(data) {
+		return typeof data === "object" && data !== null && !Array.isArray(data);
+	}
+	var allowsEval = cached(() => {
+		if (globalConfig.jitless) return false;
+		if (typeof navigator !== "undefined" && navigator?.userAgent?.includes("Cloudflare")) return false;
+		try {
+			new Function("");
+			return true;
+		} catch (_) {
+			return false;
+		}
+	});
+	function isPlainObject(o) {
+		if (isObject(o) === false) return false;
+		const ctor = o.constructor;
+		if (ctor === void 0) return true;
+		if (typeof ctor !== "function") return true;
+		const prot = ctor.prototype;
+		if (isObject(prot) === false) return false;
+		if (Object.prototype.hasOwnProperty.call(prot, "isPrototypeOf") === false) return false;
+		return true;
+	}
+	function shallowClone(o) {
+		if (isPlainObject(o)) return { ...o };
+		if (Array.isArray(o)) return [...o];
+		if (o instanceof Map) return new Map(o);
+		if (o instanceof Set) return new Set(o);
+		return o;
+	}
+	var propertyKeyTypes = new Set([
+		"string",
+		"number",
+		"symbol"
+	]);
+	function escapeRegex(str) {
+		return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	}
+	function clone(inst, def, params) {
+		const cl = new inst._zod.constr(def ?? inst._zod.def);
+		if (!def || params?.parent) cl._zod.parent = inst;
+		return cl;
+	}
+	function normalizeParams(_params) {
+		const params = _params;
+		if (!params) return {};
+		if (typeof params === "string") return { error: () => params };
+		if (params?.message !== void 0) {
+			if (params?.error !== void 0) throw new Error("Cannot specify both `message` and `error` params");
+			params.error = params.message;
+		}
+		delete params.message;
+		if (typeof params.error === "string") return {
+			...params,
+			error: () => params.error
+		};
+		return params;
+	}
+	function stringifyPrimitive(value) {
+		if (typeof value === "bigint") return value.toString() + "n";
+		if (typeof value === "string") return `"${value}"`;
+		return `${value}`;
+	}
+	function optionalKeys(shape) {
+		return Object.keys(shape).filter((k) => {
+			return shape[k]._zod.optin !== void 0 && shape[k]._zod.optout === "optional";
+		});
+	}
+	var NUMBER_FORMAT_RANGES = (() => ({
+		safeint: [Number.MIN_SAFE_INTEGER, Number.MAX_SAFE_INTEGER],
+		int32: [-2147483648, 2147483647],
+		uint32: [0, 4294967295],
+		float32: [-34028234663852886e22, 34028234663852886e22],
+		float64: [-Number.MAX_VALUE, Number.MAX_VALUE]
+	}))();
+	var BIGINT_FORMAT_RANGES = {
+		int64: [BigInt("-9223372036854775808"), BigInt("9223372036854775807")],
+		uint64: [BigInt(0), BigInt("18446744073709551615")]
+	};
+	function pick(schema, mask) {
+		const currDef = schema._zod.def;
+		const checks = currDef.checks;
+		if (checks && checks.length > 0) throw new Error(".pick() cannot be used on object schemas containing refinements");
+		const newShape = {};
+		mirrorShape(newShape, schema, maskedKeys(schema, mask));
+		return clone(schema, mergeDefs(currDef, {
+			shape: newShape,
+			checks: []
+		}));
+	}
+	function maskedKeys(schema, mask) {
+		const raw = sourceShape(schema);
+		const keys = [];
+		for (const key of Reflect.ownKeys(mask)) {
+			if (!Object.getOwnPropertyDescriptor(raw, key)?.enumerable) throw new Error(`Unrecognized key: "${String(key)}"`);
+			if (mask[key]) keys.push(key);
+		}
+		return keys;
+	}
+	function omit(schema, mask) {
+		const currDef = schema._zod.def;
+		const checks = currDef.checks;
+		if (checks && checks.length > 0) throw new Error(".omit() cannot be used on object schemas containing refinements");
+		const omitted = new Set(maskedKeys(schema, mask));
+		const newShape = {};
+		mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)).filter((key) => !omitted.has(key)));
+		return clone(schema, mergeDefs(currDef, {
+			shape: newShape,
+			checks: []
+		}));
+	}
+	function extend(schema, shape) {
+		if (!isPlainObject(shape)) throw new Error("Invalid input to extend: expected a plain object");
+		const checks = schema._zod.def.checks;
+		if (checks && checks.length > 0) {
+			const existingShape = sourceShape(schema);
+			for (const key of Reflect.ownKeys(shape)) if (Object.getOwnPropertyDescriptor(existingShape, key) !== void 0) throw new Error("Cannot overwrite keys on object schemas containing refinements. Use `.safeExtend()` instead.");
+		}
+		return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
+	}
+	function extended(schema, shape) {
+		const newShape = {};
+		mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)));
+		mirrorProps(newShape, shape);
+		return newShape;
+	}
+	function safeExtend(schema, shape) {
+		if (!isPlainObject(shape)) throw new Error("Invalid input to safeExtend: expected a plain object");
+		return clone(schema, mergeDefs(schema._zod.def, { shape: extended(schema, shape) }));
+	}
+	function merge(a, b) {
+		if (!b?._zod?.def) throw new Error("Invalid input to merge: expected an object schema. To merge a plain shape, use `.extend()`.");
+		if (a._zod.def.checks?.length) throw new Error(".merge() cannot be used on object schemas containing refinements. Use .safeExtend() instead.");
+		const newShape = {};
+		mirrorShape(newShape, a, Reflect.ownKeys(sourceShape(a)));
+		mirrorShape(newShape, b, Reflect.ownKeys(sourceShape(b)));
+		return clone(a, mergeDefs(a._zod.def, {
+			shape: newShape,
+			get catchall() {
+				return b._zod.def.catchall;
+			},
+			checks: b._zod.def.checks ?? []
+		}));
+	}
+	function partial(Class, schema, mask, name = "partial") {
+		const checks = schema._zod.def.checks;
+		if (checks && checks.length > 0) throw new Error(`.${name}() cannot be used on object schemas containing refinements`);
+		const selected = mask ? new Set(maskedKeys(schema, mask)) : void 0;
+		const newShape = {};
+		mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)), Class && ((value, key) => selected && !selected.has(key) ? value : new Class({
+			type: "optional",
+			innerType: value
+		})));
+		return clone(schema, mergeDefs(schema._zod.def, {
+			shape: newShape,
+			checks: []
+		}));
+	}
+	function required(Class, schema, mask) {
+		const selected = mask ? new Set(maskedKeys(schema, mask)) : void 0;
+		const newShape = {};
+		mirrorShape(newShape, schema, Reflect.ownKeys(sourceShape(schema)), (value, key) => selected && !selected.has(key) ? value : new Class({
+			type: "nonoptional",
+			innerType: value
+		}));
+		return clone(schema, mergeDefs(schema._zod.def, { shape: newShape }));
+	}
+	function aborted(x, startIndex = 0) {
+		if (x.aborted === true) return true;
+		for (let i = startIndex; i < x.issues.length; i++) if (x.issues[i]?.continue !== true) return true;
+		return false;
+	}
+	function explicitlyAborted(x, startIndex = 0) {
+		if (x.aborted === true) return true;
+		for (let i = startIndex; i < x.issues.length; i++) if (x.issues[i]?.continue === false) return true;
+		return false;
+	}
+	function prefixIssues(path, issues) {
+		return issues.map((iss) => {
+			var _a;
+			(_a = iss).path ?? (_a.path = []);
+			iss.path.unshift(path);
+			return iss;
+		});
+	}
+	function unwrapMessage(message) {
+		return typeof message === "string" ? message : message?.message;
+	}
+	function sizeCaps(defChecks) {
+		const caps = [];
+		for (const ch of defChecks ?? []) {
+			const d = ch._zod.def;
+			if (!/_(length|size)$|_equals$/.test(d.check)) break;
+			const max = d.maximum ?? d.length ?? d.size;
+			if (max >= 0) caps.push([max, ch]);
+		}
+		return caps;
+	}
+	function attachSchema(issues, start, inst) {
+		var _a;
+		for (let i = start; i < issues.length; i++) (_a = issues[i]).schema ?? (_a.schema = inst);
+	}
+	function finalizeIssue(iss, ctx, config) {
+		var _a;
+		const traits = iss.inst?._zod?.traits;
+		if (traits?.has("$ZodType")) {
+			if (traits.has("$ZodCheck")) (_a = iss).schema ?? (_a.schema = iss.inst);
+			else iss.schema = iss.inst;
+		}
+		const schemaError = iss.schema !== iss.inst ? iss.schema?._zod.def?.error : void 0;
+		const message = iss.message ? iss.message : unwrapMessage(iss.inst?._zod.def?.error?.(iss)) ?? unwrapMessage(schemaError?.(iss)) ?? unwrapMessage(ctx?.error?.(iss)) ?? unwrapMessage(config.customError?.(iss)) ?? unwrapMessage(config.localeError?.(iss)) ?? "Invalid input";
+		const full = {};
+		for (const k of Object.keys(iss)) {
+			if (k === "inst" || k === "schema" || k === "continue" || k === "input" || k === "__proto__") continue;
+			full[k] = iss[k];
+		}
+		full.path ?? (full.path = []);
+		full.message = message;
+		if (ctx?.reportInput) full.input = iss.input;
+		return full;
+	}
+	var highSurrogate = /[\uD800-\uDBFF]/;
+	function codePointLength(str) {
+		const units = str.length;
+		if (!highSurrogate.test(str)) return units;
+		let count = units;
+		for (let i = 0; i < units - 1; i++) if ((str.charCodeAt(i) & 64512) === 55296 && (str.charCodeAt(i + 1) & 64512) === 56320) {
+			count--;
+			i++;
+		}
+		return count;
+	}
+	function getLengthableOrigin(input) {
+		if (Array.isArray(input)) return "array";
+		if (typeof input === "string") return "string";
+		return "unknown";
+	}
+	function parsedType(data) {
+		const t = typeof data;
+		switch (t) {
+			case "number": return Number.isNaN(data) ? "nan" : "number";
+			case "object": {
+				if (data === null) return "null";
+				if (Array.isArray(data)) return "array";
+				const obj = data;
+				if (obj && Object.getPrototypeOf(obj) !== Object.prototype && "constructor" in obj && obj.constructor) return obj.constructor.name;
+			}
+		}
+		return t;
+	}
+	function issue(...args) {
+		const [iss, input, inst] = args;
+		if (typeof iss === "string") return {
+			message: iss,
+			code: "custom",
+			input,
+			inst
+		};
+		return { ...iss };
+	}
+	function members(proto, table) {
+		for (const key in table) {
+			const desc = Object.getOwnPropertyDescriptor(table, key);
+			if (desc.get) Object.defineProperty(proto, key, {
+				...desc,
+				enumerable: false
+			});
+			else defineBound(proto, key, desc.value);
+		}
+	}
+	function own(inst, key, value, enumerable = true) {
+		Object.defineProperty(inst, key, {
+			configurable: true,
+			writable: true,
+			enumerable,
+			value
+		});
+		return value;
+	}
+	function hide(inst, key, value) {
+		return own(inst, key, value, false);
+	}
+	function derived(computes, table) {
+		for (const key in computes) {
+			const compute = computes[key];
+			Object.defineProperty(table, key, {
+				configurable: true,
+				enumerable: true,
+				get() {
+					return own(this, key, compute(this));
+				},
+				set(value) {
+					own(this, key, value);
+				}
+			});
+		}
+		return table;
+	}
+	function defineBound(proto, key, fn) {
+		Object.defineProperty(proto, key, {
+			configurable: true,
+			get() {
+				return this == null ? fn : own(this, key, fn.bind(this));
+			},
+			set(value) {
+				own(this, key, value);
+			}
+		});
+	}
+	function claim(inst, sentinel) {
+		const proto = Object.getPrototypeOf(inst);
+		return sentinel in proto ? void 0 : proto;
+	}
+	var installing;
+	var broke = false;
+	var breaker = {
+		configurable: true,
+		get() {
+			broke = true;
+		}
+	};
+	function defineLazyInternal(inst, key, compute) {
+		const proto = Object.getPrototypeOf(inst._zod);
+		if (key in proto && installing !== inst._zod) {
+			installing = void 0;
+			return;
+		}
+		installing = inst._zod;
+		Object.defineProperty(proto, key, {
+			configurable: true,
+			get() {
+				Object.defineProperty(this, key, breaker);
+				const outer = broke;
+				broke = false;
+				try {
+					const value = compute(this);
+					if (broke) delete this[key];
+					else Object.defineProperty(this, key, {
+						configurable: true,
+						writable: true,
+						value
+					});
+					broke = broke || outer;
+					return value;
+				} catch (err) {
+					delete this[key];
+					broke = broke || outer;
+					throw err;
+				}
+			},
+			set(value) {
+				Object.defineProperty(this, key, {
+					configurable: true,
+					writable: true,
+					value
+				});
+			}
+		});
+	}
+	function installLazyProp(inst, key, make, enumerable) {
+		const proto = claim(inst, key);
+		if (!proto) return;
+		Object.defineProperty(proto, key, {
+			configurable: true,
+			get() {
+				const desc = {
+					configurable: true,
+					writable: true,
+					enumerable,
+					value: void 0
+				};
+				Object.defineProperty(this, key, desc);
+				desc.value = make(this);
+				Object.defineProperty(this, key, desc);
+				return desc.value;
+			},
+			set(value) {
+				Object.defineProperty(this, key, {
+					configurable: true,
+					writable: true,
+					enumerable,
+					value
+				});
+			}
+		});
+	}
+	var CONSTANT_CATCH = "~constantCatch";
+	function constantCatch(value) {
+		const fn = () => value;
+		fn[CONSTANT_CATCH] = true;
+		return fn;
+	}
+	var _a$1;
+	var _zodDesc = {
+		value: void 0,
+		enumerable: false
+	};
+	var _E = "captureStackTrace" in Error ? Error : null;
+	function newError(Definition) {
+		const E = _E;
+		if (E) {
+			const saved = E.stackTraceLimit;
+			if (typeof saved === "number") {
+				try {
+					E.stackTraceLimit = 0;
+				} catch {
+					_E = null;
+					return new Definition();
+				}
+				try {
+					return new Definition();
+				} finally {
+					E.stackTraceLimit = saved;
+				}
+			}
+		}
+		return new Definition();
+	}
+	function $constructor(name, initializer, proto, params) {
+		const zodProto = {};
+		function Internals(def) {
+			this.def = def;
+			this.constr = _;
+			this.traits = new Set();
+		}
+		Internals.prototype = zodProto;
+		const protoMembers = proto;
+		const initialized = protoMembers && new WeakSet();
+		function init(inst, def) {
+			if (!inst._zod) {
+				_zodDesc.value = new Internals(def);
+				try {
+					Object.defineProperty(inst, "_zod", _zodDesc);
+				} finally {
+					_zodDesc.value = void 0;
+				}
+			} else if (inst._zod.traits.has(name)) return;
+			inst._zod.traits.add(name);
+			initializer(inst, def);
+			if (initialized) {
+				const own = Object.getPrototypeOf(inst);
+				const ctorProto = inst._zod.constr.prototype;
+				let up = own;
+				while (up && up !== ctorProto) up = Object.getPrototypeOf(up);
+				const target = up ?? own;
+				if (!initialized.has(target)) {
+					initialized.add(target);
+					members(target, protoMembers);
+				}
+			}
+			const proto = _.prototype;
+			for (const k in proto) {
+				if (!Object.prototype.hasOwnProperty.call(proto, k)) continue;
+				if (!(k in inst)) inst[k] = proto[k].bind(inst);
+			}
+		}
+		const Parent = params?.Parent ?? Object;
+		class Definition extends Parent {}
+		Object.defineProperty(Definition, "name", { value: name });
+		function _(def) {
+			const inst = params?.Parent ? newError(Definition) : this;
+			init(inst, def);
+			const deferred = inst._zod.deferred;
+			if (deferred) {
+				for (const fn of deferred) fn();
+				inst._zod.deferred = void 0;
+			}
+			const pp = globalThis.__zod_globalConfig?.postProcessor;
+			if (pp) pp(inst);
+			return inst;
+		}
+		Object.defineProperty(_, "init", { value: init });
+		Object.defineProperty(_, Symbol.hasInstance, { value: (inst) => {
+			if (params?.Parent && inst instanceof params.Parent) return true;
+			return inst?._zod?.traits?.has(name);
+		} });
+		Object.defineProperty(_, "name", { value: name });
+		return _;
+	}
+	var $ZodAsyncError = class extends Error {
+		constructor() {
+			super(`Encountered Promise during synchronous parse. Use .parseAsync() instead.`);
+		}
+	};
+	var $ZodEncodeError = class extends Error {
+		constructor(name) {
+			super(`Encountered unidirectional transform during encode: ${name}`);
+			this.name = "ZodEncodeError";
+		}
+	};
+	(_a$1 = globalThis).__zod_globalConfig ?? (_a$1.__zod_globalConfig = {});
+	var globalConfig = globalThis.__zod_globalConfig;
+	function config(newConfig) {
+		if (newConfig) Object.assign(globalConfig, newConfig);
+		return globalConfig;
+	}
+	function _getMessage() {
+		const internals = this._zod;
+		internals.message ?? (internals.message = JSON.stringify(internals.def, jsonStringifyReplacer, 2));
+		return internals.message;
+	}
+	function _setMessage(value) {
+		this._zod.message = value;
+	}
+	var _messageDesc = {
+		get: _getMessage,
+		set: _setMessage,
+		enumerable: true,
+		configurable: true
+	};
+	var _issuesDesc = {
+		value: void 0,
+		enumerable: false
+	};
+	var _installedToString = new WeakSet([Object.prototype, Error.prototype]);
+	var initializer$1 = (inst, def) => {
+		inst.name = "$ZodError";
+		_issuesDesc.value = def;
+		Object.defineProperty(inst, "issues", _issuesDesc);
+		_issuesDesc.value = void 0;
+		Object.defineProperty(inst, "message", _messageDesc);
+		const proto = Object.getPrototypeOf(inst);
+		if (!_installedToString.has(proto)) {
+			_installedToString.add(proto);
+			Object.defineProperty(proto, "toString", {
+				configurable: true,
+				enumerable: false,
+				get() {
+					const value = () => this.message;
+					Object.defineProperty(this, "toString", {
+						value,
+						configurable: true,
+						writable: true
+					});
+					return value;
+				},
+				set(value) {
+					Object.defineProperty(this, "toString", {
+						value,
+						configurable: true,
+						writable: true
+					});
+				}
+			});
+		}
+	};
+	var $ZodError = $constructor("$ZodError", initializer$1);
+	function node(obj, key, make) {
+		if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+			if (key === "__proto__") Object.defineProperty(obj, key, {
+				value: make(),
+				writable: true,
+				enumerable: true,
+				configurable: true
+			});
+			else obj[key] = make();
+		}
+		return obj[key];
+	}
+	function flattenError(error, mapper = (issue) => issue.message) {
+		const fieldErrors = {};
+		const formErrors = [];
+		for (const sub of error.issues) if (sub.path.length > 0) node(fieldErrors, sub.path[0], () => []).push(mapper(sub));
+		else formErrors.push(mapper(sub));
+		return {
+			formErrors,
+			fieldErrors
+		};
+	}
+	function formatError(error, mapper = (issue) => issue.message) {
+		const fieldErrors = { _errors: [] };
+		const processError = (error, path = []) => {
+			for (const issue of error.issues) if (issue.code === "invalid_union" && issue.errors.length) issue.errors.map((issues) => processError({ issues }, [...path, ...issue.path]));
+			else if (issue.code === "invalid_key") processError({ issues: issue.issues }, [...path, ...issue.path]);
+			else if (issue.code === "invalid_element") processError({ issues: issue.issues }, [...path, ...issue.path]);
+			else {
+				const fullpath = [...path, ...issue.path];
+				if (fullpath.length === 0) fieldErrors._errors.push(mapper(issue));
+				else {
+					let curr = fieldErrors;
+					let i = 0;
+					while (i < fullpath.length) {
+						const el = fullpath[i];
+						const terminal = i === fullpath.length - 1;
+						if (el === "_errors") {
+							if (terminal) curr._errors.push(mapper(issue));
+							i++;
+							continue;
+						}
+						if (!Object.prototype.hasOwnProperty.call(curr, el)) Object.defineProperty(curr, el, {
+							value: { _errors: [] },
+							enumerable: true,
+							writable: true,
+							configurable: true
+						});
+						const node = curr[el];
+						if (terminal) node._errors.push(mapper(issue));
+						curr = node;
+						i++;
+					}
+				}
+			}
+		};
+		processError(error);
+		return fieldErrors;
+	}
+	function finalizeParams(callee, params) {
+		return {
+			callee: params?.callee ?? callee,
+			Err: params?.Err
+		};
+	}
+	var _parse = (_Err) => {
+		const fn = (schema, value, _ctx, _params) => {
+			const ctx = _ctx ? {
+				..._ctx,
+				async: false
+			} : { async: false };
+			const result = schema._zod.run({
+				value,
+				issues: []
+			}, ctx);
+			if (result instanceof Promise) throw new $ZodAsyncError();
+			if (result.issues.length) {
+				const e = new ((_params?.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+				captureStackTrace(e, _params?.callee ?? fn);
+				throw e;
+			}
+			return result.value;
+		};
+		return fn;
+	};
+	var _parseAsync = (_Err) => {
+		const fn = async (schema, value, _ctx, params) => {
+			const ctx = _ctx ? {
+				..._ctx,
+				async: true
+			} : { async: true };
+			let result = schema._zod.run({
+				value,
+				issues: []
+			}, ctx);
+			if (result instanceof Promise) result = await result;
+			if (result.issues.length) {
+				const e = new ((params?.Err) ?? _Err)(result.issues.map((iss) => finalizeIssue(iss, ctx, config())));
+				captureStackTrace(e, params?.callee ?? fn);
+				throw e;
+			}
+			return result.value;
+		};
+		return fn;
+	};
+	var _safeParse = (_Err) => (schema, value, _ctx) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			async: false
+		} : { async: false };
+		const result = schema._zod.run({
+			value,
+			issues: []
+		}, ctx);
+		if (result instanceof Promise) throw new $ZodAsyncError();
+		return result.issues.length ? failure(_Err, result.issues, ctx) : {
+			success: true,
+			data: result.value
+		};
+	};
+	function failure(Err, issues, ctx) {
+		let error;
+		return {
+			success: false,
+			get error() {
+				if (!error) {
+					error = new Err(issues.map((iss) => finalizeIssue(iss, ctx, config())));
+					issues = void 0;
+					ctx = void 0;
+				}
+				return error;
+			},
+			set error(e) {
+				error = e;
+				issues = void 0;
+				ctx = void 0;
+			}
+		};
+	}
+	var _safeParseAsync = (_Err) => async (schema, value, _ctx) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			async: true
+		} : { async: true };
+		let result = schema._zod.run({
+			value,
+			issues: []
+		}, ctx);
+		if (result instanceof Promise) result = await result;
+		return result.issues.length ? failure(_Err, result.issues, ctx) : {
+			success: true,
+			data: result.value
+		};
+	};
+	var COMPILE_INVALID = Symbol.for("zod.compile.invalid");
+	var COMPILE_FALLBACK = Symbol.for("zod.compile.fallback");
+	var validate = ((schema, value, _ctx) => {
+		const validator = schema._zod.bag.validator;
+		if (validator !== void 0) {
+			if (validator(value) !== COMPILE_INVALID) return true;
+			if (validator.definite === true && _ctx === void 0) return false;
+		}
+		return validateFallback(schema, value, _ctx);
+	});
+	function validateFallback(schema, value, _ctx) {
+		const ctx = _ctx ? {
+			..._ctx,
+			async: false,
+			abortEarly: true
+		} : {
+			async: false,
+			abortEarly: true
+		};
+		const fallbackRun = schema._zod.bag.fallbackRun;
+		let result;
+		if (fallbackRun) {
+			ctx[COMPILE_FALLBACK] = true;
+			result = fallbackRun({
+				value,
+				issues: []
+			}, ctx);
+		} else result = schema._zod.run({
+			value,
+			issues: []
+		}, ctx);
+		if (result instanceof Promise) throw new $ZodAsyncError();
+		return result.issues.length === 0;
+	}
+	var validateAsync$1 = async (schema, value, _ctx) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			async: true,
+			abortEarly: true
+		} : {
+			async: true,
+			abortEarly: true
+		};
+		let result = schema._zod.run({
+			value,
+			issues: []
+		}, ctx);
+		if (result instanceof Promise) result = await result;
+		return result.issues.length === 0;
+	};
+	var _encode = (_Err) => {
+		const parse = _parse(_Err);
+		const fn = (schema, value, _ctx, _params) => {
+			const ctx = _ctx ? {
+				..._ctx,
+				direction: "backward"
+			} : { direction: "backward" };
+			return parse(schema, value, ctx, finalizeParams(fn, _params));
+		};
+		return fn;
+	};
+	var _decode = (_Err) => {
+		const parse = _parse(_Err);
+		const fn = (schema, value, _ctx, _params) => {
+			return parse(schema, value, _ctx, finalizeParams(fn, _params));
+		};
+		return fn;
+	};
+	var _encodeAsync = (_Err) => {
+		const parseAsync = _parseAsync(_Err);
+		const fn = async (schema, value, _ctx, _params) => {
+			const ctx = _ctx ? {
+				..._ctx,
+				direction: "backward"
+			} : { direction: "backward" };
+			return await parseAsync(schema, value, ctx, finalizeParams(fn, _params));
+		};
+		return fn;
+	};
+	var _decodeAsync = (_Err) => {
+		const parseAsync = _parseAsync(_Err);
+		const fn = async (schema, value, _ctx, _params) => {
+			return await parseAsync(schema, value, _ctx, finalizeParams(fn, _params));
+		};
+		return fn;
+	};
+	var _safeEncode = (_Err) => (schema, value, _ctx) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			direction: "backward"
+		} : { direction: "backward" };
+		return _safeParse(_Err)(schema, value, ctx);
+	};
+	var _safeDecode = (_Err) => (schema, value, _ctx) => {
+		return _safeParse(_Err)(schema, value, _ctx);
+	};
+	var _safeEncodeAsync = (_Err) => async (schema, value, _ctx) => {
+		const ctx = _ctx ? {
+			..._ctx,
+			direction: "backward"
+		} : { direction: "backward" };
+		return _safeParseAsync(_Err)(schema, value, ctx);
+	};
+	var _safeDecodeAsync = (_Err) => async (schema, value, _ctx) => {
+		return _safeParseAsync(_Err)(schema, value, _ctx);
+	};
+	var cuid = /^[cC][0-9a-z]{6,}$/;
+	var cuid2 = /^[0-9a-z]+$/;
+	var ulid = /^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$/;
+	var xid = /^[0-9a-vA-V]{20}$/;
+	var ksuid = /^[A-Za-z0-9]{27}$/;
+	var nanoid = /^[a-zA-Z0-9_-]{21}$/;
+	function nanoidOfLength(length) {
+		return new RegExp(`^[a-zA-Z0-9_-]{${length}}$`);
+	}
+	var duration = /^P(?:(\d+W)|(?!.*W)(?=\d|T\d)(\d+Y)?(\d+M)?(\d+D)?(T(?=\d)(\d+H)?(\d+M)?(\d+([.,]\d+)?S)?)?)$/;
+	var guid = /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+	var uuid = (version) => {
+		if (!version) return /^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/;
+		return new RegExp(`^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-${version}[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})$`);
+	};
+	var email = /^(?:[A-Za-z0-9_'+\-]+\.)*[A-Za-z0-9_'+\-]*[A-Za-z0-9_+-]@(?:[A-Za-z0-9][A-Za-z0-9\-]*\.)+[A-Za-z]{2,}$/;
+	var _emoji$1 = `^(?=[\\s\\S]*[\\p{Extended_Pictographic}\\p{Regional_Indicator}\\u20E3])[\\p{Extended_Pictographic}\\p{Emoji_Component}]+$`;
+	function emoji() {
+		return new RegExp(_emoji$1, "u");
+	}
+	var ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
+	var ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
+	var cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
+	var cidrv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))\/(12[0-8]|1[01][0-9]|[1-9]?[0-9])$/;
+	var base64 = /^$|^(?:[0-9a-zA-Z+/]{4})*(?:(?:[0-9a-zA-Z+/]{2}==)|(?:[0-9a-zA-Z+/]{3}=))?$/;
+	var base64url = /^(?:[A-Za-z0-9_-]{4})*(?:[A-Za-z0-9_-]{2,3})?$/;
+	var httpProtocol = /^https?$/;
+	var e164 = /^\+[1-9]\d{6,14}$/;
+	var dateSource = `(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))`;
+	function anchor(source) {
+		return new RegExp(`^${source}$`);
+	}
+	var date = anchor(dateSource);
+	function timeSource(args) {
+		const hhmm = `(?:[01]\\d|2[0-3]):[0-5]\\d`;
+		return typeof args.precision === "number" ? args.precision === -1 ? `${hhmm}` : args.precision === 0 ? `${hhmm}:[0-5]\\d` : `${hhmm}:[0-5]\\d\\.\\d{${args.precision}}` : args.seconds ? `${hhmm}:[0-5]\\d(?:\\.\\d+)?` : `${hhmm}(?::[0-5]\\d(?:\\.\\d+)?)?`;
+	}
+	function time(args) {
+		return new RegExp(`^${timeSource(args)}$`);
+	}
+	function datetime(args) {
+		const opts = ["Z"];
+		if (args.offset) opts.push(`([+-](?:[01]\\d|2[0-3]):[0-5]\\d)`);
+		const qualified = `${timeSource({
+			precision: args.precision,
+			seconds: true
+		})}(?:${opts.join("|")})`;
+		const timeRegex = args.local ? `${qualified}|${timeSource({ precision: args.precision })}` : qualified;
+		return new RegExp(`^${dateSource}T(?:${timeRegex})$`);
+	}
+	var anyString = /^[\s\S]{0,}$/;
+	var number$1 = /^-?\d+(?:\.\d+)?$/;
+	var boolean$1 = /^(?:true|false)$/i;
+	var lowercase = /^[^A-Z]*$/;
+	var uppercase = /^[^a-z]*$/;
+	var $ZodCheck = $constructor("$ZodCheck", (inst, def) => {
+		var _a;
+		inst._zod ?? (inst._zod = {});
+		inst._zod.def = def;
+		(_a = inst._zod).onattach ?? (_a.onattach = []);
+	});
+	var _whenHasLength = (payload) => {
+		const val = payload.value;
+		return !nullish(val) && val.length !== void 0;
+	};
+	var numericOriginMap = {
+		number: "number",
+		bigint: "bigint",
+		object: "date"
+	};
+	var $ZodCheckLessThan = $constructor("$ZodCheckLessThan", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		const origin = numericOriginMap[typeof def.value];
+		inst._zod.check = (payload) => {
+			if (def.inclusive ? payload.value <= def.value : payload.value < def.value) return;
+			payload.issues.push({
+				origin: numericOriginMap[typeof payload.value] ?? origin,
+				code: "too_big",
+				maximum: typeof def.value === "object" ? def.value.getTime() : def.value,
+				input: payload.value,
+				inclusive: def.inclusive,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckGreaterThan = $constructor("$ZodCheckGreaterThan", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		const origin = numericOriginMap[typeof def.value];
+		inst._zod.check = (payload) => {
+			if (def.inclusive ? payload.value >= def.value : payload.value > def.value) return;
+			payload.issues.push({
+				origin: numericOriginMap[typeof payload.value] ?? origin,
+				code: "too_small",
+				minimum: typeof def.value === "object" ? def.value.getTime() : def.value,
+				input: payload.value,
+				inclusive: def.inclusive,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckMultipleOf = $constructor("$ZodCheckMultipleOf", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		inst._zod.check = (payload) => {
+			if (typeof payload.value !== typeof def.value) throw new Error("Cannot mix number and bigint in multiple_of check.");
+			if (typeof payload.value === "bigint" ? def.value !== BigInt(0) && payload.value % def.value === BigInt(0) : floatSafeRemainder(payload.value, def.value) === 0) return;
+			payload.issues.push({
+				origin: typeof payload.value,
+				code: "not_multiple_of",
+				divisor: def.value,
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckNumberFormat = $constructor("$ZodCheckNumberFormat", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		def.format = def.format || "float64";
+		const isInt = def.format?.includes("int");
+		const origin = isInt ? "int" : "number";
+		const [minimum, maximum] = NUMBER_FORMAT_RANGES[def.format];
+		inst._zod.check = (payload) => {
+			const input = payload.value;
+			if (isInt) {
+				if (!Number.isInteger(input)) {
+					payload.issues.push({
+						expected: origin,
+						format: def.format,
+						code: "invalid_type",
+						continue: false,
+						input,
+						inst
+					});
+					return;
+				}
+				if (!Number.isSafeInteger(input)) {
+					if (input > 0) payload.issues.push({
+						input,
+						code: "too_big",
+						maximum: Number.MAX_SAFE_INTEGER,
+						note: "Integers must be within the safe integer range.",
+						inst,
+						origin,
+						inclusive: true,
+						continue: !def.abort
+					});
+					else payload.issues.push({
+						input,
+						code: "too_small",
+						minimum: Number.MIN_SAFE_INTEGER,
+						note: "Integers must be within the safe integer range.",
+						inst,
+						origin,
+						inclusive: true,
+						continue: !def.abort
+					});
+					return;
+				}
+			}
+			if (input < minimum) payload.issues.push({
+				origin: "number",
+				input,
+				code: "too_small",
+				minimum,
+				inclusive: true,
+				inst,
+				continue: !def.abort
+			});
+			if (input > maximum) payload.issues.push({
+				origin: "number",
+				input,
+				code: "too_big",
+				maximum,
+				inclusive: true,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckMaxLength = $constructor("$ZodCheckMaxLength", (inst, def) => {
+		var _a;
+		$ZodCheck.init(inst, def);
+		(_a = inst._zod.def).when ?? (_a.when = _whenHasLength);
+		inst._zod.check = (payload) => {
+			const input = payload.value;
+			const units = input.length;
+			if ((typeof input === "string" && units > def.maximum ? codePointLength(input) : units) <= def.maximum) return;
+			const origin = getLengthableOrigin(input);
+			payload.issues.push({
+				origin,
+				code: "too_big",
+				maximum: def.maximum,
+				inclusive: true,
+				input,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckMinLength = $constructor("$ZodCheckMinLength", (inst, def) => {
+		var _a;
+		$ZodCheck.init(inst, def);
+		(_a = inst._zod.def).when ?? (_a.when = _whenHasLength);
+		inst._zod.check = (payload) => {
+			const input = payload.value;
+			const units = input.length;
+			if ((typeof input === "string" && units >= def.minimum && units < def.minimum * 2 ? codePointLength(input) : units) >= def.minimum) return;
+			const origin = getLengthableOrigin(input);
+			payload.issues.push({
+				origin,
+				code: "too_small",
+				minimum: def.minimum,
+				inclusive: true,
+				input,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckLengthEquals = $constructor("$ZodCheckLengthEquals", (inst, def) => {
+		var _a;
+		$ZodCheck.init(inst, def);
+		(_a = inst._zod.def).when ?? (_a.when = _whenHasLength);
+		inst._zod.check = (payload) => {
+			const input = payload.value;
+			const units = input.length;
+			const length = typeof input === "string" && units >= def.length && units <= def.length * 2 ? codePointLength(input) : units;
+			if (length === def.length) return;
+			const origin = getLengthableOrigin(input);
+			const tooBig = length > def.length;
+			payload.issues.push({
+				origin,
+				...tooBig ? {
+					code: "too_big",
+					maximum: def.length
+				} : {
+					code: "too_small",
+					minimum: def.length
+				},
+				inclusive: true,
+				exact: true,
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckStringFormat = $constructor("$ZodCheckStringFormat", (inst, def) => {
+		var _a, _b;
+		$ZodCheck.init(inst, def);
+		if (def.pattern) (_a = inst._zod).check ?? (_a.check = (payload) => {
+			def.pattern.lastIndex = 0;
+			if (def.pattern.test(payload.value)) return;
+			payload.issues.push({
+				origin: "string",
+				code: "invalid_format",
+				format: def.format,
+				input: payload.value,
+				...def.pattern ? { pattern: def.pattern.toString() } : {},
+				inst,
+				continue: !def.abort
+			});
+		});
+		else (_b = inst._zod).check ?? (_b.check = () => {});
+	});
+	var $ZodCheckRegex = $constructor("$ZodCheckRegex", (inst, def) => {
+		$ZodCheckStringFormat.init(inst, def);
+		inst._zod.check = (payload) => {
+			def.pattern.lastIndex = 0;
+			if (def.pattern.test(payload.value)) return;
+			payload.issues.push({
+				origin: "string",
+				code: "invalid_format",
+				format: "regex",
+				input: payload.value,
+				pattern: def.pattern.toString(),
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckLowerCase = $constructor("$ZodCheckLowerCase", (inst, def) => {
+		def.pattern ?? (def.pattern = lowercase);
+		$ZodCheckStringFormat.init(inst, def);
+	});
+	var $ZodCheckUpperCase = $constructor("$ZodCheckUpperCase", (inst, def) => {
+		def.pattern ?? (def.pattern = uppercase);
+		$ZodCheckStringFormat.init(inst, def);
+	});
+	var $ZodCheckIncludes = $constructor("$ZodCheckIncludes", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		const escapedRegex = escapeRegex(def.includes);
+		def.pattern = new RegExp(typeof def.position === "number" ? `^.{${def.position},}${escapedRegex}` : escapedRegex);
+		inst._zod.check = (payload) => {
+			if (payload.value.includes(def.includes, def.position)) return;
+			payload.issues.push({
+				origin: "string",
+				code: "invalid_format",
+				format: "includes",
+				includes: def.includes,
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckStartsWith = $constructor("$ZodCheckStartsWith", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		const pattern = new RegExp(`^${escapeRegex(def.prefix)}.*`);
+		def.pattern ?? (def.pattern = pattern);
+		inst._zod.check = (payload) => {
+			if (payload.value.startsWith(def.prefix)) return;
+			payload.issues.push({
+				origin: "string",
+				code: "invalid_format",
+				format: "starts_with",
+				prefix: def.prefix,
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckEndsWith = $constructor("$ZodCheckEndsWith", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		const pattern = new RegExp(`.*${escapeRegex(def.suffix)}$`);
+		def.pattern ?? (def.pattern = pattern);
+		inst._zod.check = (payload) => {
+			if (payload.value.endsWith(def.suffix)) return;
+			payload.issues.push({
+				origin: "string",
+				code: "invalid_format",
+				format: "ends_with",
+				suffix: def.suffix,
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCheckOverwrite = $constructor("$ZodCheckOverwrite", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		inst._zod.check = (payload) => {
+			payload.value = def.tx(payload.value);
+		};
+	});
+	var Doc = class {
+		constructor(args = [], closed = {}) {
+			this.content = [];
+			this.indent = 0;
+			this.args = args;
+			this.closed = closed;
+		}
+		indented(fn) {
+			this.indent += 1;
+			try {
+				fn(this);
+			} finally {
+				this.indent -= 1;
+			}
+		}
+		write(arg) {
+			if (typeof arg === "function") {
+				arg(this, { execution: "sync" });
+				arg(this, { execution: "async" });
+				return;
+			}
+			const lines = arg.split("\n").filter((x) => x);
+			const minIndent = Math.min(...lines.map((x) => x.length - x.trimStart().length));
+			const dedented = lines.map((x) => x.slice(minIndent)).map((x) => " ".repeat(this.indent * 2) + x);
+			for (const line of dedented) this.content.push(line);
+		}
+		compile() {
+			const F = Function;
+			const content = this?.content ?? [``];
+			return new F(...Object.keys(this.closed), `return function (${this.args.join(", ")}) {\n${content.join("\n")}\n};`)(...Object.values(this.closed));
+		}
+	};
+	var version = {
+		major: 4,
+		minor: 6,
+		patch: 7
+	};
+	var $ZodType = $constructor("$ZodType", (inst, def) => {
+		var _a;
+		inst ?? (inst = {});
+		inst._zod.def = def;
+		inst._zod.bag = inst._zod.bag || {};
+		inst._zod.version = version;
+		const defChecks = inst._zod.def.checks;
+		const checks = inst._zod.traits.has("$ZodCheck") ? [inst, ...defChecks ?? []] : defChecks?.length ? [...defChecks] : [];
+		for (const ch of checks) for (const fn of ch._zod.onattach) fn(inst);
+		if (checks.length === 0) {
+			(_a = inst._zod).deferred ?? (_a.deferred = []);
+			inst._zod.deferred?.push(() => {
+				inst._zod.run = inst._zod.parse;
+			});
+		} else {
+			const runChecks = (payload, checks, ctx) => {
+				if (payload.memo) return payload;
+				let isAborted = aborted(payload);
+				let asyncResult;
+				for (const ch of checks) {
+					if (ch._zod.def.when) {
+						if (explicitlyAborted(payload)) continue;
+						if (!ch._zod.def.when(payload)) continue;
+					} else if (isAborted) continue;
+					const currLen = payload.issues.length;
+					const _ = ch._zod.check(payload);
+					if (_ instanceof Promise && ctx?.async === false) throw new $ZodAsyncError();
+					if (asyncResult || _ instanceof Promise) asyncResult = (asyncResult ?? Promise.resolve()).then(async () => {
+						await _;
+						if (payload.issues.length === currLen) return;
+						attachSchema(payload.issues, currLen, inst);
+						if (!isAborted) isAborted = aborted(payload, currLen);
+					});
+					else {
+						if (payload.issues.length === currLen) continue;
+						attachSchema(payload.issues, currLen, inst);
+						if (!isAborted) isAborted = aborted(payload, currLen);
+					}
+				}
+				if (asyncResult) return asyncResult.then(() => {
+					return payload;
+				});
+				return payload;
+			};
+			const handleCanaryResult = (canary, payload, ctx) => {
+				if (aborted(canary)) {
+					canary.aborted = true;
+					return canary;
+				}
+				const checkResult = runChecks(payload, checks, ctx);
+				if (checkResult instanceof Promise) {
+					if (ctx.async === false) throw new $ZodAsyncError();
+					return checkResult.then((checkResult) => inst._zod.parse(checkResult, ctx));
+				}
+				return inst._zod.parse(checkResult, ctx);
+			};
+			inst._zod.run = (payload, ctx) => {
+				if (ctx.skipChecks) return inst._zod.parse(payload, ctx);
+				if (ctx.direction === "backward") {
+					const canary = inst._zod.parse({
+						value: payload.value,
+						issues: []
+					}, {
+						...ctx,
+						skipChecks: true
+					});
+					if (canary instanceof Promise) return canary.then((canary) => {
+						return handleCanaryResult(canary, payload, ctx);
+					});
+					return handleCanaryResult(canary, payload, ctx);
+				}
+				const result = inst._zod.parse(payload, ctx);
+				if (result instanceof Promise) {
+					if (ctx.async === false) throw new $ZodAsyncError();
+					return result.then((result) => runChecks(result, checks, ctx));
+				}
+				return runChecks(result, checks, ctx);
+			};
+		}
+	}, {
+		get "~standard"() {
+			return hide(this, "~standard", standardProps(this));
+		},
+		set "~standard"(value) {
+			own(this, "~standard", value);
+		}
+	});
+	var toStandardResult = (r, ctx) => r.issues.length ? { issues: r.issues.map((iss) => finalizeIssue(iss, ctx, config())) } : { value: r.value };
+	async function validateAsync(inst, value) {
+		const ctx = { async: true };
+		return toStandardResult(await inst._zod.run({
+			value,
+			issues: []
+		}, ctx), ctx);
+	}
+	function standardProps(inst) {
+		return {
+			validate: (value) => {
+				const ctx = { async: false };
+				try {
+					const r = inst._zod.run({
+						value,
+						issues: []
+					}, ctx);
+					if (!(r instanceof Promise)) return toStandardResult(r, ctx);
+				} catch (_) {}
+				return validateAsync(inst, value);
+			},
+			vendor: "zod",
+			version: 1
+		};
+	}
+	var $ZodString = $constructor("$ZodString", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.pattern = def.pattern ?? anyString;
+		inst._zod.parse = (payload, _) => {
+			if (def.coerce) try {
+				payload.value = String(payload.value);
+			} catch (_) {}
+			if (typeof payload.value === "string") return payload;
+			payload.issues.push({
+				expected: "string",
+				code: "invalid_type",
+				input: payload.value,
+				inst
+			});
+			return payload;
+		};
+	});
+	var $ZodStringFormat = $constructor("$ZodStringFormat", (inst, def) => {
+		$ZodCheckStringFormat.init(inst, def);
+		$ZodString.init(inst, def);
+	});
+	var $ZodGUID = $constructor("$ZodGUID", (inst, def) => {
+		def.pattern ?? (def.pattern = guid);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodUUID = $constructor("$ZodUUID", (inst, def) => {
+		if (def.version) {
+			const v = {
+				v1: 1,
+				v2: 2,
+				v3: 3,
+				v4: 4,
+				v5: 5,
+				v6: 6,
+				v7: 7,
+				v8: 8
+			}[def.version];
+			if (v === void 0) throw new Error(`Invalid UUID version: "${def.version}"`);
+			def.pattern ?? (def.pattern = uuid(v));
+		} else def.pattern ?? (def.pattern = uuid());
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodEmail = $constructor("$ZodEmail", (inst, def) => {
+		def.pattern ?? (def.pattern = email);
+		$ZodStringFormat.init(inst, def);
+	});
+	function canParseURL(input) {
+		try {
+			if (typeof URL !== "undefined" && typeof URL.canParse === "function") return URL.canParse(input);
+			new URL(input);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	function validateURL(trimmed, def) {
+		if (!("normalize" in def) && !("hostname" in def) && !("protocol" in def)) return canParseURL(trimmed) || 2;
+		return parseURLObject(trimmed, def);
+	}
+	function parseURLObject(trimmed, def) {
+		if (!def.normalize && def.protocol?.source === httpProtocol.source && !/^https?:\/\//i.test(trimmed)) return 1;
+		try {
+			if (typeof URL !== "undefined") {
+				const URLStatic = URL;
+				if (typeof URLStatic.parse === "function") return URLStatic.parse(trimmed) ?? 2;
+			}
+			return new URL(trimmed);
+		} catch {
+			return 2;
+		}
+	}
+	var asciiTabOrNewline = /[\t\n\r]/g;
+	function stripTabAndNewline(value) {
+		return value.replace(asciiTabOrNewline, "");
+	}
+	function urlHostnameOk(url, hostname) {
+		hostname.lastIndex = 0;
+		return hostname.test(url.hostname);
+	}
+	function urlProtocolOk(url, protocol) {
+		protocol.lastIndex = 0;
+		return protocol.test(url.protocol.endsWith(":") ? url.protocol.slice(0, -1) : url.protocol);
+	}
+	var $ZodURL = $constructor("$ZodURL", (inst, def) => {
+		$ZodStringFormat.init(inst, def);
+		inst._zod.check = (payload) => {
+			try {
+				const trimmed = payload.value.trim();
+				const url = validateURL(trimmed, def);
+				if (url === 1) {
+					payload.issues.push({
+						code: "invalid_format",
+						format: "url",
+						note: "Invalid URL format",
+						input: payload.value,
+						inst,
+						continue: !def.abort
+					});
+					return;
+				}
+				if (url === 2) {
+					payload.issues.push({
+						code: "invalid_format",
+						format: "url",
+						input: payload.value,
+						inst,
+						continue: !def.abort
+					});
+					return;
+				}
+				if (url === true) {
+					payload.value = stripTabAndNewline(trimmed);
+					return;
+				}
+				if (def.hostname && !urlHostnameOk(url, def.hostname)) payload.issues.push({
+					code: "invalid_format",
+					format: "url",
+					note: "Invalid hostname",
+					pattern: def.hostname.source,
+					input: payload.value,
+					inst,
+					continue: !def.abort
+				});
+				if (def.protocol && !urlProtocolOk(url, def.protocol)) payload.issues.push({
+					code: "invalid_format",
+					format: "url",
+					note: "Invalid protocol",
+					pattern: def.protocol.source,
+					input: payload.value,
+					inst,
+					continue: !def.abort
+				});
+				payload.value = def.normalize ? url.href : stripTabAndNewline(trimmed);
+				return;
+			} catch (_) {
+				payload.issues.push({
+					code: "invalid_format",
+					format: "url",
+					input: payload.value,
+					inst,
+					continue: !def.abort
+				});
+			}
+		};
+	});
+	var $ZodEmoji = $constructor("$ZodEmoji", (inst, def) => {
+		def.pattern ?? (def.pattern = emoji());
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodNanoID = $constructor("$ZodNanoID", (inst, def) => {
+		if (def.length !== void 0 && (!Number.isInteger(def.length) || def.length < 1)) throw new Error(`Invalid nanoid length: ${def.length}`);
+		def.pattern ?? (def.pattern = def.length === void 0 ? nanoid : nanoidOfLength(def.length));
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodCUID = $constructor("$ZodCUID", (inst, def) => {
+		def.pattern ?? (def.pattern = cuid);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodCUID2 = $constructor("$ZodCUID2", (inst, def) => {
+		def.pattern ?? (def.pattern = cuid2);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodULID = $constructor("$ZodULID", (inst, def) => {
+		def.pattern ?? (def.pattern = ulid);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodXID = $constructor("$ZodXID", (inst, def) => {
+		def.pattern ?? (def.pattern = xid);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodKSUID = $constructor("$ZodKSUID", (inst, def) => {
+		def.pattern ?? (def.pattern = ksuid);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodISODateTime = $constructor("$ZodISODateTime", (inst, def) => {
+		def.pattern ?? (def.pattern = datetime(def));
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodISODate = $constructor("$ZodISODate", (inst, def) => {
+		def.pattern ?? (def.pattern = date);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodISOTime = $constructor("$ZodISOTime", (inst, def) => {
+		def.pattern ?? (def.pattern = time(def));
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodISODuration = $constructor("$ZodISODuration", (inst, def) => {
+		def.pattern ?? (def.pattern = duration);
+		$ZodStringFormat.init(inst, def);
+	});
+	var $ZodIPv4 = $constructor("$ZodIPv4", (inst, def) => {
+		def.pattern ?? (def.pattern = ipv4);
+		$ZodStringFormat.init(inst, def);
+	});
+	var ipv6Alphabet = /^[0-9a-fA-F:.]+$/;
+	function isValidIPv6(value) {
+		if (!ipv6Alphabet.test(value)) return false;
+		return canParseURL(`http://[${value}]`);
+	}
+	var $ZodIPv6 = $constructor("$ZodIPv6", (inst, def) => {
+		def.pattern ?? (def.pattern = ipv6);
+		$ZodStringFormat.init(inst, def);
+		inst._zod.check = (payload) => {
+			if (!isValidIPv6(payload.value)) payload.issues.push({
+				code: "invalid_format",
+				format: "ipv6",
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodCIDRv4 = $constructor("$ZodCIDRv4", (inst, def) => {
+		def.pattern ?? (def.pattern = cidrv4);
+		$ZodStringFormat.init(inst, def);
+	});
+	function isValidCIDRv6(value) {
+		const parts = value.split("/");
+		if (parts.length !== 2) return false;
+		const [address, prefix] = parts;
+		if (!prefix) return false;
+		const prefixNum = Number(prefix);
+		if (`${prefixNum}` !== prefix) return false;
+		if (prefixNum < 0 || prefixNum > 128) return false;
+		return isValidIPv6(address);
+	}
+	var $ZodCIDRv6 = $constructor("$ZodCIDRv6", (inst, def) => {
+		def.pattern ?? (def.pattern = cidrv6);
+		$ZodStringFormat.init(inst, def);
+		inst._zod.check = (payload) => {
+			if (!isValidCIDRv6(payload.value)) payload.issues.push({
+				code: "invalid_format",
+				format: "cidrv6",
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	function isValidBase64(data) {
+		if (data === "") return true;
+		if (/\s/.test(data)) return false;
+		if (data.length % 4 !== 0) return false;
+		try {
+			atob(data);
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	var base64Charset = /^[0-9a-zA-Z+/]*={0,2}$/;
+	var $ZodBase64 = $constructor("$ZodBase64", (inst, def) => {
+		def.pattern ?? (def.pattern = base64Charset);
+		$ZodStringFormat.init(inst, def);
+		inst._zod.check = (payload) => {
+			if (isValidBase64(payload.value)) return;
+			payload.issues.push({
+				code: "invalid_format",
+				format: "base64",
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var base64urlCharset = /^[A-Za-z0-9_-]*$/;
+	function isValidBase64URL(data) {
+		if (!base64urlCharset.test(data)) return false;
+		const base64 = data.replace(/[-_]/g, (c) => c === "-" ? "+" : "/");
+		return isValidBase64(base64.padEnd(Math.ceil(base64.length / 4) * 4, "="));
+	}
+	var $ZodBase64URL = $constructor("$ZodBase64URL", (inst, def) => {
+		def.pattern ?? (def.pattern = base64urlCharset);
+		$ZodStringFormat.init(inst, def);
+		inst._zod.check = (payload) => {
+			if (isValidBase64URL(payload.value)) return;
+			payload.issues.push({
+				code: "invalid_format",
+				format: "base64url",
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodE164 = $constructor("$ZodE164", (inst, def) => {
+		def.pattern ?? (def.pattern = e164);
+		$ZodStringFormat.init(inst, def);
+	});
+	function isValidJWT(token, algorithm = null) {
+		try {
+			const tokensParts = token.split(".");
+			if (tokensParts.length !== 3) return false;
+			const [header] = tokensParts;
+			if (!header) return false;
+			const parsedHeader = JSON.parse(atob(header));
+			if ("typ" in parsedHeader && parsedHeader?.typ !== "JWT") return false;
+			if (!parsedHeader.alg) return false;
+			if (algorithm && (!("alg" in parsedHeader) || parsedHeader.alg !== algorithm)) return false;
+			return true;
+		} catch {
+			return false;
+		}
+	}
+	var $ZodJWT = $constructor("$ZodJWT", (inst, def) => {
+		$ZodStringFormat.init(inst, def);
+		inst._zod.check = (payload) => {
+			if (isValidJWT(payload.value, def.alg)) return;
+			payload.issues.push({
+				code: "invalid_format",
+				format: "jwt",
+				input: payload.value,
+				inst,
+				continue: !def.abort
+			});
+		};
+	});
+	var $ZodNumber = $constructor("$ZodNumber", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.pattern = number$1;
+		inst._zod.parse = (payload, _ctx) => {
+			if (def.coerce) try {
+				payload.value = Number(payload.value);
+			} catch (_) {}
+			const input = payload.value;
+			if (typeof input === "number" && !Number.isNaN(input) && Number.isFinite(input)) return payload;
+			const received = typeof input === "number" ? Number.isNaN(input) ? "NaN" : !Number.isFinite(input) ? String(input) : void 0 : void 0;
+			payload.issues.push({
+				expected: "number",
+				code: "invalid_type",
+				input,
+				inst,
+				...received ? { received } : {}
+			});
+			return payload;
+		};
+	});
+	var $ZodNumberFormat = $constructor("$ZodNumberFormat", (inst, def) => {
+		$ZodCheckNumberFormat.init(inst, def);
+		$ZodNumber.init(inst, def);
+	});
+	var $ZodBoolean = $constructor("$ZodBoolean", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.pattern = boolean$1;
+		inst._zod.parse = (payload, _ctx) => {
+			if (def.coerce) try {
+				payload.value = Boolean(payload.value);
+			} catch (_) {}
+			const input = payload.value;
+			if (typeof input === "boolean") return payload;
+			payload.issues.push({
+				expected: "boolean",
+				code: "invalid_type",
+				input,
+				inst
+			});
+			return payload;
+		};
+	});
+	var $ZodUnknown = $constructor("$ZodUnknown", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.parse = (payload) => payload;
+	});
+	var $ZodNever = $constructor("$ZodNever", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.parse = (payload, _ctx) => {
+			payload.issues.push({
+				expected: "never",
+				code: "invalid_type",
+				input: payload.value,
+				inst
+			});
+			return payload;
+		};
+	});
+	function capSize(inst, size) {
+		const caps = sizeCaps(inst._zod.def.checks);
+		if (!caps.length) return;
+		const cap = Math.min(...caps.map((c) => c[0]));
+		const parse = inst._zod.parse;
+		inst._zod.parse = (payload, ctx) => {
+			const n = size(payload.value);
+			if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
+				for (const [max, ch] of sizeCaps(inst._zod.def.checks)) if (n > max && ch._zod.def.when(payload)) {
+					const start = payload.issues.length;
+					ch._zod.check(payload);
+					payload.issues[start].continue = false;
+					attachSchema(payload.issues, start, inst);
+					return payload;
+				}
+			}
+			return parse(payload, ctx);
+		};
+	}
+	var arraySize = (input) => Array.isArray(input) ? input.length : -1;
+	function handleArrayResult(result, final, index) {
+		if (result.issues.length) final.issues.push(...prefixIssues(index, result.issues));
+		final.value[index] = result.value;
+	}
+	var $ZodArray = $constructor("$ZodArray", (inst, def) => {
+		$ZodType.init(inst, def);
+		const memo = globalConfig.memoizer;
+		memo?.attach(inst);
+		inst._zod.parse = (payload, ctx) => {
+			const input = payload.value;
+			if (!Array.isArray(input)) {
+				payload.issues.push({
+					expected: "array",
+					code: "invalid_type",
+					input,
+					inst
+				});
+				return payload;
+			}
+			payload.value = memo ? memo.alloc(inst, payload, Array(input.length), ctx) : Array(input.length);
+			const proms = [];
+			const abortEarly = ctx?.abortEarly;
+			for (let i = 0; i < input.length; i++) {
+				const item = input[i];
+				const result = def.element._zod.run({
+					value: item,
+					issues: []
+				}, ctx);
+				if (result instanceof Promise) proms.push(result.then((result) => handleArrayResult(result, payload, i)));
+				else {
+					handleArrayResult(result, payload, i);
+					if (abortEarly && result.issues.length !== 0 && aborted(result)) break;
+				}
+			}
+			if (proms.length) return Promise.all(proms).then(() => payload);
+			return payload;
+		};
+		capSize(inst, arraySize);
+	});
+	function handlePropertyResult(result, final, key, input, optin, optout) {
+		const isPresent = key in input;
+		const isOptionalOut = optout === "optional";
+		if (!isPresent && isOptionalOut && optin === "optional") return;
+		if (result.issues.length) {
+			if (optin !== void 0 && isOptionalOut && !isPresent) return;
+			final.issues.push(...prefixIssues(key, result.issues));
+		}
+		if (!isPresent && optin === void 0) {
+			if (!result.issues.length) final.issues.push({
+				code: "invalid_type",
+				expected: "nonoptional",
+				input: void 0,
+				path: [key]
+			});
+			return;
+		}
+		if (result.value === void 0) {
+			if (isPresent || optin === "defaulted" && !isOptionalOut) final.value[key] = void 0;
+		} else final.value[key] = result.value;
+	}
+	var NO_SYMBOL_KEYS = [];
+	function normalizeDef(def) {
+		const keys = Object.keys(def.shape);
+		const ownSymbols = Object.getOwnPropertySymbols(def.shape);
+		const symbolKeys = ownSymbols.length ? ownSymbols : NO_SYMBOL_KEYS;
+		const allKeys = symbolKeys.length ? [...keys, ...symbolKeys] : keys;
+		for (const k of allKeys) if (!def.shape?.[k]?._zod?.traits?.has("$ZodType")) throw new Error(`Invalid element at key "${String(k)}": expected a Zod schema`);
+		const okeys = optionalKeys(def.shape);
+		return {
+			...def,
+			allKeys,
+			symbolKeys,
+			keySet: new Set(keys),
+			numKeys: keys.length,
+			optionalKeys: new Set(okeys)
+		};
+	}
+	function handleCatchall(proms, input, payload, ctx, def, inst, abortEarly) {
+		const unrecognized = [];
+		const keySet = def.keySet;
+		const _catchall = def.catchall._zod;
+		const t = _catchall.def.type;
+		const optin = _catchall.optin;
+		const optout = _catchall.optout;
+		let seen = 0;
+		for (const key in input) {
+			if (abortEarly && payload.issues.length !== seen) {
+				if (aborted(payload, seen)) break;
+				seen = payload.issues.length;
+			}
+			if (keySet.has(key)) continue;
+			if (key === "__proto__") {
+				if (t === "never") unrecognized.push(key);
+				continue;
+			}
+			if (t === "never") {
+				unrecognized.push(key);
+				continue;
+			}
+			const r = _catchall.run({
+				value: input[key],
+				issues: []
+			}, ctx);
+			if (r instanceof Promise) proms.push(r.then((r) => handlePropertyResult(r, payload, key, input, optin, optout)));
+			else handlePropertyResult(r, payload, key, input, optin, optout);
+		}
+		if (unrecognized.length) payload.issues.push({
+			code: "unrecognized_keys",
+			keys: unrecognized,
+			input,
+			inst,
+			continue: true
+		});
+		if (!proms.length) return payload;
+		return Promise.all(proms).then(() => {
+			return payload;
+		});
+	}
+	var $ZodObject = $constructor("$ZodObject", (inst, def) => {
+		$ZodType.init(inst, def);
+		const desc = Object.getOwnPropertyDescriptor(def, "shape");
+		const sh = desc?.get ? desc.get.raw : def.shape ?? {};
+		if (sh) {
+			const get = () => {
+				const newSh = { ...sh };
+				Object.defineProperty(def, "shape", { value: newSh });
+				get.raw = newSh;
+				return newSh;
+			};
+			get.raw = sh;
+			Object.defineProperty(def, "shape", { get });
+		}
+		const _normalized = cached(() => normalizeDef(def));
+		defineLazyInternal(inst, "propValues", (zod) => {
+			const shape = zod.def.shape;
+			const propValues = {};
+			for (const key in shape) {
+				const field = shape[key]._zod;
+				if (field.values) {
+					if (!Object.prototype.hasOwnProperty.call(propValues, key)) assignProp(propValues, key, new Set());
+					for (const v of field.values) propValues[key].add(v);
+					if (field.optin !== void 0) propValues[key].add(void 0);
+				}
+			}
+			return propValues;
+		});
+		const isObject$1 = isObject;
+		const catchall = def.catchall;
+		let value;
+		const memo = globalConfig.memoizer;
+		memo?.attach(inst);
+		inst._zod.parse = (payload, ctx) => {
+			value ?? (value = _normalized.value);
+			const input = payload.value;
+			if (!isObject$1(input)) {
+				payload.issues.push({
+					expected: "object",
+					code: "invalid_type",
+					input,
+					inst
+				});
+				return payload;
+			}
+			payload.value = memo ? memo.alloc(inst, payload, {}, ctx) : {};
+			const proms = [];
+			const shape = value.shape;
+			const abortEarly = ctx?.abortEarly;
+			let seen = payload.issues.length;
+			for (const key of value.allKeys) {
+				if (abortEarly && payload.issues.length !== seen) {
+					if (aborted(payload, seen)) break;
+					seen = payload.issues.length;
+				}
+				if (key === "__proto__") continue;
+				const el = shape[key];
+				const optin = el._zod.optin;
+				const optout = el._zod.optout;
+				const r = el._zod.run({
+					value: input[key],
+					issues: []
+				}, ctx);
+				if (r instanceof Promise) proms.push(r.then((r) => handlePropertyResult(r, payload, key, input, optin, optout)));
+				else handlePropertyResult(r, payload, key, input, optin, optout);
+			}
+			if (!catchall) return proms.length ? Promise.all(proms).then(() => payload) : payload;
+			return handleCatchall(proms, input, payload, ctx, _normalized.value, inst, abortEarly === true);
+		};
+	});
+	var $ZodObjectJIT = $constructor("$ZodObjectJIT", (inst, def) => {
+		$ZodObject.init(inst, def);
+		const superParse = inst._zod.parse;
+		const _normalized = cached(() => normalizeDef(def));
+		const memo = globalConfig.memoizer;
+		const generateFastpass = (shape) => {
+			const normalized = _normalized.value;
+			const syms = normalized.symbolKeys;
+			const doc = new Doc(["payload", "ctx"], {
+				shape,
+				inst,
+				memo,
+				syms
+			});
+			const parseStr = (k) => `shape[${k}]._zod.run({ value: input[${k}], issues: [] }, ctx)`;
+			const prefixStr = (id, k) => `
+          let ${id}_ab = false;
+          for (let i = 0; i < ${id}.issues.length; i++) {
+            const iss = ${id}.issues[i];
+            iss.path = iss.path ? [${k}, ...iss.path] : [${k}];
+            payload.issues.push(iss);
+            if (iss.continue !== true) ${id}_ab = true;
+          }
+          if (${id}_ab && ctx && ctx.abortEarly) {
+            payload.value = newResult;
+            return payload;
+          }`;
+			doc.write(`const input = payload.value;`);
+			const ids = Object.create(null);
+			let counter = 0;
+			for (const key of normalized.allKeys) ids[key] = `key_${counter++}`;
+			doc.write(memo ? `const newResult = memo.alloc(inst, payload, {}, ctx);` : `const newResult = {};`);
+			for (const key of normalized.allKeys) {
+				if (key === "__proto__") continue;
+				const id = ids[key];
+				const k = typeof key === "symbol" ? `syms[${syms.indexOf(key)}]` : esc(key);
+				const isPresent = `${k} in input`;
+				const schema = shape[key];
+				const optin = schema?._zod?.optin;
+				const isOptionalIn = optin !== void 0;
+				const isOptionalOut = schema?._zod?.optout === "optional";
+				doc.write(`const ${id} = ${parseStr(k)};`);
+				if (isOptionalIn && isOptionalOut) {
+					const assign = optin === "optional" ? `${id}_present` : `${id}.value !== undefined || ${id}_present`;
+					doc.write(`
+        const ${id}_present = ${isPresent};
+        if (!${id}.issues.length || ${id}_present) {
+          if (${id}.issues.length) {${prefixStr(id, k)}
+          }
+
+          if (${assign}) {
+            newResult[${k}] = ${id}.value;
+          }
+        }
+
+      `);
+				} else if (!isOptionalIn) doc.write(`
+        const ${id}_present = ${isPresent};
+        if (${id}.issues.length) {${prefixStr(id, k)}
+        }
+        if (!${id}_present && !${id}.issues.length) {
+          payload.issues.push({
+            code: "invalid_type",
+            expected: "nonoptional",
+            input: undefined,
+            path: [${k}]
+          });
+          if (ctx && ctx.abortEarly) {
+            payload.value = newResult;
+            return payload;
+          }
+        }
+
+        if (${id}_present) {
+          newResult[${k}] = ${id}.value;
+        }
+
+      `);
+				else {
+					doc.write(`
+        if (${id}.issues.length) {${prefixStr(id, k)}
+        }
+      `);
+					if (optin === "defaulted") doc.write(`newResult[${k}] = ${id}.value;`);
+					else doc.write(`
+        if (${id}.value !== undefined || ${isPresent}) {
+          newResult[${k}] = ${id}.value;
+        }
+      `);
+				}
+			}
+			doc.write(`payload.value = newResult;`);
+			doc.write(`return payload;`);
+			return doc.compile();
+		};
+		let fastpass;
+		const isObject$2 = isObject;
+		const jit = !globalConfig.jitless;
+		const fastEnabled = jit && allowsEval.value;
+		const catchall = def.catchall;
+		let value;
+		inst._zod.parse = (payload, ctx) => {
+			value ?? (value = _normalized.value);
+			const input = payload.value;
+			if (!isObject$2(input)) {
+				payload.issues.push({
+					expected: "object",
+					code: "invalid_type",
+					input,
+					inst
+				});
+				return payload;
+			}
+			if (jit && fastEnabled && ctx?.async === false && ctx.jitless !== true) {
+				if (!fastpass) fastpass = generateFastpass(def.shape);
+				payload = fastpass(payload, ctx);
+				if (!catchall) return payload;
+				return handleCatchall([], input, payload, ctx, value, inst, ctx?.abortEarly === true);
+			}
+			return superParse(payload, ctx);
+		};
+	});
+	function handleUnionResults(results, final, inst, ctx) {
+		for (const result of results) if (result.issues.length === 0) {
+			final.value = result.value;
+			return final;
+		}
+		const nonaborted = results.filter((r) => !aborted(r));
+		if (nonaborted.length === 1) {
+			final.value = nonaborted[0].value;
+			return nonaborted[0];
+		}
+		final.issues.push({
+			code: "invalid_union",
+			input: final.value,
+			inst,
+			errors: results.map((result) => result.issues.map((iss) => finalizeIssue(iss, ctx, config())))
+		});
+		return final;
+	}
+	var $ZodUnion = $constructor("$ZodUnion", (inst, def) => {
+		$ZodType.init(inst, def);
+		defineLazyInternal(inst, "optin", (zod) => zod.def.options.some((o) => o._zod.optin === "defaulted") ? "defaulted" : zod.def.options.some((o) => o._zod.optin !== void 0) ? "optional" : void 0);
+		defineLazyInternal(inst, "optout", (zod) => zod.def.options.some((o) => o._zod.optout === "optional") ? "optional" : void 0);
+		defineLazyInternal(inst, "values", (zod) => {
+			if (zod.def.options.every((o) => o._zod.values)) return new Set(zod.def.options.flatMap((option) => Array.from(option._zod.values)));
+		});
+		defineLazyInternal(inst, "pattern", (zod) => {
+			if (zod.def.options.every((o) => o._zod.pattern)) {
+				const patterns = zod.def.options.map((o) => o._zod.pattern);
+				return new RegExp(`^(${patterns.map((p) => cleanRegex(p.source)).join("|")})$`);
+			}
+		});
+		const first = def.options.length === 1 ? def.options[0]._zod.run : null;
+		inst._zod.parse = (payload, ctx) => {
+			if (first) return first(payload, ctx);
+			let async = false;
+			const results = [];
+			for (const option of def.options) {
+				const result = option._zod.run({
+					value: payload.value,
+					issues: []
+				}, ctx);
+				if (result instanceof Promise) {
+					results.push(result);
+					async = true;
+				} else {
+					if (result.issues.length === 0) return result;
+					results.push(result);
+				}
+			}
+			if (!async) return handleUnionResults(results, payload, inst, ctx);
+			return Promise.all(results).then((results) => {
+				return handleUnionResults(results, payload, inst, ctx);
+			});
+		};
+	});
+	var $ZodIntersection = $constructor("$ZodIntersection", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.parse = (payload, ctx) => {
+			const input = payload.value;
+			const left = def.left._zod.run({
+				value: input,
+				issues: []
+			}, ctx);
+			const right = def.right._zod.run({
+				value: input,
+				issues: []
+			}, ctx);
+			if (left instanceof Promise || right instanceof Promise) return Promise.all([left, right]).then(([left, right]) => {
+				return handleIntersectionResults(payload, left, right);
+			});
+			return handleIntersectionResults(payload, left, right);
+		};
+	});
+	function mergeValues(a, b) {
+		if (a === b) return {
+			valid: true,
+			data: a
+		};
+		if (a instanceof Date && b instanceof Date && +a === +b) return {
+			valid: true,
+			data: a
+		};
+		if (isPlainObject(a) && isPlainObject(b)) {
+			const bKeys = Object.keys(b);
+			const sharedKeys = Object.keys(a).filter((key) => bKeys.indexOf(key) !== -1);
+			const newObj = {
+				...a,
+				...b
+			};
+			if (Object.prototype.hasOwnProperty.call(newObj, "__proto__")) delete newObj.__proto__;
+			for (const key of sharedKeys) {
+				if (key === "__proto__") continue;
+				const sharedValue = mergeValues(a[key], b[key]);
+				if (!sharedValue.valid) return {
+					valid: false,
+					mergeErrorPath: [key, ...sharedValue.mergeErrorPath]
+				};
+				newObj[key] = sharedValue.data;
+			}
+			return {
+				valid: true,
+				data: newObj
+			};
+		}
+		if (Array.isArray(a) && Array.isArray(b)) {
+			if (a.length !== b.length) return {
+				valid: false,
+				mergeErrorPath: []
+			};
+			const newArray = [];
+			for (let index = 0; index < a.length; index++) {
+				const itemA = a[index];
+				const itemB = b[index];
+				const sharedValue = mergeValues(itemA, itemB);
+				if (!sharedValue.valid) return {
+					valid: false,
+					mergeErrorPath: [index, ...sharedValue.mergeErrorPath]
+				};
+				newArray.push(sharedValue.data);
+			}
+			return {
+				valid: true,
+				data: newArray
+			};
+		}
+		return {
+			valid: false,
+			mergeErrorPath: []
+		};
+	}
+	function handleIntersectionResults(result, left, right) {
+		const unrecKeys = new Map();
+		let unrecIssue;
+		const keyIssues = new Map();
+		const collect = (iss, side) => {
+			let keys;
+			if (iss.code === "unrecognized_keys" && !iss.path?.length) {
+				unrecIssue ?? (unrecIssue = iss);
+				keys = iss.keys;
+			} else if (iss.code === "invalid_key" && iss.origin === "record" && iss.path?.length === 1) {
+				const k = String(iss.path[0]);
+				if (!keyIssues.has(k)) keyIssues.set(k, iss);
+				keys = [k];
+			} else return false;
+			for (const k of keys) {
+				if (!unrecKeys.has(k)) unrecKeys.set(k, {});
+				unrecKeys.get(k)[side] = true;
+			}
+			return true;
+		};
+		for (const iss of left.issues) if (!collect(iss, "l")) result.issues.push(iss);
+		for (const iss of right.issues) if (!collect(iss, "r")) result.issues.push(iss);
+		const bothKeys = [...unrecKeys].filter(([, f]) => f.l && f.r).map(([k]) => k);
+		if (bothKeys.length) {
+			const aggregated = unrecIssue ? bothKeys.filter((k) => unrecIssue.keys.includes(k)) : [];
+			if (aggregated.length) result.issues.push({
+				...unrecIssue,
+				keys: aggregated
+			});
+			for (const k of bothKeys) if (!aggregated.includes(k) && keyIssues.has(k)) result.issues.push(keyIssues.get(k));
+		}
+		const merged = mergeValues(left.value, right.value);
+		if (!merged.valid) {
+			if (aborted(result)) return result;
+			throw new Error(`Unmergable intersection. Error path: ${JSON.stringify(merged.mergeErrorPath)}`);
+		}
+		result.value = merged.data;
+		return result;
+	}
+	var $ZodEnum = $constructor("$ZodEnum", (inst, def) => {
+		$ZodType.init(inst, def);
+		const values = getEnumValues(def.entries);
+		const valuesSet = new Set(values);
+		inst._zod.values = valuesSet;
+		defineLazyInternal(inst, "pattern", (zod) => {
+			const patternValues = getEnumValues(zod.def.entries).filter((k) => propertyKeyTypes.has(typeof k));
+			return new RegExp(patternValues.length ? `^(${patternValues.map((o) => escapeRegex(o.toString())).join("|")})$` : "^[^\\s\\S]$");
+		});
+		inst._zod.parse = (payload, _ctx) => {
+			const input = payload.value;
+			if (valuesSet.has(input)) return payload;
+			payload.issues.push({
+				code: "invalid_value",
+				values,
+				input,
+				inst
+			});
+			return payload;
+		};
+	});
+	var $ZodTransform = $constructor("$ZodTransform", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.optin = "optional";
+		globalConfig.memoizer?.guard(inst);
+		inst._zod.parse = (payload, ctx) => {
+			if (ctx.direction === "backward") throw new $ZodEncodeError(inst.constructor.name);
+			const _out = def.transform(payload.value, payload);
+			if (ctx.async) return (_out instanceof Promise ? _out : Promise.resolve(_out)).then((output) => {
+				payload.value = output;
+				return payload;
+			});
+			if (_out instanceof Promise) throw new $ZodAsyncError();
+			payload.value = _out;
+			return payload;
+		};
+	});
+	function handleOptionalResult(payload, result) {
+		payload.value = result.issues.length ? void 0 : result.value;
+		return payload;
+	}
+	var $ZodOptional = $constructor("$ZodOptional", (inst, def) => {
+		$ZodType.init(inst, def);
+		defineLazyInternal(inst, "optin", (zod) => zod.def.innerType._zod.optin === "defaulted" ? "defaulted" : "optional");
+		inst._zod.optout = "optional";
+		defineLazyInternal(inst, "values", (zod) => {
+			const values = zod.def.innerType._zod.values;
+			return values ? new Set([...values, void 0]) : void 0;
+		});
+		defineLazyInternal(inst, "pattern", (zod) => {
+			const pattern = zod.def.innerType._zod.pattern;
+			return pattern ? new RegExp(`^(${cleanRegex(pattern.source)})?$`) : void 0;
+		});
+		inst._zod.parse = (payload, ctx) => {
+			if (payload.value === void 0) {
+				if (def.innerType._zod.optin !== "defaulted") return payload;
+				const result = def.innerType._zod.run({
+					value: payload.value,
+					issues: []
+				}, ctx);
+				if (result instanceof Promise) return result.then((result) => handleOptionalResult(payload, result));
+				return handleOptionalResult(payload, result);
+			}
+			return def.innerType._zod.run(payload, ctx);
+		};
+	});
+	var $ZodExactOptional = $constructor("$ZodExactOptional", (inst, def) => {
+		$ZodOptional.init(inst, def);
+		defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+		defineLazyInternal(inst, "pattern", (zod) => zod.def.innerType._zod.pattern);
+		inst._zod.parse = (payload, ctx) => {
+			return def.innerType._zod.run(payload, ctx);
+		};
+	});
+	var $ZodNullable = $constructor("$ZodNullable", (inst, def) => {
+		$ZodType.init(inst, def);
+		defineLazyInternal(inst, "optin", (zod) => zod.def.innerType._zod.optin);
+		defineLazyInternal(inst, "optout", (zod) => zod.def.innerType._zod.optout);
+		defineLazyInternal(inst, "pattern", (zod) => {
+			const pattern = zod.def.innerType._zod.pattern;
+			return pattern ? new RegExp(`^(${cleanRegex(pattern.source)}|null)$`) : void 0;
+		});
+		defineLazyInternal(inst, "values", (zod) => {
+			return zod.def.innerType._zod.values ? new Set([...zod.def.innerType._zod.values, null]) : void 0;
+		});
+		inst._zod.parse = (payload, ctx) => {
+			if (payload.value === null) return payload;
+			return def.innerType._zod.run(payload, ctx);
+		};
+	});
+	var $ZodDefault = $constructor("$ZodDefault", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.optin = "defaulted";
+		defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+		inst._zod.parse = (payload, ctx) => {
+			if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+			if (payload.value === void 0) {
+				payload.value = def.defaultValue;
+				return payload;
+			}
+			const result = def.innerType._zod.run(payload, ctx);
+			if (result instanceof Promise) return result.then((result) => handleDefaultResult(result, def));
+			return handleDefaultResult(result, def);
+		};
+	});
+	function handleDefaultResult(payload, def) {
+		if (payload.value === void 0) payload.value = def.defaultValue;
+		return payload;
+	}
+	var $ZodPrefault = $constructor("$ZodPrefault", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.optin = "defaulted";
+		defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+		inst._zod.parse = (payload, ctx) => {
+			if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+			if (payload.value === void 0) payload.value = def.defaultValue;
+			return def.innerType._zod.run(payload, ctx);
+		};
+	});
+	var $ZodNonOptional = $constructor("$ZodNonOptional", (inst, def) => {
+		$ZodType.init(inst, def);
+		defineLazyInternal(inst, "values", (zod) => {
+			const v = zod.def.innerType._zod.values;
+			return v ? new Set([...v].filter((x) => x !== void 0)) : void 0;
+		});
+		inst._zod.parse = (payload, ctx) => {
+			const result = def.innerType._zod.run(payload, ctx);
+			if (result instanceof Promise) return result.then((result) => handleNonOptionalResult(result, inst));
+			return handleNonOptionalResult(result, inst);
+		};
+	});
+	function handleNonOptionalResult(payload, inst) {
+		if (!payload.issues.length && payload.value === void 0) payload.issues.push({
+			code: "invalid_type",
+			expected: "nonoptional",
+			input: payload.value,
+			inst
+		});
+		return payload;
+	}
+	function handleCatchResult(payload, result, def, ctx) {
+		if (!result.issues.length) {
+			payload.value = result.value;
+			if (result.memo) payload.memo = true;
+			return payload;
+		}
+		payload.value = def.catchValue({
+			...result,
+			value: payload.value,
+			error: { issues: result.issues.map((iss) => finalizeIssue(iss, ctx, config())) },
+			input: payload.value
+		});
+		return payload;
+	}
+	var $ZodCatch = $constructor("$ZodCatch", (inst, def) => {
+		$ZodType.init(inst, def);
+		defineLazyInternal(inst, "optin", (zod) => zod.def.innerType._zod.optin === "defaulted" ? "defaulted" : "optional");
+		defineLazyInternal(inst, "optout", (zod) => zod.def.innerType._zod.optout);
+		defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+		inst._zod.parse = (payload, ctx) => {
+			if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+			const result = def.innerType._zod.run({
+				value: payload.value,
+				issues: []
+			}, ctx);
+			if (result instanceof Promise) return result.then((result) => handleCatchResult(payload, result, def, ctx));
+			return handleCatchResult(payload, result, def, ctx);
+		};
+	});
+	var $ZodPipe = $constructor("$ZodPipe", (inst, def) => {
+		$ZodType.init(inst, def);
+		defineLazyInternal(inst, "values", (zod) => zod.def.in._zod.values);
+		defineLazyInternal(inst, "optin", (zod) => zod.def.in._zod.optin);
+		defineLazyInternal(inst, "optout", (zod) => zod.def.out._zod.optout);
+		defineLazyInternal(inst, "propValues", (zod) => zod.def.in._zod.propValues);
+		inst._zod.parse = (payload, ctx) => {
+			if (ctx.direction === "backward") {
+				const right = def.out._zod.run(payload, ctx);
+				if (right instanceof Promise) return right.then((right) => handlePipeResult(right, def.in, ctx));
+				return handlePipeResult(right, def.in, ctx);
+			}
+			const left = def.in._zod.run(payload, ctx);
+			if (left instanceof Promise) return left.then((left) => handlePipeResult(left, def.out, ctx));
+			return handlePipeResult(left, def.out, ctx);
+		};
+	});
+	function handlePipeResult(left, next, ctx) {
+		if (left.issues.some((iss) => iss.code !== "unrecognized_keys")) {
+			left.aborted = true;
+			return left;
+		}
+		return next._zod.run({
+			value: left.value,
+			issues: left.issues
+		}, ctx);
+	}
+	var $ZodReadonly = $constructor("$ZodReadonly", (inst, def) => {
+		$ZodType.init(inst, def);
+		defineLazyInternal(inst, "propValues", (zod) => zod.def.innerType._zod.propValues);
+		defineLazyInternal(inst, "values", (zod) => zod.def.innerType._zod.values);
+		defineLazyInternal(inst, "optin", (zod) => zod.def.innerType?._zod?.optin);
+		defineLazyInternal(inst, "optout", (zod) => zod.def.innerType?._zod?.optout);
+		inst._zod.parse = (payload, ctx) => {
+			if (ctx.direction === "backward") return def.innerType._zod.run(payload, ctx);
+			const result = def.innerType._zod.run(payload, ctx);
+			if (result instanceof Promise) return result.then(handleReadonlyResult);
+			return handleReadonlyResult(result);
+		};
+	});
+	function handleReadonlyResult(payload) {
+		if (!payload.memo) payload.value = Object.freeze(payload.value);
+		return payload;
+	}
+	var $ZodCustom = $constructor("$ZodCustom", (inst, def) => {
+		$ZodCheck.init(inst, def);
+		$ZodType.init(inst, def);
+		inst._zod.parse = (payload, _) => {
+			return payload;
+		};
+		inst._zod.check = (payload) => {
+			const input = payload.value;
+			const r = def.fn(input);
+			if (r instanceof Promise) return r.then((r) => handleRefineResult(r, payload, input, inst));
+			handleRefineResult(r, payload, input, inst);
+		};
+	});
+	function handleRefineResult(result, payload, input, inst) {
+		if (!result) {
+			const _iss = {
+				code: "custom",
+				input,
+				inst,
+				path: [...inst._zod.def.path ?? []],
+				continue: !inst._zod.def.abort
+			};
+			if (inst._zod.def.params) _iss.params = inst._zod.def.params;
+			payload.issues.push(issue(_iss));
+		}
+	}
+	var $ZodCyclicError = class extends Error {
+		constructor() {
+			super(`Cannot parse a reference cycle that closes through a transform`);
+			this.name = "ZodCyclicError";
+		}
+	};
+	var STATE = "~memo";
+	var NO_ISSUES = [];
+	function isRef(value) {
+		return value !== null && typeof value === "object";
+	}
+	function cloneIssues(issues) {
+		return issues.map((iss) => iss.path ? {
+			...iss,
+			path: iss.path.slice()
+		} : { ...iss });
+	}
+	var recursive = new WeakMap();
+	var NONE = 0;
+	var ASSUMED = 1;
+	var PROVEN = 2;
+	function isRecursive(inst, stack, resolve) {
+		const cached = recursive.get(inst);
+		if (cached !== void 0) return cached ? PROVEN : NONE;
+		if (stack.has(inst)) return PROVEN;
+		stack.add(inst);
+		let result = NONE;
+		const check = (child) => {
+			if (result !== PROVEN && child?._zod) {
+				const answer = isRecursive(child, stack, resolve);
+				if (answer > result) result = answer;
+			}
+		};
+		const shape = (sh, spread) => {
+			let answer = NONE;
+			for (const key of Reflect.ownKeys(sh)) {
+				const desc = Object.getOwnPropertyDescriptor(sh, key);
+				if (spread && !desc.enumerable) continue;
+				const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+				if (child > answer) answer = child;
+			}
+			return answer;
+		};
+		const merge = (answer) => {
+			if (answer > result) result = answer;
+		};
+		const def = inst._zod.def;
+		switch (def.type) {
+			case "object": {
+				const raw = rawShape(def);
+				merge(raw ? shape(raw, true) : ASSUMED);
+				check(def.catchall);
+				break;
+			}
+			case "array":
+				check(def.element);
+				break;
+			case "tuple":
+				for (const el of def.items) check(el);
+				check(def.rest);
+				break;
+			case "record":
+			case "map":
+				check(def.keyType);
+				check(def.valueType);
+				break;
+			case "set":
+				check(def.valueType);
+				break;
+			case "union":
+				for (const el of def.options) check(el);
+				break;
+			case "intersection":
+				check(def.left);
+				check(def.right);
+				break;
+			case "optional":
+			case "nullable":
+			case "default":
+			case "prefault":
+			case "catch":
+			case "readonly":
+			case "nonoptional":
+			case "promise":
+			case "success":
+				check(def.innerType);
+				break;
+			case "pipe":
+				check(def.in);
+				check(def.out);
+				break;
+			case "function":
+				check(def.input);
+				check(def.output);
+				break;
+			case "lazy": {
+				const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+				merge(inner ? isRecursive(inner, stack, false) : ASSUMED);
+				break;
+			}
+			case "template_literal":
+			case "string":
+			case "number":
+			case "int":
+			case "boolean":
+			case "bigint":
+			case "symbol":
+			case "undefined":
+			case "null":
+			case "void":
+			case "never":
+			case "any":
+			case "unknown":
+			case "date":
+			case "nan":
+			case "enum":
+			case "literal":
+			case "file":
+			case "transform":
+			case "custom": break;
+			default: for (const key in def) {
+				const desc = Object.getOwnPropertyDescriptor(def, key);
+				if (!desc || desc.get) continue;
+				const value = desc.value;
+				if (!value || typeof value !== "object") continue;
+				if (value._zod) check(value);
+				else if (Array.isArray(value)) for (const el of value) check(el);
+			}
+		}
+		stack.delete(inst);
+		return settle(inst, result);
+	}
+	function settle(inst, answer) {
+		if (answer !== ASSUMED) recursive.set(inst, answer === PROVEN);
+		return answer;
+	}
+	function bucketFor(state, inst) {
+		let bucket = state.buckets.get(inst);
+		if (!bucket) {
+			bucket = new WeakMap();
+			state.buckets.set(inst, bucket);
+		}
+		return bucket;
+	}
+	var handoff;
+	var open = [];
+	var memo = {
+		alloc(_inst, payload, empty) {
+			const bucket = handoff;
+			if (!bucket) return empty;
+			handoff = void 0;
+			const entry = {
+				value: empty,
+				issues: null
+			};
+			bucket.set(payload.value, entry);
+			open.push(entry);
+			return empty;
+		},
+		guard(inst) {
+			var _a;
+			(_a = inst._zod).deferred ?? (_a.deferred = []);
+			inst._zod.deferred.push(() => {
+				const base = inst._zod.parse;
+				const wrapped = (payload, ctx) => {
+					if (ctx.direction !== "backward" && isBackEdge(ctx, payload.value)) throw new $ZodCyclicError();
+					return base(payload, ctx);
+				};
+				inst._zod.parse = wrapped;
+				if (inst._zod.run === base) inst._zod.run = wrapped;
+			});
+		},
+		attach(inst) {
+			var _a;
+			let isRecursiveInst;
+			let rechecked = false;
+			let lastCtx;
+			let lastBucket;
+			(_a = inst._zod).deferred ?? (_a.deferred = []);
+			inst._zod.deferred.push(() => {
+				const base = inst._zod.parse;
+				const wrapped = (payload, ctx) => {
+					if (isRecursiveInst === void 0) {
+						const walked = isRecursive(inst, new Set(), false);
+						if (walked === NONE) {
+							inst._zod.parse = base;
+							if (inst._zod.run === wrapped) inst._zod.run = base;
+							return base(payload, ctx);
+						}
+						if (walked === PROVEN || rechecked) isRecursiveInst = true;
+						else rechecked = true;
+					}
+					const input = payload.value;
+					if (!isRef(input)) return base(payload, ctx);
+					let state = ctx[STATE];
+					if (!state) {
+						state = {
+							buckets: new WeakMap(),
+							backEdges: void 0
+						};
+						ctx[STATE] = state;
+					}
+					let bucket;
+					if (lastCtx === ctx) bucket = lastBucket;
+					else {
+						bucket = bucketFor(state, inst);
+						lastCtx = ctx;
+						lastBucket = bucket;
+					}
+					const hit = bucket.get(input);
+					if (hit) {
+						payload.value = hit.value;
+						if (hit.issues) {
+							if (hit.issues.length) payload.issues.push(...cloneIssues(hit.issues));
+						} else {
+							payload.memo = true;
+							state.backEdges ?? (state.backEdges = new WeakSet());
+							state.backEdges.add(hit.value);
+						}
+						return payload;
+					}
+					handoff = bucket;
+					const depth = open.length;
+					const result = base(payload, ctx);
+					handoff = void 0;
+					const entry = open.length > depth ? open.pop() : void 0;
+					if (result instanceof Promise) return result.then((r) => {
+						if (entry) entry.issues = r.issues.length ? cloneIssues(r.issues) : NO_ISSUES;
+						return r;
+					});
+					if (entry) entry.issues = result.issues.length ? cloneIssues(result.issues) : NO_ISSUES;
+					return result;
+				};
+				inst._zod.parse = wrapped;
+				if (inst._zod.run === base) inst._zod.run = wrapped;
+			});
+		}
+	};
+	function memoizer() {
+		return memo;
+	}
+	function isBackEdge(ctx, value) {
+		const backEdges = ctx[STATE]?.backEdges;
+		return backEdges !== void 0 && isRef(value) && backEdges.has(value);
+	}
+	var error = () => {
+		const Sizable = {
+			string: {
+				unit: "characters",
+				verb: "to have"
+			},
+			file: {
+				unit: "bytes",
+				verb: "to have"
+			},
+			array: {
+				unit: "items",
+				verb: "to have"
+			},
+			set: {
+				unit: "items",
+				verb: "to have"
+			},
+			map: {
+				unit: "entries",
+				verb: "to have"
+			}
+		};
+		function getSizing(origin) {
+			return Sizable[origin] ?? null;
+		}
+		const FormatDictionary = {
+			regex: "input",
+			email: "email address",
+			url: "URL",
+			emoji: "emoji",
+			uuid: "UUID",
+			uuidv4: "UUIDv4",
+			uuidv6: "UUIDv6",
+			nanoid: "nanoid",
+			guid: "GUID",
+			cuid: "cuid",
+			cuid2: "cuid2",
+			ulid: "ULID",
+			xid: "XID",
+			ksuid: "KSUID",
+			datetime: "ISO datetime",
+			date: "ISO date",
+			time: "ISO time",
+			duration: "ISO duration",
+			ipv4: "IPv4 address",
+			ipv6: "IPv6 address",
+			mac: "MAC address",
+			cidrv4: "IPv4 range",
+			cidrv6: "IPv6 range",
+			base64: "base64-encoded string",
+			base64url: "base64url-encoded string",
+			json_string: "JSON string",
+			e164: "E.164 number",
+			currency_code: "currency code",
+			credit_card: "credit card number",
+			iban: "IBAN",
+			jwt: "JWT",
+			template_literal: "input"
+		};
+		const TypeDictionary = { nan: "NaN" };
+		function getTypeName(type, input) {
+			if (type === "number" && typeof input === "number" && !Number.isFinite(input)) return String(input);
+			return TypeDictionary[type] ?? type;
+		}
+		return (issue) => {
+			switch (issue.code) {
+				case "invalid_type": return `Invalid input: expected ${getTypeName(issue.expected)}, received ${getTypeName(parsedType(issue.input), issue.input)}`;
+				case "invalid_value":
+					if (issue.values.length === 1) return `Invalid input: expected ${stringifyPrimitive(issue.values[0])}`;
+					return `Invalid option: expected one of ${joinValues(issue.values, "|")}`;
+				case "too_big": {
+					const adj = issue.exact ? "exactly " : issue.inclusive ? "<=" : "<";
+					const sizing = getSizing(issue.origin);
+					if (sizing) return `Too big: expected ${issue.origin ?? "value"} to have ${adj}${issue.maximum.toString()} ${sizing.unit ?? "elements"}`;
+					return `Too big: expected ${issue.origin ?? "value"} to be ${adj}${issue.maximum.toString()}`;
+				}
+				case "too_small": {
+					const adj = issue.exact ? "exactly " : issue.inclusive ? ">=" : ">";
+					const sizing = getSizing(issue.origin);
+					if (sizing) return `Too small: expected ${issue.origin} to have ${adj}${issue.minimum.toString()} ${sizing.unit}`;
+					return `Too small: expected ${issue.origin} to be ${adj}${issue.minimum.toString()}`;
+				}
+				case "invalid_format": {
+					const _issue = issue;
+					if (_issue.format === "starts_with") return `Invalid string: must start with "${_issue.prefix}"`;
+					if (_issue.format === "ends_with") return `Invalid string: must end with "${_issue.suffix}"`;
+					if (_issue.format === "includes") return `Invalid string: must include "${_issue.includes}"`;
+					if (_issue.format === "regex") return `Invalid string: must match pattern ${_issue.pattern}`;
+					return `Invalid ${FormatDictionary[_issue.format] ?? issue.format}`;
+				}
+				case "not_multiple_of": return `Invalid number: must be a multiple of ${issue.divisor}`;
+				case "unrecognized_keys": return `Unrecognized key${issue.keys.length > 1 ? "s" : ""}: ${joinValues(issue.keys, ", ")}`;
+				case "invalid_key": return `Invalid key in ${issue.origin}`;
+				case "invalid_union":
+					if (issue.options && Array.isArray(issue.options) && issue.options.length > 0) return `Invalid discriminator value. Expected ${issue.options.map((o) => `'${o}'`).join(" | ")}`;
+					if (issue.inclusive === false) return "Invalid input: more than one option matched";
+					return "Invalid input";
+				case "invalid_element": return `Invalid value in ${issue.origin}`;
+				default: return `Invalid input`;
+			}
+		};
+	};
+	function en_default() {
+		return { localeError: error() };
+	}
+	var _a;
+	var $ZodRegistry = class {
+		constructor() {
+			this._map = new WeakMap();
+			this._idmap = new Map();
+		}
+		add(schema, ..._meta) {
+			const meta = _meta[0];
+			this._map.set(schema, meta);
+			if (meta && typeof meta === "object" && "id" in meta) this._idmap.set(meta.id, schema);
+			return this;
+		}
+		clear() {
+			this._map = new WeakMap();
+			this._idmap = new Map();
+			return this;
+		}
+		remove(schema) {
+			const meta = this._map.get(schema);
+			if (meta && typeof meta === "object" && "id" in meta) this._idmap.delete(meta.id);
+			this._map.delete(schema);
+			return this;
+		}
+		get(schema) {
+			const p = schema._zod.parent;
+			if (p) {
+				const pm = { ...this.get(p) ?? {} };
+				delete pm.id;
+				const f = {
+					...pm,
+					...this._map.get(schema)
+				};
+				return Object.keys(f).length ? f : void 0;
+			}
+			return this._map.get(schema);
+		}
+		has(schema) {
+			return this._map.has(schema);
+		}
+	};
+	function registry() {
+		return new $ZodRegistry();
+	}
+	(_a = globalThis).__zod_globalRegistry ?? (_a.__zod_globalRegistry = registry());
+	var globalRegistry = globalThis.__zod_globalRegistry;
+	function snapshotChecks(def) {
+		if (def.checks) def.checks = [...def.checks];
+		return def;
+	}
+	function _string(Class, params) {
+		return new Class(snapshotChecks({
+			type: "string",
+			...normalizeParams(params)
+		}));
+	}
+	function _email(Class, params) {
+		return new Class({
+			type: "string",
+			format: "email",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _guid(Class, params) {
+		return new Class({
+			type: "string",
+			format: "guid",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _uuid(Class, params) {
+		return new Class({
+			type: "string",
+			format: "uuid",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _uuidv4(Class, params) {
+		return new Class({
+			type: "string",
+			format: "uuid",
+			check: "string_format",
+			abort: false,
+			version: "v4",
+			...normalizeParams(params)
+		});
+	}
+	function _uuidv6(Class, params) {
+		return new Class({
+			type: "string",
+			format: "uuid",
+			check: "string_format",
+			abort: false,
+			version: "v6",
+			...normalizeParams(params)
+		});
+	}
+	function _uuidv7(Class, params) {
+		return new Class({
+			type: "string",
+			format: "uuid",
+			check: "string_format",
+			abort: false,
+			version: "v7",
+			...normalizeParams(params)
+		});
+	}
+	function _url(Class, params) {
+		return new Class({
+			type: "string",
+			format: "url",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _emoji(Class, params) {
+		return new Class({
+			type: "string",
+			format: "emoji",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _nanoid(Class, params) {
+		return new Class({
+			type: "string",
+			format: "nanoid",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _cuid(Class, params) {
+		return new Class({
+			type: "string",
+			format: "cuid",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _cuid2(Class, params) {
+		return new Class({
+			type: "string",
+			format: "cuid2",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _ulid(Class, params) {
+		return new Class({
+			type: "string",
+			format: "ulid",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _xid(Class, params) {
+		return new Class({
+			type: "string",
+			format: "xid",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _ksuid(Class, params) {
+		return new Class({
+			type: "string",
+			format: "ksuid",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _ipv4(Class, params) {
+		return new Class({
+			type: "string",
+			format: "ipv4",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _ipv6(Class, params) {
+		return new Class({
+			type: "string",
+			format: "ipv6",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _cidrv4(Class, params) {
+		return new Class({
+			type: "string",
+			format: "cidrv4",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _cidrv6(Class, params) {
+		return new Class({
+			type: "string",
+			format: "cidrv6",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _base64(Class, params) {
+		return new Class({
+			type: "string",
+			format: "base64",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _base64url(Class, params) {
+		return new Class({
+			type: "string",
+			format: "base64url",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _e164(Class, params) {
+		return new Class({
+			type: "string",
+			format: "e164",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _jwt(Class, params) {
+		return new Class({
+			type: "string",
+			format: "jwt",
+			check: "string_format",
+			abort: false,
+			...normalizeParams(params)
+		});
+	}
+	function _isoDateTime(Class, params) {
+		return new Class({
+			type: "string",
+			format: "datetime",
+			check: "string_format",
+			offset: false,
+			local: false,
+			precision: null,
+			...normalizeParams(params)
+		});
+	}
+	function _isoDate(Class, params) {
+		return new Class({
+			type: "string",
+			format: "date",
+			check: "string_format",
+			...normalizeParams(params)
+		});
+	}
+	function _isoTime(Class, params) {
+		return new Class({
+			type: "string",
+			format: "time",
+			check: "string_format",
+			precision: null,
+			...normalizeParams(params)
+		});
+	}
+	function _isoDuration(Class, params) {
+		return new Class({
+			type: "string",
+			format: "duration",
+			check: "string_format",
+			...normalizeParams(params)
+		});
+	}
+	function _number(Class, params) {
+		return new Class(snapshotChecks({
+			type: "number",
+			checks: [],
+			...normalizeParams(params)
+		}));
+	}
+	function _int(Class, params) {
+		return new Class({
+			type: "number",
+			check: "number_format",
+			abort: false,
+			format: "safeint",
+			...normalizeParams(params)
+		});
+	}
+	function _boolean(Class, params) {
+		return new Class({
+			type: "boolean",
+			...normalizeParams(params)
+		});
+	}
+	function _unknown(Class) {
+		return new Class({ type: "unknown" });
+	}
+	function _never(Class, params) {
+		return new Class({
+			type: "never",
+			...normalizeParams(params)
+		});
+	}
+	function _lt(value, params) {
+		return new $ZodCheckLessThan({
+			check: "less_than",
+			...normalizeParams(params),
+			value,
+			inclusive: false
+		});
+	}
+	function _lte(value, params) {
+		return new $ZodCheckLessThan({
+			check: "less_than",
+			...normalizeParams(params),
+			value,
+			inclusive: true
+		});
+	}
+	function _gt(value, params) {
+		return new $ZodCheckGreaterThan({
+			check: "greater_than",
+			...normalizeParams(params),
+			value,
+			inclusive: false
+		});
+	}
+	function _gte(value, params) {
+		return new $ZodCheckGreaterThan({
+			check: "greater_than",
+			...normalizeParams(params),
+			value,
+			inclusive: true
+		});
+	}
+	function _multipleOf(value, params) {
+		return new $ZodCheckMultipleOf({
+			check: "multiple_of",
+			...normalizeParams(params),
+			value
+		});
+	}
+	function _maxLength(maximum, params) {
+		return new $ZodCheckMaxLength({
+			check: "max_length",
+			...normalizeParams(params),
+			maximum
+		});
+	}
+	function _minLength(minimum, params) {
+		return new $ZodCheckMinLength({
+			check: "min_length",
+			...normalizeParams(params),
+			minimum
+		});
+	}
+	function _length(length, params) {
+		return new $ZodCheckLengthEquals({
+			check: "length_equals",
+			...normalizeParams(params),
+			length
+		});
+	}
+	function _regex(pattern, params) {
+		return new $ZodCheckRegex({
+			check: "string_format",
+			format: "regex",
+			...normalizeParams(params),
+			pattern
+		});
+	}
+	function _lowercase(params) {
+		return new $ZodCheckLowerCase({
+			check: "string_format",
+			format: "lowercase",
+			...normalizeParams(params)
+		});
+	}
+	function _uppercase(params) {
+		return new $ZodCheckUpperCase({
+			check: "string_format",
+			format: "uppercase",
+			...normalizeParams(params)
+		});
+	}
+	function _includes(includes, params) {
+		return new $ZodCheckIncludes({
+			check: "string_format",
+			format: "includes",
+			...normalizeParams(params),
+			includes
+		});
+	}
+	function _startsWith(prefix, params) {
+		return new $ZodCheckStartsWith({
+			check: "string_format",
+			format: "starts_with",
+			...normalizeParams(params),
+			prefix
+		});
+	}
+	function _endsWith(suffix, params) {
+		return new $ZodCheckEndsWith({
+			check: "string_format",
+			format: "ends_with",
+			...normalizeParams(params),
+			suffix
+		});
+	}
+	function _overwrite(tx) {
+		return new $ZodCheckOverwrite({
+			check: "overwrite",
+			tx
+		});
+	}
+	function _normalize(form) {
+		return _overwrite((input) => input.normalize(form));
+	}
+	function _trim() {
+		return _overwrite((input) => input.trim());
+	}
+	function _toLowerCase() {
+		return _overwrite((input) => input.toLowerCase());
+	}
+	function _toUpperCase() {
+		return _overwrite((input) => input.toUpperCase());
+	}
+	function _slugify() {
+		return _overwrite((input) => slugify(input));
+	}
+	function _array(Class, element, params) {
+		return new Class({
+			type: "array",
+			element,
+			...normalizeParams(params)
+		});
+	}
+	function _refine(Class, fn, _params) {
+		return new Class({
+			type: "custom",
+			check: "custom",
+			fn,
+			...normalizeParams(_params)
+		});
+	}
+	function _superRefine(fn, params) {
+		const ch = _check((payload) => {
+			payload.addIssue = (issue$2) => {
+				if (typeof issue$2 === "string") payload.issues.push(issue(issue$2, payload.value, ch._zod.def));
+				else {
+					const _issue = issue$2;
+					if (_issue.fatal) _issue.continue = false;
+					_issue.code ?? (_issue.code = "custom");
+					if (!("input" in _issue)) _issue.input = payload.value;
+					_issue.inst ?? (_issue.inst = ch);
+					_issue.continue ?? (_issue.continue = !ch._zod.def.abort);
+					payload.issues.push(issue(_issue));
+				}
+			};
+			return fn(payload.value, payload);
+		}, params);
+		return ch;
+	}
+	function _check(fn, params) {
+		const ch = new $ZodCheck({
+			check: "custom",
+			...normalizeParams(params)
+		});
+		ch._zod.check = fn;
+		return ch;
+	}
+	function assignProps(target, ...sources) {
+		for (const source of sources) for (const key of Reflect.ownKeys(source)) if (Object.prototype.propertyIsEnumerable.call(source, key)) assignProp(target, key, source[key]);
+		return target;
+	}
+	function initializeContext(params) {
+		let target = params?.target ?? "draft-2020-12";
+		if (target === "draft-4") target = "draft-04";
+		if (target === "draft-7") target = "draft-07";
+		return {
+			processors: params.processors ?? {},
+			metadataRegistry: params?.metadata ?? globalRegistry,
+			target,
+			unrepresentable: params?.unrepresentable ?? "throw",
+			override: params?.override ?? (() => {}),
+			io: params?.io ?? "output",
+			counter: 0,
+			seen: new Map(),
+			sharedDefsExtractedFor: void 0,
+			sharedEmitDoneFor: void 0,
+			cycles: params?.cycles ?? "ref",
+			reused: params?.reused ?? "inline",
+			intersections: [],
+			deferred: [],
+			external: params?.external ?? void 0
+		};
+	}
+	function handleUnrepresentable(schema, ctx, json, params, message) {
+		const result = typeof ctx.unrepresentable === "function" ? ctx.unrepresentable({
+			zodSchema: schema,
+			path: params.path,
+			message
+		}) : ctx.unrepresentable;
+		if (result === "any") return false;
+		if (result === void 0 || result === "throw") throw new Error(message);
+		Object.assign(json, result);
+		return true;
+	}
+	function processSchema(schema, ctx, _params = {
+		path: [],
+		schemaPath: []
+	}) {
+		var _a;
+		const def = schema._zod.def;
+		const seen = ctx.seen.get(schema);
+		if (seen) {
+			seen.count++;
+			if (_params.schemaPath.includes(schema)) seen.cycle = _params.path;
+			return seen.schema;
+		}
+		const result = {
+			schema: {},
+			count: 1,
+			cycle: void 0,
+			path: _params.path
+		};
+		ctx.seen.set(schema, result);
+		ctx.sharedDefsExtractedFor = void 0;
+		ctx.sharedEmitDoneFor = void 0;
+		const overrideSchema = schema._zod.toJSONSchema?.();
+		if (overrideSchema) result.schema = overrideSchema;
+		else {
+			const params = {
+				..._params,
+				schemaPath: [..._params.schemaPath, schema],
+				path: _params.path
+			};
+			if (schema._zod.processJSONSchema) schema._zod.processJSONSchema(ctx, result.schema, params);
+			else {
+				const _json = result.schema;
+				const processor = ctx.processors[def.type];
+				if (!processor) throw new Error(`[toJSONSchema]: Non-representable type encountered: ${def.type}`);
+				processor(schema, ctx, _json, params);
+			}
+			const parent = schema._zod.parent;
+			if (parent) {
+				if (!result.ref) result.ref = parent;
+				processSchema(parent, ctx, params);
+				ctx.seen.get(parent).isParent = true;
+			}
+		}
+		const meta = ctx.metadataRegistry.get(schema);
+		if (meta) assignProps(result.schema, meta);
+		if (ctx.io === "input" && isTransforming(schema)) {
+			delete result.schema.examples;
+			delete result.schema.default;
+		}
+		if (ctx.io === "input" && "_prefault" in result.schema) (_a = result.schema).default ?? (_a.default = result.schema._prefault);
+		delete result.schema._prefault;
+		return ctx.seen.get(schema).schema;
+	}
+	function encodeJSONPointerSegment(segment) {
+		return segment.replace(/~/g, "~0").replace(/\//g, "~1");
+	}
+	function extractDefs(ctx, schema) {
+		const root = ctx.seen.get(schema);
+		if (!root) throw new Error("Unprocessed schema. This is a bug in Zod.");
+		if (ctx.external && ctx.sharedDefsExtractedFor === ctx.external) return;
+		const idToSchema = new Map();
+		for (const entry of ctx.seen.entries()) {
+			const id = ctx.metadataRegistry.get(entry[0])?.id;
+			if (id) {
+				const existing = idToSchema.get(id);
+				if (existing && existing !== entry[0]) throw new Error(`Duplicate schema id "${id}" detected during JSON Schema conversion. Two different schemas cannot share the same id when converted together.`);
+				idToSchema.set(id, entry[0]);
+			}
+		}
+		const makeURI = (entry) => {
+			const defsSegment = ctx.target === "draft-2020-12" ? "$defs" : "definitions";
+			if (ctx.external) {
+				const externalId = ctx.external.registry.get(entry[0])?.id;
+				const uriGenerator = ctx.external.uri ?? ((id) => id);
+				if (externalId) return { ref: uriGenerator(externalId) };
+				const id = entry[1].defId ?? entry[1].schema.id ?? `schema${ctx.counter++}`;
+				entry[1].defId = id;
+				return {
+					defId: id,
+					ref: `${uriGenerator("__shared")}#/${defsSegment}/${encodeJSONPointerSegment(id)}`
+				};
+			}
+			const uriPrefix = `#`;
+			const defUriPrefix = `${uriPrefix}/${defsSegment}/`;
+			if (entry[1] === root && !entry[1].schema.id) return { ref: uriPrefix };
+			const defId = entry[1].schema.id ?? `__schema${ctx.counter++}`;
+			return {
+				defId,
+				ref: defUriPrefix + encodeJSONPointerSegment(defId)
+			};
+		};
+		const extractToDef = (entry) => {
+			if (entry[1].schema.$ref) return;
+			const seen = entry[1];
+			const { ref, defId } = makeURI(entry);
+			seen.def = { ...seen.schema };
+			if (defId) seen.defId = defId;
+			const schema = seen.schema;
+			for (const key in schema) delete schema[key];
+			schema.$ref = ref;
+		};
+		if (ctx.cycles === "throw") for (const entry of ctx.seen.entries()) {
+			const seen = entry[1];
+			if (seen.cycle) throw new Error(`Cycle detected: #/${seen.cycle?.join("/")}/<root>
+
+Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.`);
+		}
+		for (const entry of ctx.seen.entries()) {
+			const seen = entry[1];
+			if (schema === entry[0]) {
+				extractToDef(entry);
+				continue;
+			}
+			if (ctx.external) {
+				const ext = ctx.external.registry.get(entry[0])?.id;
+				if (schema !== entry[0] && ext) {
+					extractToDef(entry);
+					continue;
+				}
+			}
+			if (ctx.metadataRegistry.get(entry[0])?.id) {
+				extractToDef(entry);
+				continue;
+			}
+			if (seen.cycle) {
+				extractToDef(entry);
+				continue;
+			}
+			if (seen.count > 1) {
+				if (ctx.reused === "ref") extractToDef(entry);
+			}
+		}
+		if (ctx.external) ctx.sharedDefsExtractedFor = ctx.external;
+	}
+	function compactTypeUnion(schema) {
+		const options = schema.anyOf;
+		if (!Array.isArray(options) || options.length === 0 || schema.type !== void 0) return;
+		const types = [];
+		for (const option of options) {
+			if (!option || typeof option !== "object") return;
+			compactTypeUnion(option);
+			const keys = Object.keys(option);
+			if (keys.length !== 1 || keys[0] !== "type") return;
+			const type = option.type;
+			for (const member of Array.isArray(type) ? type : [type]) {
+				if (typeof member !== "string") return;
+				if (!types.includes(member)) types.push(member);
+			}
+		}
+		delete schema.anyOf;
+		schema.type = types.length === 1 ? types[0] : types;
+	}
+	var FOLDABLE_KEYS = new Set([
+		"type",
+		"properties",
+		"required",
+		"additionalProperties"
+	]);
+	var UNION_KEYS = ["oneOf", "anyOf"];
+	function undeclaredConstraint(member) {
+		const extra = member.additionalProperties;
+		if (extra === void 0 || extra === false || typeof extra !== "object" || extra === null) return null;
+		return Object.keys(extra).length ? extra : null;
+	}
+	function foldObjects(members) {
+		const objects = [];
+		for (const member of members) {
+			if (typeof member !== "object" || member.type !== "object") return null;
+			for (const key in member) if (!FOLDABLE_KEYS.has(key)) return null;
+			objects.push(member);
+		}
+		const properties = {};
+		const required = new Set();
+		for (const object of objects) {
+			for (const key in object.properties) {
+				if (Object.prototype.hasOwnProperty.call(properties, key)) continue;
+				const parts = [];
+				for (const other of objects) {
+					const part = other.properties?.[key] ?? undeclaredConstraint(other);
+					if (part === null || part === void 0) continue;
+					if (!parts.some((seen) => JSON.stringify(seen) === JSON.stringify(part))) parts.push(part);
+				}
+				assignProp(properties, key, parts.length === 1 ? parts[0] : foldObjects(parts) ?? { allOf: parts });
+			}
+			for (const key of object.required ?? []) required.add(key);
+		}
+		const folded = {
+			type: "object",
+			properties
+		};
+		if (required.size) folded.required = [...required];
+		if (objects.every((object) => object.additionalProperties === false)) folded.additionalProperties = false;
+		else {
+			const constraints = [];
+			for (const object of objects) {
+				const constraint = undeclaredConstraint(object);
+				if (constraint && !constraints.some((seen) => JSON.stringify(seen) === JSON.stringify(constraint))) constraints.push(constraint);
+			}
+			if (constraints.length === 1) folded.additionalProperties = constraints[0];
+			else if (constraints.length > 1) folded.additionalProperties = { allOf: constraints };
+		}
+		return folded;
+	}
+	function foldIntersection(json) {
+		const allOf = json.allOf;
+		if (!Array.isArray(allOf) || allOf.length < 2) return;
+		for (const key of FOLDABLE_KEYS) if (key in json) return;
+		const unions = allOf.filter((m) => UNION_KEYS.some((k) => Array.isArray(m[k])));
+		let folded = null;
+		if (!unions.length) folded = foldObjects(allOf);
+		else {
+			const union = unions[0];
+			const keyword = UNION_KEYS.find((k) => Array.isArray(union[k]));
+			if (Object.keys(union).length !== 1) return;
+			const rest = allOf.filter((m) => m !== union);
+			const branches = union[keyword].map((branch) => foldObjects([...rest, branch]));
+			if (branches.some((b) => !b)) return;
+			folded = { [keyword]: branches };
+		}
+		if (!folded) return;
+		delete json.allOf;
+		assignProps(json, folded);
+	}
+	function finalize(ctx, schema) {
+		const root = ctx.seen.get(schema);
+		if (!root) throw new Error("Unprocessed schema. This is a bug in Zod.");
+		const flattenRef = (zodSchema) => {
+			const seen = ctx.seen.get(zodSchema);
+			if (seen.ref === null) return;
+			const schema = seen.def ?? seen.schema;
+			const _cached = { ...schema };
+			const ref = seen.ref;
+			seen.ref = null;
+			if (ref) {
+				flattenRef(ref);
+				const refSeen = ctx.seen.get(ref);
+				const refSchema = refSeen.schema;
+				if (refSchema.$ref && (ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0")) {
+					schema.allOf = schema.allOf ?? [];
+					schema.allOf.push(refSchema);
+				} else assignProps(schema, refSchema);
+				assignProps(schema, _cached);
+				if (zodSchema._zod.parent === ref) for (const key in schema) {
+					if (key === "$ref" || key === "allOf") continue;
+					if (!(key in _cached)) delete schema[key];
+				}
+				if (refSchema.$ref && refSeen.def) for (const key in schema) {
+					if (key === "$ref" || key === "allOf") continue;
+					if (key in refSeen.def && JSON.stringify(schema[key]) === JSON.stringify(refSeen.def[key])) delete schema[key];
+				}
+			}
+			const parent = zodSchema._zod.parent;
+			if (parent && parent !== ref) {
+				flattenRef(parent);
+				const parentSeen = ctx.seen.get(parent);
+				if (parentSeen?.schema.$ref) {
+					schema.$ref = parentSeen.schema.$ref;
+					if (parentSeen.def) for (const key in schema) {
+						if (key === "$ref" || key === "allOf") continue;
+						if (key in parentSeen.def && JSON.stringify(schema[key]) === JSON.stringify(parentSeen.def[key])) delete schema[key];
+					}
+				}
+			}
+			ctx.override({
+				zodSchema,
+				jsonSchema: schema,
+				path: seen.path ?? []
+			});
+		};
+		if (!ctx.external || ctx.sharedEmitDoneFor !== ctx.external) {
+			for (const entry of [...ctx.seen.entries()].reverse()) flattenRef(entry[0]);
+			if (ctx.target !== "openapi-3.0") for (const entry of ctx.seen.entries()) compactTypeUnion(entry[1].def ?? entry[1].schema);
+			for (const rewrite of ctx.deferred) rewrite();
+			if (ctx.intersections.length) {
+				const carriers = new Map();
+				for (const seen of ctx.seen.values()) for (const json of [seen.schema, seen.def]) {
+					const allOf = json?.allOf;
+					if (!Array.isArray(allOf)) continue;
+					const existing = carriers.get(allOf);
+					if (existing) existing.push(json);
+					else carriers.set(allOf, [json]);
+				}
+				for (const allOf of ctx.intersections) for (const json of carriers.get(allOf) ?? []) foldIntersection(json);
+			}
+		}
+		const result = {};
+		if (ctx.target === "draft-2020-12") result.$schema = "https://json-schema.org/draft/2020-12/schema";
+		else if (ctx.target === "draft-07") result.$schema = "http://json-schema.org/draft-07/schema#";
+		else if (ctx.target === "draft-04") result.$schema = "http://json-schema.org/draft-04/schema#";
+		else if (ctx.target === "openapi-3.0") {}
+		if (ctx.external?.uri) {
+			const id = ctx.external.registry.get(schema)?.id;
+			if (!id) throw new Error("Schema is missing an `id` property");
+			result.$id = ctx.external.uri(id);
+		}
+		assignProps(result, root.defId ? root.schema : root.def ?? root.schema);
+		const rootMetaId = ctx.metadataRegistry.get(schema)?.id;
+		if (rootMetaId !== void 0 && result.id === rootMetaId) delete result.id;
+		const defs = ctx.external?.defs ?? {};
+		if (!ctx.external || ctx.sharedEmitDoneFor !== ctx.external) for (const entry of ctx.seen.entries()) {
+			const seen = entry[1];
+			if (seen.def && seen.defId) {
+				if (seen.def.id === seen.defId) delete seen.def.id;
+				assignProp(defs, seen.defId, seen.def);
+			}
+		}
+		if (ctx.external) ctx.sharedEmitDoneFor = ctx.external;
+		if (ctx.external) {} else if (Object.keys(defs).length > 0) {
+			if (ctx.target === "draft-2020-12") result.$defs = defs;
+			else result.definitions = defs;
+		}
+		try {
+			const finalized = JSON.parse(JSON.stringify(result));
+			Object.defineProperty(finalized, "~standard", {
+				value: {
+					...schema["~standard"],
+					jsonSchema: {
+						input: createStandardJSONSchemaMethod(schema, "input", ctx.processors),
+						output: createStandardJSONSchemaMethod(schema, "output", ctx.processors)
+					}
+				},
+				enumerable: false,
+				writable: false
+			});
+			return finalized;
+		} catch (_err) {
+			throw new Error("Error converting schema to JSON.");
+		}
+	}
+	function isTransforming(_schema, _ctx) {
+		const ctx = _ctx ?? { seen: new Set() };
+		if (ctx.seen.has(_schema)) return false;
+		ctx.seen.add(_schema);
+		const def = _schema._zod.def;
+		if (def.type === "transform") return true;
+		if (def.type === "array") return isTransforming(def.element, ctx);
+		if (def.type === "set") return isTransforming(def.valueType, ctx);
+		if (def.type === "lazy") return isTransforming(def.getter(), ctx);
+		if (def.type === "promise" || def.type === "optional" || def.type === "nonoptional" || def.type === "nullable" || def.type === "readonly" || def.type === "default" || def.type === "prefault" || def.type === "catch") return isTransforming(def.innerType, ctx);
+		if (def.type === "intersection") return isTransforming(def.left, ctx) || isTransforming(def.right, ctx);
+		if (def.type === "record" || def.type === "map") return isTransforming(def.keyType, ctx) || isTransforming(def.valueType, ctx);
+		if (def.type === "pipe") {
+			if (_schema._zod.traits.has("$ZodCodec")) return true;
+			return isTransforming(def.in, ctx) || isTransforming(def.out, ctx);
+		}
+		if (def.type === "object") {
+			for (const key in def.shape) if (isTransforming(def.shape[key], ctx)) return true;
+			return false;
+		}
+		if (def.type === "union") {
+			for (const option of def.options) if (isTransforming(option, ctx)) return true;
+			return false;
+		}
+		if (def.type === "tuple") {
+			for (const item of def.items) if (isTransforming(item, ctx)) return true;
+			if (def.rest && isTransforming(def.rest, ctx)) return true;
+			return false;
+		}
+		return false;
+	}
+	var createToJSONSchemaMethod = (schema, processors = {}) => (params) => {
+		const ctx = initializeContext({
+			...params,
+			processors
+		});
+		processSchema(schema, ctx);
+		extractDefs(ctx, schema);
+		return finalize(ctx, schema);
+	};
+	var createStandardJSONSchemaMethod = (schema, io, processors = {}) => (params) => {
+		const { libraryOptions, target } = params ?? {};
+		const ctx = initializeContext({
+			...libraryOptions ?? {},
+			target,
+			io,
+			processors
+		});
+		processSchema(schema, ctx);
+		extractDefs(ctx, schema);
+		return finalize(ctx, schema);
+	};
+	var narrowMin = (agg, key, value) => {
+		if (agg[key] === void 0 || value > agg[key]) agg[key] = value;
+	};
+	var narrowMax = (agg, key, value) => {
+		if (agg[key] === void 0 || value < agg[key]) agg[key] = value;
+	};
+	var narrowBoth = (agg, value) => {
+		narrowMin(agg, "minimum", value);
+		narrowMax(agg, "maximum", value);
+	};
+	var addDivisor = (agg, value) => {
+		agg.multipleOf ?? (agg.multipleOf = []);
+		if (!agg.multipleOf.includes(value)) agg.multipleOf.push(value);
+	};
+	var addPattern = (agg, pattern) => {
+		agg.patterns ?? (agg.patterns = new Set());
+		agg.patterns.add(pattern);
+	};
+	var intersectMime = (agg, mime) => {
+		agg.mime = agg.mime ? agg.mime.filter((m) => mime.includes(m)) : [...mime];
+	};
+	var setFormat = (agg, format) => {
+		agg.format = format;
+		if (format.includes("int")) agg.isInt = true;
+	};
+	var minContributor = (agg, def) => narrowMin(agg, "minimum", def.minimum);
+	var maxContributor = (agg, def) => narrowMax(agg, "maximum", def.maximum);
+	var formatContributor = (ranges) => (agg, def) => {
+		setFormat(agg, def.format);
+		const [minimum, maximum] = ranges[def.format];
+		narrowMin(agg, "minimum", minimum);
+		narrowMax(agg, "maximum", maximum);
+	};
+	var contributors = {
+		greater_than: (agg, def) => narrowMin(agg, def.inclusive ? "minimum" : "exclusiveMinimum", def.value),
+		less_than: (agg, def) => narrowMax(agg, def.inclusive ? "maximum" : "exclusiveMaximum", def.value),
+		multiple_of: (agg, def) => addDivisor(agg, def.value),
+		number_format: formatContributor(NUMBER_FORMAT_RANGES),
+		bigint_format: formatContributor(BIGINT_FORMAT_RANGES),
+		min_length: minContributor,
+		max_length: maxContributor,
+		length_equals: (agg, def) => narrowBoth(agg, def.length),
+		min_size: minContributor,
+		max_size: maxContributor,
+		size_equals: (agg, def) => narrowBoth(agg, def.size),
+		string_format: (agg, def) => {
+			setFormat(agg, def.format);
+			if (def.pattern) addPattern(agg, def.pattern);
+			if (def.format === "base64" || def.format === "base64url") agg.contentEncoding = def.format;
+			if (def.local || def.precision === -1) agg.laxFormat = true;
+		},
+		mime_type: (agg, def) => intersectMime(agg, def.mime)
+	};
+	function aggregateChecks(schema) {
+		const agg = {};
+		const def = schema._zod.def;
+		const list = schema._zod.traits.has("$ZodCheck") ? [schema, ...def.checks ?? []] : def.checks ?? [];
+		for (const ch of list) contributors[ch._zod.def.check]?.(agg, ch._zod.def);
+		const bag = schema._zod.bag;
+		if (bag.minimum !== void 0) narrowMin(agg, "minimum", bag.minimum);
+		if (bag.exclusiveMinimum !== void 0) narrowMin(agg, "exclusiveMinimum", bag.exclusiveMinimum);
+		if (bag.maximum !== void 0) narrowMax(agg, "maximum", bag.maximum);
+		if (bag.exclusiveMaximum !== void 0) narrowMax(agg, "exclusiveMaximum", bag.exclusiveMaximum);
+		if (bag.multipleOf !== void 0) addDivisor(agg, bag.multipleOf);
+		if (bag.format !== void 0) {
+			agg.format ?? (agg.format = bag.format);
+			if (bag.format.includes("int")) agg.isInt = true;
+		}
+		if (bag.mime) intersectMime(agg, bag.mime);
+		for (const pattern of bag.patterns ?? []) addPattern(agg, pattern);
+		return agg;
+	}
+	var formatMap = {
+		guid: "uuid",
+		url: "uri",
+		datetime: "date-time",
+		json_string: "json-string",
+		regex: ""
+	};
+	var exactPatterns = new Map([[base64Charset, base64], [base64urlCharset, base64url]]);
+	var exactPattern = (p) => exactPatterns.get(p) ?? p;
+	var stringProcessor = (schema, ctx, _json, _params) => {
+		const json = _json;
+		json.type = "string";
+		const { minimum, maximum, format, patterns, contentEncoding, laxFormat } = aggregateChecks(schema);
+		if (typeof minimum === "number") json.minLength = minimum;
+		if (typeof maximum === "number") json.maxLength = maximum;
+		if (format) {
+			json.format = formatMap[format] ?? format;
+			if (json.format === "") delete json.format;
+			if (format === "time" || laxFormat) delete json.format;
+		}
+		if (contentEncoding) json.contentEncoding = contentEncoding;
+		if (patterns && patterns.size > 0) {
+			const patternList = [...patterns].map(exactPattern);
+			if (patternList.length === 1) json.pattern = patternList[0].source;
+			else if (patternList.length > 1) json.allOf = [...patternList.map((regex) => ({
+				...ctx.target === "draft-07" || ctx.target === "draft-04" || ctx.target === "openapi-3.0" ? { type: "string" } : {},
+				pattern: regex.source
+			}))];
+		}
+	};
+	var numberProcessor = (schema, ctx, _json, params) => {
+		const json = _json;
+		const { minimum, maximum, multipleOf, exclusiveMaximum, exclusiveMinimum, isInt } = aggregateChecks(schema);
+		json.type = isInt ? "integer" : "number";
+		const exMin = typeof exclusiveMinimum === "number" && exclusiveMinimum >= (minimum ?? Number.NEGATIVE_INFINITY);
+		const exMax = typeof exclusiveMaximum === "number" && exclusiveMaximum <= (maximum ?? Number.POSITIVE_INFINITY);
+		const legacy = ctx.target === "draft-04" || ctx.target === "openapi-3.0";
+		if (exMin) {
+			if (legacy) {
+				json.minimum = exclusiveMinimum;
+				json.exclusiveMinimum = true;
+			} else json.exclusiveMinimum = exclusiveMinimum;
+		} else if (typeof minimum === "number") json.minimum = minimum;
+		if (exMax) {
+			if (legacy) {
+				json.maximum = exclusiveMaximum;
+				json.exclusiveMaximum = true;
+			} else json.exclusiveMaximum = exclusiveMaximum;
+		} else if (typeof maximum === "number") json.maximum = maximum;
+		if (multipleOf) {
+			const divisors = new Set();
+			for (const divisor of multipleOf) if (Number.isFinite(divisor) && divisor !== 0) divisors.add(Math.abs(divisor));
+			else handleUnrepresentable(schema, ctx, json, params, `A multipleOf divisor of ${divisor} cannot be represented in JSON Schema`);
+			const [first, ...rest] = divisors;
+			if (first !== void 0) json.multipleOf = first;
+			if (rest.length) json.allOf = [...json.allOf ?? [], ...rest.map((m) => ({ multipleOf: m }))];
+		}
+	};
+	var booleanProcessor = (_schema, _ctx, json, _params) => {
+		json.type = "boolean";
+	};
+	var neverProcessor = (_schema, _ctx, json, _params) => {
+		json.not = {};
+	};
+	var enumProcessor = (schema, _ctx, json, _params) => {
+		const def = schema._zod.def;
+		const values = getEnumValues(def.entries);
+		if (values.length === 0) {
+			json.not = {};
+			return;
+		}
+		if (values.every((v) => typeof v === "number")) json.type = "number";
+		if (values.every((v) => typeof v === "string")) json.type = "string";
+		json.enum = values;
+	};
+	var customProcessor = (schema, ctx, json, params) => {
+		handleUnrepresentable(schema, ctx, json, params, "Custom types cannot be represented in JSON Schema");
+	};
+	var transformProcessor = (schema, ctx, json, params) => {
+		handleUnrepresentable(schema, ctx, json, params, "Transforms cannot be represented in JSON Schema");
+	};
+	var arrayProcessor = (schema, ctx, _json, params) => {
+		const json = _json;
+		const def = schema._zod.def;
+		const { minimum, maximum } = aggregateChecks(schema);
+		if (typeof minimum === "number") json.minItems = minimum;
+		if (typeof maximum === "number") json.maxItems = maximum;
+		json.type = "array";
+		json.items = processSchema(def.element, ctx, {
+			...params,
+			path: [...params.path, "items"]
+		});
+	};
+	function inputOptin(schema) {
+		const def = schema._zod.def;
+		if (def.type === "pipe" && def.in._zod.traits.has("$ZodTransform")) return inputOptin(def.out);
+		if (def.type === "catch") return inputOptin(def.innerType);
+		return schema._zod.optin;
+	}
+	var objectProcessor = (schema, ctx, _json, params) => {
+		const json = _json;
+		const def = schema._zod.def;
+		const shape = def.shape;
+		if (Object.getOwnPropertySymbols(shape).length && handleUnrepresentable(schema, ctx, json, params, "Symbol keys cannot be represented in JSON Schema")) return;
+		json.type = "object";
+		json.properties = {};
+		for (const key in shape) assignProp(json.properties, key, processSchema(shape[key], ctx, {
+			...params,
+			path: [
+				...params.path,
+				"properties",
+				key
+			]
+		}));
+		const requiredKeys = [];
+		for (const key of Object.keys(shape)) {
+			const field = def.shape[key];
+			if (ctx.io === "input" ? inputOptin(field) === void 0 : field._zod.optout === void 0) requiredKeys.push(key);
+		}
+		if (requiredKeys.length > 0) json.required = requiredKeys;
+		if (def.catchall?._zod.def.type === "never") json.additionalProperties = false;
+		else if (!def.catchall) {
+			if (ctx.io === "output") json.additionalProperties = false;
+		} else if (def.catchall) json.additionalProperties = processSchema(def.catchall, ctx, {
+			...params,
+			path: [...params.path, "additionalProperties"]
+		});
+	};
+	var unionProcessor = (schema, ctx, json, params) => {
+		const def = schema._zod.def;
+		const isExclusive = def.inclusive === false;
+		const options = def.options.map((x, i) => processSchema(x, ctx, {
+			...params,
+			path: [
+				...params.path,
+				isExclusive ? "oneOf" : "anyOf",
+				i
+			]
+		}));
+		if (isExclusive) json.oneOf = options;
+		else json.anyOf = options;
+	};
+	var intersectionProcessor = (schema, ctx, json, params) => {
+		const def = schema._zod.def;
+		const a = processSchema(def.left, ctx, {
+			...params,
+			path: [
+				...params.path,
+				"allOf",
+				0
+			]
+		});
+		const b = processSchema(def.right, ctx, {
+			...params,
+			path: [
+				...params.path,
+				"allOf",
+				1
+			]
+		});
+		const isSimpleIntersection = (val) => "allOf" in val && Object.keys(val).length === 1;
+		const allOf = [...isSimpleIntersection(a) ? a.allOf : [a], ...isSimpleIntersection(b) ? b.allOf : [b]];
+		json.allOf = allOf;
+		ctx.intersections.push(allOf);
+	};
+	var nullableProcessor = (schema, ctx, json, params) => {
+		const def = schema._zod.def;
+		const inner = processSchema(def.innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		if (ctx.target === "openapi-3.0") {
+			seen.ref = def.innerType;
+			json.nullable = true;
+		} else json.anyOf = [inner, { type: "null" }];
+	};
+	var nonoptionalProcessor = (schema, ctx, _json, params) => {
+		const def = schema._zod.def;
+		processSchema(def.innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		seen.ref = def.innerType;
+	};
+	var UNREPRESENTABLE_DEFAULT = Symbol();
+	function serializeDefaultValue(value, schema, ctx, json, params) {
+		let unrepresentable = false;
+		const serialized = JSON.stringify(value, (_, val) => {
+			if (typeof val !== "bigint") return val;
+			unrepresentable = true;
+			return null;
+		});
+		if (!unrepresentable) return JSON.parse(serialized);
+		handleUnrepresentable(schema, ctx, json, params, "BigInt defaults cannot be represented in JSON Schema");
+		return UNREPRESENTABLE_DEFAULT;
+	}
+	var defaultProcessor = (schema, ctx, json, params) => {
+		const def = schema._zod.def;
+		processSchema(def.innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		seen.ref = def.innerType;
+		const value = serializeDefaultValue(def.defaultValue, schema, ctx, json, params);
+		if (value !== UNREPRESENTABLE_DEFAULT) json.default = value;
+	};
+	var prefaultProcessor = (schema, ctx, json, params) => {
+		const def = schema._zod.def;
+		processSchema(def.innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		seen.ref = def.innerType;
+		if (ctx.io !== "input") return;
+		const value = serializeDefaultValue(def.defaultValue, schema, ctx, json, params);
+		if (value !== UNREPRESENTABLE_DEFAULT) json._prefault = value;
+	};
+	var catchProcessor = (schema, ctx, json, params) => {
+		const def = schema._zod.def;
+		processSchema(def.innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		seen.ref = def.innerType;
+		let catchValue;
+		try {
+			catchValue = def.catchValue(void 0);
+		} catch {
+			handleUnrepresentable(schema, ctx, json, params, "Dynamic catch values are not supported in JSON Schema");
+			return;
+		}
+		json.default = catchValue;
+	};
+	var pipeProcessor = (schema, ctx, _json, params) => {
+		const def = schema._zod.def;
+		const inIsTransform = def.in._zod.traits.has("$ZodTransform");
+		const innerType = ctx.io === "input" ? inIsTransform ? def.out : def.in : def.out;
+		processSchema(innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		seen.ref = innerType;
+	};
+	var readonlyProcessor = (schema, ctx, json, params) => {
+		const def = schema._zod.def;
+		processSchema(def.innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		seen.ref = def.innerType;
+		json.readOnly = true;
+	};
+	var optionalProcessor = (schema, ctx, _json, params) => {
+		const def = schema._zod.def;
+		processSchema(def.innerType, ctx, params);
+		const seen = ctx.seen.get(schema);
+		seen.ref = def.innerType;
+	};
+	var _installedErrorProtos = new WeakSet([Object.prototype, Error.prototype]);
+	function _lazyMethod(proto, key, make) {
+		Object.defineProperty(proto, key, {
+			configurable: true,
+			enumerable: false,
+			get() {
+				const value = make(this);
+				Object.defineProperty(this, key, {
+					value,
+					configurable: true,
+					writable: true
+				});
+				return value;
+			},
+			set(value) {
+				Object.defineProperty(this, key, {
+					value,
+					configurable: true,
+					writable: true
+				});
+			}
+		});
+	}
+	var initializer = (inst, issues) => {
+		$ZodError.init(inst, issues);
+		inst.name = "ZodError";
+		const proto = Object.getPrototypeOf(inst);
+		if (_installedErrorProtos.has(proto)) return;
+		_installedErrorProtos.add(proto);
+		_lazyMethod(proto, "format", (self) => (mapper) => formatError(self, mapper));
+		_lazyMethod(proto, "flatten", (self) => (mapper) => flattenError(self, mapper));
+		_lazyMethod(proto, "addIssue", (self) => (issue) => {
+			self.issues.push(issue);
+			self.message = JSON.stringify(self.issues, jsonStringifyReplacer, 2);
+		});
+		_lazyMethod(proto, "addIssues", (self) => (issues) => {
+			self.issues.push(...issues);
+			self.message = JSON.stringify(self.issues, jsonStringifyReplacer, 2);
+		});
+		Object.defineProperty(proto, "isEmpty", {
+			configurable: true,
+			enumerable: false,
+			get() {
+				return this.issues.length === 0;
+			}
+		});
+	};
+	var ZodRealError = $constructor("ZodError", initializer, void 0, { Parent: Error });
+	var parse = _parse(ZodRealError);
+	var parseAsync = _parseAsync(ZodRealError);
+	var safeParse = _safeParse(ZodRealError);
+	var safeParseAsync = _safeParseAsync(ZodRealError);
+	var encode = _encode(ZodRealError);
+	var decode = _decode(ZodRealError);
+	var encodeAsync = _encodeAsync(ZodRealError);
+	var decodeAsync = _decodeAsync(ZodRealError);
+	var safeEncode = _safeEncode(ZodRealError);
+	var safeDecode = _safeDecode(ZodRealError);
+	var safeEncodeAsync = _safeEncodeAsync(ZodRealError);
+	var safeDecodeAsync = _safeDecodeAsync(ZodRealError);
+	function _ensureDefaultLocale() {
+		if (!globalConfig.localeError) config(en_default());
+	}
+	function _ensureDefaultMemoizer() {
+		if (!globalConfig.memoizer) config({ memoizer: memoizer() });
+	}
+	var ZodType = $constructor("ZodType", (inst, def) => {
+		_ensureDefaultLocale();
+		$ZodType.init(inst, def);
+		inst.def = def;
+		inst.type = def.type;
+		return inst;
+	}, {
+		check(...chks) {
+			const def = this.def;
+			return this.clone(mergeDefs(def, { checks: [...def.checks ?? [], ...chks.map((ch) => typeof ch === "function" ? { _zod: {
+				check: ch,
+				def: { check: "custom" },
+				onattach: []
+			} } : ch)] }), { parent: true });
+		},
+		with(...chks) {
+			return this.check(...chks);
+		},
+		clone(def, params) {
+			return clone(this, def, params);
+		},
+		brand() {
+			return this;
+		},
+		register(reg, meta) {
+			reg.add(this, meta);
+			return this;
+		},
+		refine(check, params) {
+			return this.check(refine(check, params));
+		},
+		superRefine(refinement, params) {
+			return this.check(superRefine(refinement, params));
+		},
+		overwrite(fn) {
+			return this.check(_overwrite(fn));
+		},
+		optional() {
+			return optional(this);
+		},
+		exactOptional() {
+			return exactOptional(this);
+		},
+		nullable() {
+			return nullable(this);
+		},
+		nullish() {
+			return optional(nullable(this));
+		},
+		nonoptional(params) {
+			return nonoptional(this, params);
+		},
+		array() {
+			return array(this);
+		},
+		or(arg) {
+			return union([this, arg]);
+		},
+		and(arg) {
+			return intersection(this, arg);
+		},
+		transform(tx) {
+			return pipe(this, transform(tx));
+		},
+		default(d) {
+			return _default(this, d);
+		},
+		prefault(d) {
+			return prefault(this, d);
+		},
+		catch(params) {
+			return _catch(this, params);
+		},
+		pipe(target) {
+			return pipe(this, target);
+		},
+		readonly() {
+			return readonly(this);
+		},
+		describe(description) {
+			const cl = this.clone();
+			globalRegistry.add(cl, { description });
+			return cl;
+		},
+		meta(...args) {
+			if (args.length === 0) return globalRegistry.get(this);
+			const cl = this.clone();
+			globalRegistry.add(cl, args[0]);
+			return cl;
+		},
+		isOptional() {
+			return this.safeParse(void 0).success;
+		},
+		isNullable() {
+			return this.safeParse(null).success;
+		},
+		apply(fn, ...args) {
+			return args.length === 0 ? fn(this) : fn(this, ...args);
+		},
+		get "~standard"() {
+			return hide(this, "~standard", {
+				...standardProps(this),
+				jsonSchema: {
+					input: createStandardJSONSchemaMethod(this, "input"),
+					output: createStandardJSONSchemaMethod(this, "output")
+				}
+			});
+		},
+		set "~standard"(value) {
+			own(this, "~standard", value);
+		},
+		parse: function _parse(data, params) {
+			return parse(this, data, params, { callee: _parse });
+		},
+		parseAsync: async function _parseAsync(data, params) {
+			return await parseAsync(this, data, params, { callee: _parseAsync });
+		},
+		safeParse(data, params) {
+			return safeParse(this, data, params);
+		},
+		async safeParseAsync(data, params) {
+			return safeParseAsync(this, data, params);
+		},
+		get spa() {
+			return this?.safeParseAsync;
+		},
+		set spa(value) {
+			own(this, "spa", value);
+		},
+		validate(data, params) {
+			return validate(this, data, params);
+		},
+		validateAsync(data, params) {
+			return validateAsync$1(this, data, params);
+		},
+		encode: function _encode(data, params) {
+			return encode(this, data, params, { callee: _encode });
+		},
+		decode: function _decode(data, params) {
+			return decode(this, data, params, { callee: _decode });
+		},
+		encodeAsync: async function _encodeAsync(data, params) {
+			return await encodeAsync(this, data, params, { callee: _encodeAsync });
+		},
+		decodeAsync: async function _decodeAsync(data, params) {
+			return await decodeAsync(this, data, params, { callee: _decodeAsync });
+		},
+		safeEncode(data, params) {
+			return safeEncode(this, data, params);
+		},
+		safeDecode(data, params) {
+			return safeDecode(this, data, params);
+		},
+		async safeEncodeAsync(data, params) {
+			return safeEncodeAsync(this, data, params);
+		},
+		async safeDecodeAsync(data, params) {
+			return safeDecodeAsync(this, data, params);
+		},
+		toJSONSchema(params) {
+			return createToJSONSchemaMethod(this, {})(params);
+		},
+		get description() {
+			return globalRegistry.get(this)?.description;
+		},
+		get _def() {
+			return this._zod.def;
+		}
+	});
+	var _ZodString = $constructor("_ZodString", (inst, def) => {
+		$ZodString.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => stringProcessor(inst, ctx, json, params);
+	}, derived({
+		format: (inst) => aggregateChecks(inst).format ?? null,
+		minLength: (inst) => aggregateChecks(inst).minimum ?? null,
+		maxLength: (inst) => aggregateChecks(inst).maximum ?? null
+	}, {
+		regex(...args) {
+			return this.check(_regex(...args));
+		},
+		includes(...args) {
+			return this.check(_includes(...args));
+		},
+		startsWith(...args) {
+			return this.check(_startsWith(...args));
+		},
+		endsWith(...args) {
+			return this.check(_endsWith(...args));
+		},
+		min(...args) {
+			return this.check(_minLength(...args));
+		},
+		max(...args) {
+			return this.check(_maxLength(...args));
+		},
+		length(...args) {
+			return this.check(_length(...args));
+		},
+		nonempty(...args) {
+			return this.check(_minLength(1, ...args));
+		},
+		lowercase(params) {
+			return this.check(_lowercase(params));
+		},
+		uppercase(params) {
+			return this.check(_uppercase(params));
+		},
+		trim() {
+			return this.check(_trim());
+		},
+		normalize(...args) {
+			return this.check(_normalize(...args));
+		},
+		toLowerCase() {
+			return this.check(_toLowerCase());
+		},
+		toUpperCase() {
+			return this.check(_toUpperCase());
+		},
+		slugify() {
+			return this.check(_slugify());
+		}
+	}));
+	var ZodString = $constructor("ZodString", (inst, def) => {
+		$ZodString.init(inst, def);
+		_ZodString.init(inst, def);
+	}, {
+		email(params) {
+			return this.check(_email(ZodEmail, params));
+		},
+		url(params) {
+			return this.check(_url(ZodURL, params));
+		},
+		jwt(params) {
+			return this.check(_jwt(ZodJWT, params));
+		},
+		emoji(params) {
+			return this.check(_emoji(ZodEmoji, params));
+		},
+		guid(params) {
+			return this.check(_guid(ZodGUID, params));
+		},
+		uuid(params) {
+			return this.check(_uuid(ZodUUID, params));
+		},
+		uuidv4(params) {
+			return this.check(_uuidv4(ZodUUID, params));
+		},
+		uuidv6(params) {
+			return this.check(_uuidv6(ZodUUID, params));
+		},
+		uuidv7(params) {
+			return this.check(_uuidv7(ZodUUID, params));
+		},
+		nanoid(params) {
+			return this.check(_nanoid(ZodNanoID, params));
+		},
+		cuid(params) {
+			return this.check(_cuid(ZodCUID, params));
+		},
+		cuid2(params) {
+			return this.check(_cuid2(ZodCUID2, params));
+		},
+		ulid(params) {
+			return this.check(_ulid(ZodULID, params));
+		},
+		base64(params) {
+			return this.check(_base64(ZodBase64, params));
+		},
+		base64url(params) {
+			return this.check(_base64url(ZodBase64URL, params));
+		},
+		xid(params) {
+			return this.check(_xid(ZodXID, params));
+		},
+		ksuid(params) {
+			return this.check(_ksuid(ZodKSUID, params));
+		},
+		ipv4(params) {
+			return this.check(_ipv4(ZodIPv4, params));
+		},
+		ipv6(params) {
+			return this.check(_ipv6(ZodIPv6, params));
+		},
+		cidrv4(params) {
+			return this.check(_cidrv4(ZodCIDRv4, params));
+		},
+		cidrv6(params) {
+			return this.check(_cidrv6(ZodCIDRv6, params));
+		},
+		e164(params) {
+			return this.check(_e164(ZodE164, params));
+		},
+		datetime(params) {
+			return this.check(_isoDateTime(ZodISODateTime, params));
+		},
+		date(params) {
+			return this.check(_isoDate(ZodISODate, params));
+		},
+		time(params) {
+			return this.check(_isoTime(ZodISOTime, params));
+		},
+		duration(params) {
+			return this.check(_isoDuration(ZodISODuration, params));
+		}
+	});
+	function string(params) {
+		return _string(ZodString, params);
+	}
+	var ZodStringFormat = $constructor("ZodStringFormat", (inst, def) => {
+		$ZodStringFormat.init(inst, def);
+		_ZodString.init(inst, def);
+	});
+	var ZodISODateTime = $constructor("ZodISODateTime", (inst, def) => {
+		$ZodISODateTime.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodISODate = $constructor("ZodISODate", (inst, def) => {
+		$ZodISODate.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodISOTime = $constructor("ZodISOTime", (inst, def) => {
+		$ZodISOTime.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodISODuration = $constructor("ZodISODuration", (inst, def) => {
+		$ZodISODuration.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodEmail = $constructor("ZodEmail", (inst, def) => {
+		$ZodEmail.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodGUID = $constructor("ZodGUID", (inst, def) => {
+		$ZodGUID.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodUUID = $constructor("ZodUUID", (inst, def) => {
+		$ZodUUID.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodURL = $constructor("ZodURL", (inst, def) => {
+		$ZodURL.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodEmoji = $constructor("ZodEmoji", (inst, def) => {
+		$ZodEmoji.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodNanoID = $constructor("ZodNanoID", (inst, def) => {
+		$ZodNanoID.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodCUID = $constructor("ZodCUID", (inst, def) => {
+		$ZodCUID.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodCUID2 = $constructor("ZodCUID2", (inst, def) => {
+		$ZodCUID2.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodULID = $constructor("ZodULID", (inst, def) => {
+		$ZodULID.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodXID = $constructor("ZodXID", (inst, def) => {
+		$ZodXID.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodKSUID = $constructor("ZodKSUID", (inst, def) => {
+		$ZodKSUID.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodIPv4 = $constructor("ZodIPv4", (inst, def) => {
+		$ZodIPv4.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodIPv6 = $constructor("ZodIPv6", (inst, def) => {
+		$ZodIPv6.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodCIDRv4 = $constructor("ZodCIDRv4", (inst, def) => {
+		$ZodCIDRv4.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodCIDRv6 = $constructor("ZodCIDRv6", (inst, def) => {
+		$ZodCIDRv6.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodBase64 = $constructor("ZodBase64", (inst, def) => {
+		$ZodBase64.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodBase64URL = $constructor("ZodBase64URL", (inst, def) => {
+		$ZodBase64URL.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodE164 = $constructor("ZodE164", (inst, def) => {
+		$ZodE164.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodJWT = $constructor("ZodJWT", (inst, def) => {
+		$ZodJWT.init(inst, def);
+		ZodStringFormat.init(inst, def);
+	});
+	var ZodNumber = $constructor("ZodNumber", (inst, def) => {
+		$ZodNumber.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => numberProcessor(inst, ctx, json, params);
+		inst.isFinite = true;
+	}, derived({
+		minValue: (inst) => {
+			const { minimum, exclusiveMinimum } = aggregateChecks(inst);
+			return Math.max(minimum ?? Number.NEGATIVE_INFINITY, exclusiveMinimum ?? Number.NEGATIVE_INFINITY);
+		},
+		maxValue: (inst) => {
+			const { maximum, exclusiveMaximum } = aggregateChecks(inst);
+			return Math.min(maximum ?? Number.POSITIVE_INFINITY, exclusiveMaximum ?? Number.POSITIVE_INFINITY);
+		},
+		isInt: (inst) => {
+			const { isInt, multipleOf } = aggregateChecks(inst);
+			return !!isInt || !!multipleOf?.some(Number.isSafeInteger);
+		},
+		format: (inst) => aggregateChecks(inst).format ?? null
+	}, {
+		gt(value, params) {
+			return this.check(_gt(value, params));
+		},
+		gte(value, params) {
+			return this.check(_gte(value, params));
+		},
+		min(value, params) {
+			return this.check(_gte(value, params));
+		},
+		lt(value, params) {
+			return this.check(_lt(value, params));
+		},
+		lte(value, params) {
+			return this.check(_lte(value, params));
+		},
+		max(value, params) {
+			return this.check(_lte(value, params));
+		},
+		int(params) {
+			return this.check(int(params));
+		},
+		safe(params) {
+			return this.check(int(params));
+		},
+		positive(params) {
+			return this.check(_gt(0, params));
+		},
+		nonnegative(params) {
+			return this.check(_gte(0, params));
+		},
+		negative(params) {
+			return this.check(_lt(0, params));
+		},
+		nonpositive(params) {
+			return this.check(_lte(0, params));
+		},
+		multipleOf(value, params) {
+			return this.check(_multipleOf(value, params));
+		},
+		step(value, params) {
+			return this.check(_multipleOf(value, params));
+		},
+		finite() {
+			return this;
+		}
+	}));
+	function number(params) {
+		return _number(ZodNumber, params);
+	}
+	var ZodNumberFormat = $constructor("ZodNumberFormat", (inst, def) => {
+		$ZodNumberFormat.init(inst, def);
+		ZodNumber.init(inst, def);
+	});
+	function int(params) {
+		return _int(ZodNumberFormat, params);
+	}
+	var ZodBoolean = $constructor("ZodBoolean", (inst, def) => {
+		$ZodBoolean.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json, params);
+	});
+	function boolean(params) {
+		return _boolean(ZodBoolean, params);
+	}
+	var ZodUnknown = $constructor("ZodUnknown", (inst, def) => {
+		$ZodUnknown.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => void 0;
+	});
+	function unknown() {
+		return _unknown(ZodUnknown);
+	}
+	var ZodNever = $constructor("ZodNever", (inst, def) => {
+		$ZodNever.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => neverProcessor(inst, ctx, json, params);
+	});
+	function never(params) {
+		return _never(ZodNever, params);
+	}
+	var ZodArray = $constructor("ZodArray", (inst, def) => {
+		_ensureDefaultMemoizer();
+		$ZodArray.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => arrayProcessor(inst, ctx, json, params);
+		inst.element = def.element;
+	}, {
+		min(n, params) {
+			return this.check(_minLength(n, params));
+		},
+		nonempty(params) {
+			return this.check(_minLength(1, params));
+		},
+		max(n, params) {
+			return this.check(_maxLength(n, params));
+		},
+		length(n, params) {
+			return this.check(_length(n, params));
+		},
+		unwrap() {
+			return this.element;
+		}
+	});
+	function array(element, params) {
+		return _array(ZodArray, element, params);
+	}
+	var ZodObject = $constructor("ZodObject", (inst, def) => {
+		_ensureDefaultMemoizer();
+		$ZodObjectJIT.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => objectProcessor(inst, ctx, json, params);
+		installLazyProp(inst, "shape", (self) => self._zod.def.shape, false);
+	}, {
+		keyof() {
+			return _enum(Object.keys(this._zod.def.shape));
+		},
+		catchall(catchall) {
+			return this.clone(mergeDefs(this._zod.def, { catchall }));
+		},
+		passthrough() {
+			return this.clone(mergeDefs(this._zod.def, { catchall: unknown() }));
+		},
+		loose() {
+			return this.clone(mergeDefs(this._zod.def, { catchall: unknown() }));
+		},
+		strict() {
+			return this.clone(mergeDefs(this._zod.def, { catchall: never() }));
+		},
+		strip() {
+			return this.clone(mergeDefs(this._zod.def, { catchall: void 0 }));
+		},
+		extend(incoming) {
+			return extend(this, incoming);
+		},
+		safeExtend(incoming) {
+			return safeExtend(this, incoming);
+		},
+		merge(other) {
+			return merge(this, other);
+		},
+		pick(mask) {
+			return pick(this, mask);
+		},
+		omit(mask) {
+			return omit(this, mask);
+		},
+		partial(...args) {
+			return partial(ZodOptional, this, args[0]);
+		},
+		exactPartial(...args) {
+			return partial(ZodExactOptional, this, args[0], "exactPartial");
+		},
+		required(...args) {
+			return required(ZodNonOptional, this, args[0]);
+		}
+	});
+	function object(shape, params) {
+		return new ZodObject({
+			type: "object",
+			shape: shape ?? {},
+			...normalizeParams(params)
+		});
+	}
+	var ZodUnion = $constructor("ZodUnion", (inst, def) => {
+		$ZodUnion.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => unionProcessor(inst, ctx, json, params);
+		inst.options = def.options;
+	});
+	function union(options, params) {
+		return new ZodUnion({
+			type: "union",
+			options,
+			...normalizeParams(params)
+		});
+	}
+	var ZodIntersection = $constructor("ZodIntersection", (inst, def) => {
+		$ZodIntersection.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => intersectionProcessor(inst, ctx, json, params);
+	});
+	function intersection(left, right) {
+		return new ZodIntersection({
+			type: "intersection",
+			left,
+			right
+		});
+	}
+	var ZodEnum = $constructor("ZodEnum", (inst, def) => {
+		$ZodEnum.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => enumProcessor(inst, ctx, json, params);
+		inst.enum = def.entries;
+		inst.options = [...inst._zod.values];
+		const keys = new Set(Object.keys(def.entries));
+		inst.extract = (values, params) => {
+			const newEntries = {};
+			for (const value of values) if (keys.has(value)) newEntries[value] = def.entries[value];
+			else throw new Error(`Key ${value} not found in enum`);
+			return new ZodEnum({
+				...def,
+				checks: [],
+				...normalizeParams(params),
+				entries: newEntries
+			});
+		};
+		inst.exclude = (values, params) => {
+			const newEntries = { ...def.entries };
+			for (const value of values) if (keys.has(value)) delete newEntries[value];
+			else throw new Error(`Key ${value} not found in enum`);
+			return new ZodEnum({
+				...def,
+				checks: [],
+				...normalizeParams(params),
+				entries: newEntries
+			});
+		};
+	});
+	function _enum(values, params) {
+		return new ZodEnum({
+			type: "enum",
+			entries: Array.isArray(values) ? Object.fromEntries(values.map((v) => [v, v])) : values,
+			...normalizeParams(params)
+		});
+	}
+	var ZodTransform = $constructor("ZodTransform", (inst, def) => {
+		_ensureDefaultMemoizer();
+		$ZodTransform.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => transformProcessor(inst, ctx, json, params);
+		inst._zod.parse = (payload, _ctx) => {
+			if (_ctx.direction === "backward") throw new $ZodEncodeError(inst.constructor.name);
+			payload.addIssue = (issue$1) => {
+				if (typeof issue$1 === "string") payload.issues.push(issue(issue$1, payload.value, def));
+				else {
+					const _issue = issue$1;
+					if (_issue.fatal) _issue.continue = false;
+					_issue.code ?? (_issue.code = "custom");
+					if (!("input" in _issue)) _issue.input = payload.value;
+					_issue.inst ?? (_issue.inst = inst);
+					payload.issues.push(issue(_issue));
+				}
+			};
+			const output = def.transform(payload.value, payload);
+			if (output instanceof Promise) return output.then((output) => {
+				payload.value = output;
+				return payload;
+			});
+			payload.value = output;
+			return payload;
+		};
+	});
+	function transform(fn) {
+		return new ZodTransform({
+			type: "transform",
+			transform: fn
+		});
+	}
+	var ZodOptional = $constructor("ZodOptional", (inst, def) => {
+		$ZodOptional.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+	});
+	function optional(innerType) {
+		return new ZodOptional({
+			type: "optional",
+			innerType
+		});
+	}
+	var ZodExactOptional = $constructor("ZodExactOptional", (inst, def) => {
+		$ZodExactOptional.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => optionalProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+	});
+	function exactOptional(innerType) {
+		return new ZodExactOptional({
+			type: "optional",
+			innerType
+		});
+	}
+	var ZodNullable = $constructor("ZodNullable", (inst, def) => {
+		$ZodNullable.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => nullableProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+	});
+	function nullable(innerType) {
+		return new ZodNullable({
+			type: "nullable",
+			innerType
+		});
+	}
+	var ZodDefault = $constructor("ZodDefault", (inst, def) => {
+		$ZodDefault.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => defaultProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+		inst.removeDefault = inst.unwrap;
+	});
+	function _default(innerType, defaultValue) {
+		return new ZodDefault({
+			type: "default",
+			innerType,
+			get defaultValue() {
+				return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
+			}
+		});
+	}
+	var ZodPrefault = $constructor("ZodPrefault", (inst, def) => {
+		$ZodPrefault.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => prefaultProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+	});
+	function prefault(innerType, defaultValue) {
+		return new ZodPrefault({
+			type: "prefault",
+			innerType,
+			get defaultValue() {
+				return typeof defaultValue === "function" ? defaultValue() : shallowClone(defaultValue);
+			}
+		});
+	}
+	var ZodNonOptional = $constructor("ZodNonOptional", (inst, def) => {
+		$ZodNonOptional.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => nonoptionalProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+	});
+	function nonoptional(innerType, params) {
+		return new ZodNonOptional({
+			type: "nonoptional",
+			innerType,
+			...normalizeParams(params)
+		});
+	}
+	var ZodCatch = $constructor("ZodCatch", (inst, def) => {
+		$ZodCatch.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => catchProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+		inst.removeCatch = inst.unwrap;
+	});
+	function _catch(innerType, catchValue) {
+		return new ZodCatch({
+			type: "catch",
+			innerType,
+			catchValue: typeof catchValue === "function" ? catchValue : constantCatch(catchValue)
+		});
+	}
+	var ZodPipe = $constructor("ZodPipe", (inst, def) => {
+		$ZodPipe.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => pipeProcessor(inst, ctx, json, params);
+		inst.in = def.in;
+		inst.out = def.out;
+	});
+	function pipe(in_, out) {
+		return new ZodPipe({
+			type: "pipe",
+			in: in_,
+			out
+		});
+	}
+	var ZodReadonly = $constructor("ZodReadonly", (inst, def) => {
+		$ZodReadonly.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => readonlyProcessor(inst, ctx, json, params);
+		inst.unwrap = () => inst._zod.def.innerType;
+	});
+	function readonly(innerType) {
+		return new ZodReadonly({
+			type: "readonly",
+			innerType
+		});
+	}
+	var ZodCustom = $constructor("ZodCustom", (inst, def) => {
+		$ZodCustom.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => customProcessor(inst, ctx, json, params);
+	});
+	function refine(fn, _params = {}) {
+		return _refine(ZodCustom, fn, _params);
+	}
+	function superRefine(fn, params) {
+		return _superRefine(fn, params);
+	}
+	var ChartSnapshot = object({
+		key: string(),
+		ageSex: string().optional(),
+		allergies: string().optional(),
+		meds: string().optional(),
+		rel: string().optional(),
+		ts: number()
+	}).passthrough();
+	var cachedToken = "";
+	var cachedDigits = "";
+	function scanHeader() {
+		try {
+			const els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
+			for (let i = 0; i < els.length; i++) {
+				const tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
+				if (tx.length > 70 || tx.length < 5) continue;
+				if (/^clinical\s/i.test(tx)) continue;
+				const em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*([A-Za-z]{0,5}(\d{3,}))\s*\)/);
+				if (em) {
+					cachedToken = em[1].toUpperCase();
+					cachedDigits = em[2];
+					return true;
+				}
+			}
+		} catch (e) {}
+		return false;
+	}
+	var ladderFns = new Map();
+	var ladderArmed = new Set();
+	function ladder(fn, times) {
+		for (const ms of times) {
+			if (!ladderFns.has(ms)) ladderFns.set(ms, []);
+			ladderFns.get(ms).push(fn);
+			if (!ladderArmed.has(ms)) {
+				ladderArmed.add(ms);
+				setTimeout(() => {
+					for (const f of ladderFns.get(ms) || []) try {
+						f(ms);
+					} catch (e) {}
+				}, ms);
+			}
+		}
+	}
+	var snapshot = null;
+	var WarnRecord = object({
+		age: boolean(),
+		allergies: boolean(),
+		meds: boolean(),
+		rel: boolean(),
+		key: string().nullable().optional(),
+		ts: number()
+	}).passthrough();
+	var NoteOpenRecord = object({ ts: number() }).passthrough();
+	function readLS(name) {
+		try {
+			const raw = localStorage.getItem(name);
+			return raw ? JSON.parse(raw) : null;
+		} catch (e) {
+			return null;
+		}
+	}
+	window.__tmCore = {
+		key() {
+			if (!cachedToken && !scanHeader()) return null;
+			return "chart:" + cachedToken;
+		},
+		chartDigits() {
+			if (!cachedDigits && !scanHeader()) return "";
+			return cachedDigits;
+		},
+		ladder,
+		setSnapshot(v) {
+			const r = ChartSnapshot.safeParse(v);
+			if (!r.success) return false;
+			snapshot = r.data;
+			return true;
+		},
+		getSnapshot() {
+			return snapshot;
+		},
+		warn() {
+			const r = WarnRecord.safeParse(readLS("tmTileWarn"));
+			return r.success ? r.data : null;
+		},
+		noteOpen() {
+			const r = NoteOpenRecord.safeParse(readLS("tmNoteOpen"));
+			return r.success ? r.data : null;
+		}
+	};
+	var t$1 = globalThis;
+	var e$2 = t$1.ShadowRoot && (void 0 === t$1.ShadyCSS || t$1.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
+	var s$2 = Symbol();
+	var o$3 = new WeakMap();
+	var n$2 = class {
+		constructor(t, e, o) {
+			if (this._$cssResult$ = !0, o !== s$2) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
+			this.cssText = t, this.t = e;
+		}
+		get styleSheet() {
+			let t = this.o;
+			const s = this.t;
+			if (e$2 && void 0 === t) {
+				const e = void 0 !== s && 1 === s.length;
+				e && (t = o$3.get(s)), void 0 === t && ((this.o = t = new CSSStyleSheet()).replaceSync(this.cssText), e && o$3.set(s, t));
+			}
+			return t;
+		}
+		toString() {
+			return this.cssText;
+		}
+	};
+	var r$2 = (t) => new n$2("string" == typeof t ? t : t + "", void 0, s$2);
+	var S$1 = (s, o) => {
+		if (e$2) s.adoptedStyleSheets = o.map((t) => t instanceof CSSStyleSheet ? t : t.styleSheet);
+		else for (const e of o) {
+			const o = document.createElement("style"), n = t$1.litNonce;
+			void 0 !== n && o.setAttribute("nonce", n), o.textContent = e.cssText, s.appendChild(o);
+		}
+	};
+	var c$2 = e$2 ? (t) => t : (t) => t instanceof CSSStyleSheet ? ((t) => {
+		let e = "";
+		for (const s of t.cssRules) e += s.cssText;
+		return r$2(e);
+	})(t) : t;
+	var { is: i$2, defineProperty: e$1, getOwnPropertyDescriptor: h$1, getOwnPropertyNames: r$1, getOwnPropertySymbols: o$2, getPrototypeOf: n$1 } = Object, a$1 = globalThis, c$1 = a$1.trustedTypes, l$1 = c$1 ? c$1.emptyScript : "", p$1 = a$1.reactiveElementPolyfillSupport, d$1 = (t, s) => t, u$1 = {
+		toAttribute(t, s) {
+			switch (s) {
+				case Boolean:
+					t = t ? l$1 : null;
+					break;
+				case Object:
+				case Array: t = null == t ? t : JSON.stringify(t);
+			}
+			return t;
+		},
+		fromAttribute(t, s) {
+			let i = t;
+			switch (s) {
+				case Boolean:
+					i = null !== t;
+					break;
+				case Number:
+					i = null === t ? null : Number(t);
+					break;
+				case Object:
+				case Array: try {
+					i = JSON.parse(t);
+				} catch (t) {
+					i = null;
+				}
+			}
+			return i;
+		}
+	}, f$1 = (t, s) => !i$2(t, s), b$1 = {
+		attribute: !0,
+		type: String,
+		converter: u$1,
+		reflect: !1,
+		useDefault: !1,
+		hasChanged: f$1
+	};
+	Symbol.metadata ??= Symbol("metadata"), a$1.litPropertyMetadata ??= new WeakMap();
+	var y$1 = class extends HTMLElement {
+		static addInitializer(t) {
+			this._$Ei(), (this.l ??= []).push(t);
+		}
+		static get observedAttributes() {
+			return this.finalize(), this._$Eh && [...this._$Eh.keys()];
+		}
+		static createProperty(t, s = b$1) {
+			if (s.state && (s.attribute = !1), this._$Ei(), this.prototype.hasOwnProperty(t) && ((s = Object.create(s)).wrapped = !0), this.elementProperties.set(t, s), !s.noAccessor) {
+				const i = Symbol(), h = this.getPropertyDescriptor(t, i, s);
+				void 0 !== h && e$1(this.prototype, t, h);
+			}
+		}
+		static getPropertyDescriptor(t, s, i) {
+			const { get: e, set: r } = h$1(this.prototype, t) ?? {
+				get() {
+					return this[s];
+				},
+				set(t) {
+					this[s] = t;
+				}
+			};
+			return {
+				get: e,
+				set(s) {
+					const h = e?.call(this);
+					r?.call(this, s), this.requestUpdate(t, h, i);
+				},
+				configurable: !0,
+				enumerable: !0
+			};
+		}
+		static getPropertyOptions(t) {
+			return this.elementProperties.get(t) ?? b$1;
+		}
+		static _$Ei() {
+			if (this.hasOwnProperty(d$1("elementProperties"))) return;
+			const t = n$1(this);
+			t.finalize(), void 0 !== t.l && (this.l = [...t.l]), this.elementProperties = new Map(t.elementProperties);
+		}
+		static finalize() {
+			if (this.hasOwnProperty(d$1("finalized"))) return;
+			if (this.finalized = !0, this._$Ei(), this.hasOwnProperty(d$1("properties"))) {
+				const t = this.properties, s = [...r$1(t), ...o$2(t)];
+				for (const i of s) this.createProperty(i, t[i]);
+			}
+			const t = this[Symbol.metadata];
+			if (null !== t) {
+				const s = litPropertyMetadata.get(t);
+				if (void 0 !== s) for (const [t, i] of s) this.elementProperties.set(t, i);
+			}
+			this._$Eh = new Map();
+			for (const [t, s] of this.elementProperties) {
+				const i = this._$Eu(t, s);
+				void 0 !== i && this._$Eh.set(i, t);
+			}
+			this.elementStyles = this.finalizeStyles(this.styles);
+		}
+		static finalizeStyles(s) {
+			const i = [];
+			if (Array.isArray(s)) {
+				const e = new Set(s.flat(1 / 0).reverse());
+				for (const s of e) i.unshift(c$2(s));
+			} else void 0 !== s && i.push(c$2(s));
+			return i;
+		}
+		static _$Eu(t, s) {
+			const i = s.attribute;
+			return !1 === i ? void 0 : "string" == typeof i ? i : "string" == typeof t ? t.toLowerCase() : void 0;
+		}
+		constructor() {
+			super(), this._$Ep = void 0, this.isUpdatePending = !1, this.hasUpdated = !1, this._$Em = null, this._$Ev();
+		}
+		_$Ev() {
+			this._$ES = new Promise((t) => this.enableUpdating = t), this._$AL = new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach((t) => t(this));
+		}
+		addController(t) {
+			(this._$EO ??= new Set()).add(t), void 0 !== this.renderRoot && this.isConnected && t.hostConnected?.();
+		}
+		removeController(t) {
+			this._$EO?.delete(t);
+		}
+		_$E_() {
+			const t = new Map(), s = this.constructor.elementProperties;
+			for (const i of s.keys()) this.hasOwnProperty(i) && (t.set(i, this[i]), delete this[i]);
+			t.size > 0 && (this._$Ep = t);
+		}
+		createRenderRoot() {
+			const t = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
+			return S$1(t, this.constructor.elementStyles), t;
+		}
+		connectedCallback() {
+			this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(!0), this._$EO?.forEach((t) => t.hostConnected?.());
+		}
+		enableUpdating(t) {}
+		disconnectedCallback() {
+			this._$EO?.forEach((t) => t.hostDisconnected?.());
+		}
+		attributeChangedCallback(t, s, i) {
+			this._$AK(t, i);
+		}
+		_$ET(t, s) {
+			const i = this.constructor.elementProperties.get(t), e = this.constructor._$Eu(t, i);
+			if (void 0 !== e && !0 === i.reflect) {
+				const h = (void 0 !== i.converter?.toAttribute ? i.converter : u$1).toAttribute(s, i.type);
+				this._$Em = t, null == h ? this.removeAttribute(e) : this.setAttribute(e, h), this._$Em = null;
+			}
+		}
+		_$AK(t, s) {
+			const i = this.constructor, e = i._$Eh.get(t);
+			if (void 0 !== e && this._$Em !== e) {
+				const t = i.getPropertyOptions(e), h = "function" == typeof t.converter ? { fromAttribute: t.converter } : void 0 !== t.converter?.fromAttribute ? t.converter : u$1;
+				this._$Em = e;
+				const r = h.fromAttribute(s, t.type);
+				this[e] = r ?? this._$Ej?.get(e) ?? r, this._$Em = null;
+			}
+		}
+		requestUpdate(t, s, i, e = !1, h) {
+			if (void 0 !== t) {
+				const r = this.constructor;
+				if (!1 === e && (h = this[t]), i ??= r.getPropertyOptions(t), !((i.hasChanged ?? f$1)(h, s) || i.useDefault && i.reflect && h === this._$Ej?.get(t) && !this.hasAttribute(r._$Eu(t, i)))) return;
+				this.C(t, s, i);
+			}
+			!1 === this.isUpdatePending && (this._$ES = this._$EP());
+		}
+		C(t, s, { useDefault: i, reflect: e, wrapped: h }, r) {
+			i && !(this._$Ej ??= new Map()).has(t) && (this._$Ej.set(t, r ?? s ?? this[t]), !0 !== h || void 0 !== r) || (this._$AL.has(t) || (this.hasUpdated || i || (s = void 0), this._$AL.set(t, s)), !0 === e && this._$Em !== t && (this._$Eq ??= new Set()).add(t));
+		}
+		async _$EP() {
+			this.isUpdatePending = !0;
+			try {
+				await this._$ES;
+			} catch (t) {
+				Promise.reject(t);
+			}
+			const t = this.scheduleUpdate();
+			return null != t && await t, !this.isUpdatePending;
+		}
+		scheduleUpdate() {
+			return this.performUpdate();
+		}
+		performUpdate() {
+			if (!this.isUpdatePending) return;
+			if (!this.hasUpdated) {
+				if (this.renderRoot ??= this.createRenderRoot(), this._$Ep) {
+					for (const [t, s] of this._$Ep) this[t] = s;
+					this._$Ep = void 0;
+				}
+				const t = this.constructor.elementProperties;
+				if (t.size > 0) for (const [s, i] of t) {
+					const { wrapped: t } = i, e = this[s];
+					!0 !== t || this._$AL.has(s) || void 0 === e || this.C(s, void 0, i, e);
+				}
+			}
+			let t = !1;
+			const s = this._$AL;
+			try {
+				t = this.shouldUpdate(s), t ? (this.willUpdate(s), this._$EO?.forEach((t) => t.hostUpdate?.()), this.update(s)) : this._$EM();
+			} catch (s) {
+				throw t = !1, this._$EM(), s;
+			}
+			t && this._$AE(s);
+		}
+		willUpdate(t) {}
+		_$AE(t) {
+			this._$EO?.forEach((t) => t.hostUpdated?.()), this.hasUpdated || (this.hasUpdated = !0, this.firstUpdated(t)), this.updated(t);
+		}
+		_$EM() {
+			this._$AL = new Map(), this.isUpdatePending = !1;
+		}
+		get updateComplete() {
+			return this.getUpdateComplete();
+		}
+		getUpdateComplete() {
+			return this._$ES;
+		}
+		shouldUpdate(t) {
+			return !0;
+		}
+		update(t) {
+			this._$Eq &&= this._$Eq.forEach((t) => this._$ET(t, this[t])), this._$EM();
+		}
+		updated(t) {}
+		firstUpdated(t) {}
+	};
+	y$1.elementStyles = [], y$1.shadowRootOptions = { mode: "open" }, y$1[d$1("elementProperties")] = new Map(), y$1[d$1("finalized")] = new Map(), p$1?.({ ReactiveElement: y$1 }), (a$1.reactiveElementVersions ??= []).push("2.1.2");
+	var t = globalThis;
+	var i$1 = (t) => t;
+	var s$1 = t.trustedTypes;
+	var e = s$1 ? s$1.createPolicy("lit-html", { createHTML: (t) => t }) : void 0;
+	var h = "$lit$";
+	var o$1 = `lit$${Math.random().toFixed(9).slice(2)}$`;
+	var n = "?" + o$1;
+	var r = `<${n}>`;
+	var l = document;
+	var c = () => l.createComment("");
+	var a = (t) => null === t || "object" != typeof t && "function" != typeof t;
+	var u = Array.isArray;
+	var d = (t) => u(t) || "function" == typeof t?.[Symbol.iterator];
+	var f = "[ 	\n\f\r]";
+	var v = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g;
+	var _ = /-->/g;
+	var m = />/g;
+	var p = RegExp(`>|${f}(?:([^\\s"'>=/]+)(${f}*=${f}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`, "g");
+	var g = /'/g;
+	var $ = /"/g;
+	var y = /^(?:script|style|textarea|title)$/i;
+	var x = (t) => (i, ...s) => ({
+		_$litType$: t,
+		strings: i,
+		values: s
+	});
+	var b = x(1);
+	var E = Symbol.for("lit-noChange");
+	var A = Symbol.for("lit-nothing");
+	var C = new WeakMap();
+	var P = l.createTreeWalker(l, 129);
+	function V(t, i) {
+		if (!u(t) || !t.hasOwnProperty("raw")) throw Error("invalid template strings array");
+		return void 0 !== e ? e.createHTML(i) : i;
+	}
+	var N = (t, i) => {
+		const s = t.length - 1, e = [];
+		let n, l = 2 === i ? "<svg>" : 3 === i ? "<math>" : "", c = v;
+		for (let i = 0; i < s; i++) {
+			const s = t[i];
+			let a, u, d = -1, f = 0;
+			for (; f < s.length && (c.lastIndex = f, u = c.exec(s), null !== u);) f = c.lastIndex, c === v ? "!--" === u[1] ? c = _ : void 0 !== u[1] ? c = m : void 0 !== u[2] ? (y.test(u[2]) && (n = RegExp("</" + u[2], "g")), c = p) : void 0 !== u[3] && (c = p) : c === p ? ">" === u[0] ? (c = n ?? v, d = -1) : void 0 === u[1] ? d = -2 : (d = c.lastIndex - u[2].length, a = u[1], c = void 0 === u[3] ? p : "\"" === u[3] ? $ : g) : c === $ || c === g ? c = p : c === _ || c === m ? c = v : (c = p, n = void 0);
+			const x = c === p && t[i + 1].startsWith("/>") ? " " : "";
+			l += c === v ? s + r : d >= 0 ? (e.push(a), s.slice(0, d) + h + s.slice(d) + o$1 + x) : s + o$1 + (-2 === d ? i : x);
+		}
+		return [V(t, l + (t[s] || "<?>") + (2 === i ? "</svg>" : 3 === i ? "</math>" : "")), e];
+	};
+	var S = class S {
+		constructor({ strings: t, _$litType$: i }, e) {
+			let r;
+			this.parts = [];
+			let l = 0, a = 0;
+			const u = t.length - 1, d = this.parts, [f, v] = N(t, i);
+			if (this.el = S.createElement(f, e), P.currentNode = this.el.content, 2 === i || 3 === i) {
+				const t = this.el.content.firstChild;
+				t.replaceWith(...t.childNodes);
+			}
+			for (; null !== (r = P.nextNode()) && d.length < u;) {
+				if (1 === r.nodeType) {
+					if (r.hasAttributes()) for (const t of r.getAttributeNames()) if (t.endsWith(h)) {
+						const i = v[a++], s = r.getAttribute(t).split(o$1), e = /([.?@])?(.*)/.exec(i);
+						d.push({
+							type: 1,
+							index: l,
+							name: e[2],
+							strings: s,
+							ctor: "." === e[1] ? I : "?" === e[1] ? L : "@" === e[1] ? z : H
+						}), r.removeAttribute(t);
+					} else t.startsWith(o$1) && (d.push({
+						type: 6,
+						index: l
+					}), r.removeAttribute(t));
+					if (y.test(r.tagName)) {
+						const t = r.textContent.split(o$1), i = t.length - 1;
+						if (i > 0) {
+							r.textContent = s$1 ? s$1.emptyScript : "";
+							for (let s = 0; s < i; s++) r.append(t[s], c()), P.nextNode(), d.push({
+								type: 2,
+								index: ++l
+							});
+							r.append(t[i], c());
+						}
+					}
+				} else if (8 === r.nodeType) if (r.data === n) d.push({
+					type: 2,
+					index: l
+				});
+				else {
+					let t = -1;
+					for (; -1 !== (t = r.data.indexOf(o$1, t + 1));) d.push({
+						type: 7,
+						index: l
+					}), t += o$1.length - 1;
+				}
+				l++;
+			}
+		}
+		static createElement(t, i) {
+			const s = l.createElement("template");
+			return s.innerHTML = t, s;
+		}
+	};
+	function M(t, i, s = t, e) {
+		if (i === E) return i;
+		let h = void 0 !== e ? s._$Co?.[e] : s._$Cl;
+		const o = a(i) ? void 0 : i._$litDirective$;
+		return h?.constructor !== o && (h?._$AO?.(!1), void 0 === o ? h = void 0 : (h = new o(t), h._$AT(t, s, e)), void 0 !== e ? (s._$Co ??= [])[e] = h : s._$Cl = h), void 0 !== h && (i = M(t, h._$AS(t, i.values), h, e)), i;
+	}
+	var R = class {
+		constructor(t, i) {
+			this._$AV = [], this._$AN = void 0, this._$AD = t, this._$AM = i;
+		}
+		get parentNode() {
+			return this._$AM.parentNode;
+		}
+		get _$AU() {
+			return this._$AM._$AU;
+		}
+		u(t) {
+			const { el: { content: i }, parts: s } = this._$AD, e = (t?.creationScope ?? l).importNode(i, !0);
+			P.currentNode = e;
+			let h = P.nextNode(), o = 0, n = 0, r = s[0];
+			for (; void 0 !== r;) {
+				if (o === r.index) {
+					let i;
+					2 === r.type ? i = new k(h, h.nextSibling, this, t) : 1 === r.type ? i = new r.ctor(h, r.name, r.strings, this, t) : 6 === r.type && (i = new Z(h, this, t)), this._$AV.push(i), r = s[++n];
+				}
+				o !== r?.index && (h = P.nextNode(), o++);
+			}
+			return P.currentNode = l, e;
+		}
+		p(t) {
+			let i = 0;
+			for (const s of this._$AV) void 0 !== s && (void 0 !== s.strings ? (s._$AI(t, s, i), i += s.strings.length - 2) : s._$AI(t[i])), i++;
+		}
+	};
+	var k = class k {
+		get _$AU() {
+			return this._$AM?._$AU ?? this._$Cv;
+		}
+		constructor(t, i, s, e) {
+			this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t, this._$AB = i, this._$AM = s, this.options = e, this._$Cv = e?.isConnected ?? !0;
+		}
+		get parentNode() {
+			let t = this._$AA.parentNode;
+			const i = this._$AM;
+			return void 0 !== i && 11 === t?.nodeType && (t = i.parentNode), t;
+		}
+		get startNode() {
+			return this._$AA;
+		}
+		get endNode() {
+			return this._$AB;
+		}
+		_$AI(t, i = this) {
+			t = M(this, t, i), a(t) ? t === A || null == t || "" === t ? (this._$AH !== A && this._$AR(), this._$AH = A) : t !== this._$AH && t !== E && this._(t) : void 0 !== t._$litType$ ? this.$(t) : void 0 !== t.nodeType ? this.T(t) : d(t) ? this.k(t) : this._(t);
+		}
+		O(t) {
+			return this._$AA.parentNode.insertBefore(t, this._$AB);
+		}
+		T(t) {
+			this._$AH !== t && (this._$AR(), this._$AH = this.O(t));
+		}
+		_(t) {
+			this._$AH !== A && a(this._$AH) ? this._$AA.nextSibling.data = t : this.T(l.createTextNode(t)), this._$AH = t;
+		}
+		$(t) {
+			const { values: i, _$litType$: s } = t, e = "number" == typeof s ? this._$AC(t) : (void 0 === s.el && (s.el = S.createElement(V(s.h, s.h[0]), this.options)), s);
+			if (this._$AH?._$AD === e) this._$AH.p(i);
+			else {
+				const t = new R(e, this), s = t.u(this.options);
+				t.p(i), this.T(s), this._$AH = t;
+			}
+		}
+		_$AC(t) {
+			let i = C.get(t.strings);
+			return void 0 === i && C.set(t.strings, i = new S(t)), i;
+		}
+		k(t) {
+			u(this._$AH) || (this._$AH = [], this._$AR());
+			const i = this._$AH;
+			let s, e = 0;
+			for (const h of t) e === i.length ? i.push(s = new k(this.O(c()), this.O(c()), this, this.options)) : s = i[e], s._$AI(h), e++;
+			e < i.length && (this._$AR(s && s._$AB.nextSibling, e), i.length = e);
+		}
+		_$AR(t = this._$AA.nextSibling, s) {
+			for (this._$AP?.(!1, !0, s); t !== this._$AB;) {
+				const s = i$1(t).nextSibling;
+				i$1(t).remove(), t = s;
+			}
+		}
+		setConnected(t) {
+			void 0 === this._$AM && (this._$Cv = t, this._$AP?.(t));
+		}
+	};
+	var H = class {
+		get tagName() {
+			return this.element.tagName;
+		}
+		get _$AU() {
+			return this._$AM._$AU;
+		}
+		constructor(t, i, s, e, h) {
+			this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t, this.name = i, this._$AM = e, this.options = h, s.length > 2 || "" !== s[0] || "" !== s[1] ? (this._$AH = Array(s.length - 1).fill(new String()), this.strings = s) : this._$AH = A;
+		}
+		_$AI(t, i = this, s, e) {
+			const h = this.strings;
+			let o = !1;
+			if (void 0 === h) t = M(this, t, i, 0), o = !a(t) || t !== this._$AH && t !== E, o && (this._$AH = t);
+			else {
+				const e = t;
+				let n, r;
+				for (t = h[0], n = 0; n < h.length - 1; n++) r = M(this, e[s + n], i, n), r === E && (r = this._$AH[n]), o ||= !a(r) || r !== this._$AH[n], r === A ? t = A : t !== A && (t += (r ?? "") + h[n + 1]), this._$AH[n] = r;
+			}
+			o && !e && this.j(t);
+		}
+		j(t) {
+			t === A ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t ?? "");
+		}
+	};
+	var I = class extends H {
+		constructor() {
+			super(...arguments), this.type = 3;
+		}
+		j(t) {
+			this.element[this.name] = t === A ? void 0 : t;
+		}
+	};
+	var L = class extends H {
+		constructor() {
+			super(...arguments), this.type = 4;
+		}
+		j(t) {
+			this.element.toggleAttribute(this.name, !!t && t !== A);
+		}
+	};
+	var z = class extends H {
+		constructor(t, i, s, e, h) {
+			super(t, i, s, e, h), this.type = 5;
+		}
+		_$AI(t, i = this) {
+			if ((t = M(this, t, i, 0) ?? A) === E) return;
+			const s = this._$AH, e = t === A && s !== A || t.capture !== s.capture || t.once !== s.once || t.passive !== s.passive, h = t !== A && (s === A || e);
+			e && this.element.removeEventListener(this.name, this, s), h && this.element.addEventListener(this.name, this, t), this._$AH = t;
+		}
+		handleEvent(t) {
+			"function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t) : this._$AH.handleEvent(t);
+		}
+	};
+	var Z = class {
+		constructor(t, i, s) {
+			this.element = t, this.type = 6, this._$AN = void 0, this._$AM = i, this.options = s;
+		}
+		get _$AU() {
+			return this._$AM._$AU;
+		}
+		_$AI(t) {
+			M(this, t);
+		}
+	};
+	var B = t.litHtmlPolyfillSupport;
+	B?.(S, k), (t.litHtmlVersions ??= []).push("3.3.3");
+	var D = (t, i, s) => {
+		const e = s?.renderBefore ?? i;
+		let h = e._$litPart$;
+		if (void 0 === h) {
+			const t = s?.renderBefore ?? null;
+			e._$litPart$ = h = new k(i.insertBefore(c(), t), t, void 0, s ?? {});
+		}
+		return h._$AI(t), h;
+	};
+	var s = globalThis;
+	var i = class extends y$1 {
+		constructor() {
+			super(...arguments), this.renderOptions = { host: this }, this._$Do = void 0;
+		}
+		createRenderRoot() {
+			const t = super.createRenderRoot();
+			return this.renderOptions.renderBefore ??= t.firstChild, t;
+		}
+		update(t) {
+			const r = this.render();
+			this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t), this._$Do = D(r, this.renderRoot, this.renderOptions);
+		}
+		connectedCallback() {
+			super.connectedCallback(), this._$Do?.setConnected(!0);
+		}
+		disconnectedCallback() {
+			super.disconnectedCallback(), this._$Do?.setConnected(!1);
+		}
+		render() {
+			return E;
+		}
+	};
+	i._$litElement$ = !0, i["finalized"] = !0, s.litElementHydrateSupport?.({ LitElement: i });
+	var o = s.litElementPolyfillSupport;
+	o?.({ LitElement: i });
+	(s.litElementVersions ??= []).push("4.2.2");
+	var TmTile = class extends i {
+		static properties = {
+			label: { type: String },
+			value: { type: String },
+			opts: { type: Object },
+			chip: { type: String }
+		};
+		constructor() {
+			super();
+			this.label = "";
+			this.value = "";
+			this.opts = {};
+			this.chip = "";
+		}
+		createRenderRoot() {
+			return this;
+		}
+		hooks() {
+			return window.__tmCore?.hooks || {};
+		}
+		card() {
+			return this.querySelector("[data-tm-card]");
+		}
+		labelSpan() {
+			return this.querySelector("[data-tm-label]");
+		}
+		onMouseDown() {
+			const o = this.opts || {};
+			if (o.click || o.delegate || o.nav) this.hooks().hlTile?.(this.card(), false);
+		}
+		onClick() {
+			const o = this.opts || {};
+			const h = this.hooks();
+			if (o.nav) {
+				if (!h.goWtsVitals?.()) {
+					const ls = this.labelSpan();
+					if (ls) {
+						if (!ls.getAttribute("data-tm-orig")) ls.setAttribute("data-tm-orig", ls.textContent || "");
+						ls.textContent = "Not found";
+						setTimeout(() => {
+							const orig = ls.getAttribute("data-tm-orig");
+							if (orig) {
+								ls.textContent = orig;
+								ls.removeAttribute("data-tm-orig");
+							}
+						}, 1400);
+					}
+				}
+				return;
+			}
+			if (o.delegate === "meds") {
+				const p = h.medsPanel?.();
+				if (p && p.btn) {
+					h.fireClick?.(p.btn);
+					h.flashLabel?.(this.labelSpan(), this.card());
+				}
+				return;
+			}
+			if (o.click) {
+				h.queueCopy?.(o.click.label, o.click.value);
+				h.flashLabel?.(this.labelSpan(), this.card());
+			}
+		}
+		render() {
+			const o = this.opts || {};
+			const clickable = !!(o.click || o.delegate || o.nav);
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.wide ? "flex:1 1 520px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
+			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
+			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
+			let valuePart;
+			if (!this.value) valuePart = b`<div style=${"margin-top:9px;" + fontCss + "color:#b6c2d2;"}>—</div>`;
+			else if (o.cols) {
+				const lines = String(this.value).split("\n");
+				const ncols = Math.max(1, Math.ceil(lines.length / 4));
+				const per = Math.ceil(lines.length / ncols);
+				const cols = [];
+				for (let ci = 0; ci < ncols; ci++) cols.push(lines.slice(ci * per, (ci + 1) * per));
+				valuePart = b`<div data-medsfit="1" style="margin-top:9px;display:flex;gap:26px;min-width:0;">${cols.map((slice) => b`<div style="max-width:300px;flex:1 1 0;min-width:0;">${slice.map((ln) => b`<div class="tmMedLine" style=${fontCss + "white-space:nowrap;"}>${ln}</div>`)}</div>`)}</div>`;
+			} else valuePart = b`<div ?data-fit=${!!o.fit} style=${"margin-top:9px;" + fontCss + (o.multi ? "white-space:pre-line;" : "") + (o.nowrap ? "white-space:nowrap;" : "")}>${this.value}</div>`;
+			return b`<div data-tm-card style=${cardCss} title=${clickable ? "Click to copy" : ""} @mousedown=${this.onMouseDown} @click=${this.onClick}>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;">
+        <span data-tm-label style=${labelCss}>${this.label}</span>
+        ${this.chip ? b`<span style=${chipCss}>${this.chip}</span>` : ""}
+      </div>
+      ${valuePart}
+    </div>`;
+		}
+	};
+	customElements.define("tm-tile", TmTile);
+	(function() {
+		var PSYCH = /\b(benztropine|cogentin|trihexyphenidyl|artane|procyclidine|biperiden|amantadine|valbenazine|ingrezza|deutetrabenazine|austedo|tetrabenazine|xenazine|donepezil|aricept|memantine|namenda|namzaric|galantamine|razadyne|rivastigmine|exelon|olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|aripiprazole|abilify|ziprasidone|geodon|haloperidol|haldol|clozapine|clozaril|lurasidone|latuda|paliperidone|invega|asenapine|saphris|brexpiprazole|rexulti|cariprazine|vraylar|lumateperone|caplyta|iloperidone|chlorpromazine|fluphenazine|perphenazine|thioridazine|thiothixene|loxapine|trifluoperazine|pimavanserin|nuplazid|sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|viibryd|vortioxetine|trintellix|amitriptyline|nortriptyline|pamelor|imipramine|desipramine|doxepin|clomipramine|protriptyline|trimipramine|amoxapine|maprotiline|phenelzine|tranylcypromine|isocarboxazid|selegiline|emsam|lithium|lamotrigine|lamictal|valpro|divalproex|depakote|carbamazepine|tegretol|oxcarbazepine|trileptal|buspirone|buspar|hydroxyzine|lorazepam|ativan|alprazolam|xanax|clonazepam|klonopin|diazepam|valium|temazepam|oxazepam|chlordiazepoxide|clorazepate|zolpidem|ambien|eszopiclone|lunesta|zaleplon|ramelteon|suvorexant|lemborexant|nuedexta)/i;
+		var TIER2_COUNTED = /\b(melatonin|methylphenidate|ritalin|concerta|metadate|methylin|daytrana|quillivant|quillichew|jornay|dexmethylphenidate|focalin|dextroamphetamine|dexedrine|procentra|zenzedi|amphetamine|adderall|lisdexamfetamine|vyvanse|methamphetamine|desoxyn)/i;
+		var TIER2_UNCOUNTED = /\b(naltrexone|vivitrol|revia|buprenorphine|subutex|sublocade|brixadi|suboxone|zubsolv|bunavail|methadone|acamprosate|campral|disulfiram|antabuse|varenicline|chantix|lofexidine|lucemyra)/i;
+		var PAIN = /\b(oxycodone|oxycontin|percocet|hydrocodone|vicodin|norco|morphine|ms contin|hydromorphone|dilaudid|fentanyl|codeine|tramadol|ultram|meperidine|demerol|tapentadol|nucynta|ibuprofen|advil|motrin|naproxen|aleve|meloxicam|celecoxib|celebrex|diclofenac|indomethacin|ketorolac|toradol|cyclobenzaprine|flexeril|methocarbamol|robaxin|baclofen|tizanidine|zanaflex|carisoprodol|soma|gabapentin|neurontin|pregabalin|lyrica)/i;
+		var UTI_TREATMENT = /\b(nitrofurantoin|macrobid|macrodantin|fosfomycin|monurol)\b/i;
+		var UTI_SYMPTOM = /\b(phenazopyridine|pyridium)\b/i;
+		var UTI_POSSIBLE = /\b(trimethoprim|sulfamethoxazole|bactrim|septra|ciprofloxacin|cipro|levofloxacin|levaquin|cephalexin|keflex|amoxicillin[\s-]*clavulanate|augmentin)\b/i;
+		var UTI_PREVENTION = /\b(methenamine|hiprex|urex)\b/i;
+		var SSRI_SNRI = /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|vilazodone|viibryd|vortioxetine|trintellix)/i;
+		var SSRI_ONLY = /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine)/i;
+		var ANTIDEPRESSANT = /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|viibryd|vortioxetine|trintellix|amitriptyline|nortriptyline|pamelor|imipramine|desipramine|doxepin|clomipramine|protriptyline|trimipramine|amoxapine|maprotiline)/i;
+		var MAOI = /\b(phenelzine|nardil|tranylcypromine|parnate|isocarboxazid|marplan|selegiline|emsam|rasagiline|azilect)/i;
+		var SEROTONERGIC = /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|vilazodone|viibryd|vortioxetine|trintellix|trazodone|clomipramine|tramadol|ultram|sumatriptan|rizatriptan|zolmitriptan|naratriptan|almotriptan|frovatriptan|eletriptan|linezolid|lithium|buspirone|buspar|dextromethorphan|nuedexta)/i;
+		var ANTICOAG_NSAID = /\b(warfarin|coumadin|apixaban|eliquis|rivaroxaban|xarelto|dabigatran|pradaxa|edoxaban|savaysa|heparin|enoxaparin|lovenox|aspirin|clopidogrel|plavix|ibuprofen|advil|motrin|naproxen|aleve|meloxicam|celecoxib|celebrex|diclofenac|indomethacin|ketorolac|toradol)/i;
+		var QTC = /\b(citalopram|celexa|ziprasidone|geodon|haloperidol|haldol|quetiapine|seroquel|methadone|ondansetron|zofran|azithromycin|erythromycin|levofloxacin|ciprofloxacin|moxifloxacin|amiodarone|sotalol)/i;
+		var BENZO = /\b(lorazepam|ativan|alprazolam|xanax|clonazepam|klonopin|diazepam|valium|temazepam|oxazepam|chlordiazepoxide|clorazepate)/i;
+		var OPIOID = /\b(oxycodone|oxycontin|percocet|hydrocodone|vicodin|norco|morphine|ms contin|hydromorphone|dilaudid|fentanyl|codeine|tramadol|ultram|methadone|buprenorphine|meperidine|demerol|tapentadol|nucynta)/i;
+		var ZDRUG = /\b(zolpidem|ambien|eszopiclone|lunesta|zaleplon)/i;
+		var ANTIPSYCHOTIC = /\b(olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|aripiprazole|abilify|ziprasidone|geodon|haloperidol|haldol|clozapine|clozaril|lurasidone|latuda|paliperidone|invega|asenapine|saphris|brexpiprazole|rexulti|cariprazine|vraylar|lumateperone|caplyta|iloperidone|chlorpromazine|fluphenazine|perphenazine|thioridazine|thiothixene|loxapine|trifluoperazine|pimavanserin|nuplazid)/i;
+		var ANTICHOLINERGIC = /\b(benztropine|cogentin|trihexyphenidyl|artane|diphenhydramine|benadryl)/i;
+		var ORTHOSTATIC = /\b(trazodone|amitriptyline|nortriptyline|pamelor|imipramine|desipramine|doxepin|clomipramine|protriptyline|trimipramine|amoxapine|maprotiline)/i;
+		var FALL_RISK = new RegExp(BENZO.source + "|" + ZDRUG.source + "|" + ANTIPSYCHOTIC.source + "|" + ANTICHOLINERGIC.source + "|" + ORTHOSTATIC.source + "|" + OPIOID.source, "i");
+		function getPatientAge() {
+			try {
+				var docs = [];
+				try {
+					if (window.top && window.top.document) docs.push(window.top.document);
+				} catch (e) {}
+				if (docs.indexOf(document) === -1) docs.push(document);
+				for (var d = 0; d < docs.length; d++) {
+					var text = docs[d].body && docs[d].body.textContent || "";
+					var m = text.match(/\((\d{1,3})\s*\/\s*(Female|Male|F|M)\)/i);
+					if (m) return parseInt(m[1], 10);
+					m = text.match(/\bAge\s*:\s*(\d{1,3})\b/i);
+					if (m) return parseInt(m[1], 10);
+				}
+			} catch (e2) {}
+			return null;
+		}
+		var BEERS_ANTICHOLINERGIC = /\b(diphenhydramine|benadryl|oxybutynin|ditropan|tolterodine|detrol|solifenacin|vesicare|darifenacin|fesoterodine|trospium|scopolamine|atropine|dicyclomine|bentyl|hyoscyamine|levsin|meclizine|antivert|promethazine|phenergan|hydroxyzine|vistaril|atarax|doxepin|sinequan|amitriptyline|elavil|imipramine|tofranil|clomipramine|anafranil|paroxetine|paxil|olanzapine|zyprexa|quetiapine|seroquel|benztropine|cogentin|trihexyphenidyl|artane)\b/i;
+		var BEERS_BENZO = BENZO;
+		var BEERS_ZDRUG = ZDRUG;
+		var BEERS_NSAID = /\b(ibuprofen|advil|motrin|naproxen|aleve|meloxicam|mobic|celecoxib|celebrex|diclofenac|voltaren|indomethacin|indocin|ketorolac|toradol|piroxicam|nabumetone)\b/i;
+		var LAB_MONITORING = [
+			{
+				rx: /\blithium\b/i,
+				labs: "Lithium level q3-6mo (5-7 days after start/dose change, then q2-3mo x2), BMP/creatinine q3-6mo with level, TSH q6-12mo, calcium annually"
+			},
+			{
+				rx: /\b(valproate|divalproex|depakote|depakene)\b/i,
+				labs: "Valproate level 3-5 days after steady state then q6-12mo, LFTs baseline then q6-12mo, CBC with platelets baseline then q6-12mo"
+			},
+			{
+				rx: /\bcarbamazepine|tegretol\b/i,
+				labs: "Carbamazepine level after steady state then q6-12mo, CBC baseline + 2 weeks then q3mo, LFTs baseline then q6-12mo, sodium baseline then periodically"
+			},
+			{
+				rx: /\boxcarbazepine|trileptal\b/i,
+				labs: "Sodium baseline + 2 weeks then periodically (SIADH risk)"
+			},
+			{
+				rx: /\bclozapine|clozaril\b/i,
+				labs: "ANC weekly x6mo, then q2weeks x6mo, then monthly (REMS protocol)"
+			},
+			{
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|haloperidol|haldol|lurasidone|latuda|asenapine|saphris|brexpiprazole|rexulti|cariprazine|vraylar|lumateperone|caplyta|iloperidone|fanapt|chlorpromazine|thorazine|fluphenazine|prolixin|perphenazine|trilafon)\b/i,
+				labs: "Weight/BMI baseline + monthly x3 then quarterly, fasting glucose/HbA1c baseline + 12 weeks then annually, lipid panel baseline + 12 weeks then annually"
+			},
+			{
+				rx: /\b(risperidone|risperdal|paliperidone|invega|haloperidol|haldol|fluphenazine|prolixin)\b/i,
+				labs: "Prolactin only if galactorrhea/amenorrhea"
+			},
+			{
+				rx: /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|luvox|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|levomilnacipran|fetzima|vortioxetine|trintellix|vilazodone|viibryd)\b/i,
+				labs: "Sodium baseline in elderly/high-risk then if symptoms (SIADH/hyponatremia)"
+			},
+			{
+				rx: /\bmirtazapine|remeron\b/i,
+				labs: "Weight baseline then periodically, lipid panel + fasting glucose baseline then annually if weight gain"
+			},
+			{
+				rx: /\b(amitriptyline|elavil|nortriptyline|pamelor|imipramine|tofranil|desipramine|norpramin|doxepin|sinequan|clomipramine|anafranil|protriptyline|vivactil|trimipramine|surmontil)\b/i,
+				labs: "EKG baseline + after dose changes, sodium baseline in elderly then if symptoms"
+			},
+			{
+				rx: /\bbupropion|wellbutrin\b/i,
+				labs: "Blood pressure baseline then periodically"
+			},
+			{
+				rx: /\btrazodone|desyrel\b/i,
+				labs: "Orthostatic vitals (orthostasis risk, especially elderly); no routine labs"
+			},
+			{
+				rx: /\b(memantine|namenda)\b/i,
+				labs: "No routine labs; renal dose adjustment in CKD; monitor cognition"
+			},
+			{
+				rx: /\b(melatonin)\b/i,
+				labs: "No labs required"
+			},
+			{
+				rx: /\blamotrigine|lamictal\b/i,
+				labs: "No routine labs; monitor skin for rash"
+			},
+			{
+				rx: /\b(metformin|glucophage)\b/i,
+				labs: "B12 annually, BMP q6-12mo (lactic acidosis risk in CKD), HbA1c q3-6mo"
+			},
+			{
+				rx: /\b(insulin)\b/i,
+				labs: "Glucose, HbA1c q3-6mo; monitor hypoglycemia (sweating, confusion, tremor)"
+			},
+			{
+				rx: /\b(linagliptin|tradjenta|sitagliptin|januvia)\b/i,
+				labs: "HbA1c q3-6mo; monitor pancreatitis symptoms (abdominal pain)"
+			},
+			{
+				rx: /\b(glipizide|glucotrol|glyburide|diabeta|glimepiride|amaryl)\b/i,
+				labs: "Glucose, HbA1c q3-6mo; monitor hypoglycemia"
+			},
+			{
+				rx: /\b(lisinopril|zestril|enalapril|vasotec|ramipril|altace)\b/i,
+				labs: "BMP (creatinine/K) 1-2 weeks after start then q6-12mo, BP; monitor cough, angioedema"
+			},
+			{
+				rx: /\b(losartan|cozaar|valsartan|diovan|olmesartan|benicar)\b/i,
+				labs: "BMP (creatinine/K) 1-2 weeks after start then q6-12mo, BP"
+			},
+			{
+				rx: /\b(metoprolol|lopressor|toprol|atenolol|tenormin|carvedilol|coreg)\b/i,
+				labs: "HR + BP; monitor bradycardia, fatigue, dizziness"
+			},
+			{
+				rx: /\b(amlodipine|norvasc|diltiazem|cardizem|verapamil|calan)\b/i,
+				labs: "BP; monitor edema, headache, flushing"
+			},
+			{
+				rx: /\b(furosemide|lasix|hydrochlorothiazide|hctz|bumetanide|bumex|torsemide|demadex)\b/i,
+				labs: "BMP (K, Mg, creatinine) 1-2 weeks after start then q3-6mo, weight, orthostatics; monitor dehydration, cramps"
+			},
+			{
+				rx: /\b(digoxin|lanoxin)\b/i,
+				labs: "Digoxin level 7-14 days after start then q6-12mo, BMP (K), EKG; monitor nausea, vision changes, arrhythmia (toxicity)"
+			},
+			{
+				rx: /\b(warfarin|coumadin)\b/i,
+				labs: "INR q4 weeks (stable) or per protocol; monitor bleeding, bruising"
+			},
+			{
+				rx: /\b(apixaban|eliquis|rivaroxaban|xarelto|dabigatran|pradaxa)\b/i,
+				labs: "CBC + BMP annually; monitor bleeding"
+			},
+			{
+				rx: /\b(omeprazole|prilosec|pantoprazole|protonix|esomeprazole|nexium|lansoprazole|prevacid)\b/i,
+				labs: "B12 + magnesium annually if long-term; monitor bone fracture risk"
+			},
+			{
+				rx: /\b(levothyroxine|synthroid)\b/i,
+				labs: "TSH q6-12mo (6-8 weeks after dose change)"
+			},
+			{
+				rx: /\b(ferrous sulfate|iron)\b/i,
+				labs: "CBC, ferritin q3-6mo until repleted; monitor constipation, dark stools"
+			},
+			{
+				rx: /\b(tamsulosin|flomax)\b/i,
+				labs: "Orthostatic vitals, BP; monitor dizziness, especially first dose"
+			},
+			{
+				rx: /\b(alendronate|fosamax|ibandronate|boniva)\b/i,
+				labs: "Dental exam baseline; monitor jaw pain, dysphagia, atypical fractures"
+			},
+			{
+				rx: /\b(sennosides|senna|docusate|colace|polyethylene glycol|miralax|lactulose)\b/i,
+				labs: "Bowel movements; BMP if chronic use (electrolytes)"
+			}
+		];
+		var BLACK_BOX = [
+			{
+				rx: /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|luvox|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|levomilnacipran|fetzima|vortioxetine|trintellix|vilazodone|viibryd|mirtazapine|remeron|bupropion|wellbutrin|amitriptyline|elavil|nortriptyline|pamelor|imipramine|tofranil|desipramine|norpramin|doxepin|sinequan|clomipramine|anafranil)\b/i,
+				text: "Suicidality: increased risk of suicidal thoughts/behaviors in children, adolescents, and young adults"
+			},
+			{
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|haloperidol|haldol|lurasidone|latuda|asenapine|saphris|brexpiprazole|rexulti|cariprazine|vraylar|lumateperone|caplyta|iloperidone|fanapt|chlorpromazine|thorazine|fluphenazine|prolixin|perphenazine|trilafon|clozapine|clozaril)\b/i,
+				text: "Increased mortality in elderly patients with dementia-related psychosis"
+			},
+			{
+				rx: /\b(clozapine|clozaril)\b/i,
+				text: "Agranulocytosis, myocarditis/cardiomyopathy, severe constipation leading to ileus"
+			},
+			{
+				rx: /\b(valproate|divalproex|depakote|depakene)\b/i,
+				text: "Hepatotoxicity (fatal, esp. children <2), pancreatitis, teratogenicity (neural tube defects)"
+			},
+			{
+				rx: /\b(carbamazepine|tegretol)\b/i,
+				text: "Aplastic anemia/agranulocytosis, serious skin reactions (SJS/TEN)"
+			},
+			{
+				rx: /\blithium\b/i,
+				text: "Lithium toxicity (narrow therapeutic index); monitor levels closely"
+			}
+		];
+		var CONDITION_WARNINGS = [
+			{
+				dx: /^H40/,
+				dxName: "Glaucoma",
+				rx: /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|luvox)\b/i,
+				text: "SSRIs: mild mydriasis risk — monitor eye pain, blurred vision, halos, headache, nausea (angle closure symptoms)"
+			},
+			{
+				dx: /^H40/,
+				dxName: "Glaucoma",
+				rx: /\b(venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|levomilnacipran|fetzima)\b/i,
+				text: "SNRIs: mydriasis risk — monitor eye pain, blurred vision, halos"
+			},
+			{
+				dx: /^H40/,
+				dxName: "Glaucoma",
+				rx: /\b(amitriptyline|elavil|nortriptyline|pamelor|imipramine|tofranil|desipramine|norpramin|doxepin|sinequan|clomipramine|anafranil|protriptyline|vivactil|trimipramine|surmontil)\b/i,
+				text: "TCAs: strong anticholinergic — high angle-closure risk; monitor eye pain, redness, blurred vision, halos, headache, nausea/vomiting"
+			},
+			{
+				dx: /^H40/,
+				dxName: "Glaucoma",
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|chlorpromazine|thorazine|thioridazine|mellaril)\b/i,
+				text: "Anticholinergic antipsychotics: angle-closure risk; monitor eye pain, blurred vision, halos"
+			},
+			{
+				dx: /^H40/,
+				dxName: "Glaucoma",
+				rx: /\b(topiramate|topamax)\b/i,
+				text: "Topiramate: acute angle-closure risk — monitor sudden eye pain, blurred vision, halos; urgent ophthalmology if symptoms"
+			},
+			{
+				dx: /^H40/,
+				dxName: "Glaucoma",
+				rx: /\b(lithium|valproate|divalproex|depakote|carbamazepine|tegretol|lamotrigine|lamictal)\b/i,
+				text: "Mood stabilizers: monitor intraocular pressure; report eye pain, blurred vision"
+			},
+			{
+				dx: /^I50/,
+				dxName: "Heart failure",
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|clozapine|clozaril|haloperidol|haldol)\b/i,
+				text: "Antipsychotics: fluid retention, orthostasis — monitor daily weight, edema, SOB, crackles, orthostatic vitals"
+			},
+			{
+				dx: /^I50/,
+				dxName: "Heart failure",
+				rx: /\b(amitriptyline|elavil|nortriptyline|pamelor|imipramine|tofranil|doxepin|sinequan|clomipramine|anafranil)\b/i,
+				text: "TCAs: arrhythmia, orthostasis, worsened HF — monitor EKG, orthostatics, edema, SOB; consider alternative"
+			},
+			{
+				dx: /^I50/,
+				dxName: "Heart failure",
+				rx: /\b(citalopram|celexa|escitalopram|lexapro)\b/i,
+				text: "QT prolongation risk in HF — monitor EKG, palpitations, syncope"
+			},
+			{
+				dx: /^N18|^N19/,
+				dxName: "Kidney disease (CKD)",
+				rx: /\blithium\b/i,
+				text: "Lithium cleared renally — reduce dose for eGFR; monitor lithium level, creatinine/eGFR, polyuria, thirst, tremor, confusion (toxicity)"
+			},
+			{
+				dx: /^N18|^N19/,
+				dxName: "Kidney disease (CKD)",
+				rx: /\b(gabapentin|neurontin|pregabalin|lyrica)\b/i,
+				text: "Renally cleared — reduce dose for eGFR; monitor sedation, dizziness, edema"
+			},
+			{
+				dx: /^N18|^N19/,
+				dxName: "Kidney disease (CKD)",
+				rx: /\b(topiramate|topamax)\b/i,
+				text: "Renally cleared — reduce dose; monitor kidney stones, metabolic acidosis"
+			},
+			{
+				dx: /^N18|^N19/,
+				dxName: "Kidney disease (CKD)",
+				rx: /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|luvox|venlafaxine|effexor|duloxetine|cymbalta)\b/i,
+				text: "SSRIs/SNRIs: hyponatremia risk higher in CKD/elderly — monitor sodium, confusion, falls"
+			},
+			{
+				dx: /^K7/,
+				dxName: "Liver disease",
+				rx: /\b(valproate|divalproex|depakote|depakene)\b/i,
+				text: "Valproate hepatotoxic — avoid in liver disease; monitor LFTs, ammonia, lethargy, confusion, jaundice, abdominal pain"
+			},
+			{
+				dx: /^K7/,
+				dxName: "Liver disease",
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|aripiprazole|abilify|duloxetine|cymbalta|venlafaxine|effexor|mirtazapine|remeron)\b/i,
+				text: "Hepatically metabolized — consider dose reduction; monitor LFTs, fatigue, jaundice, confusion"
+			},
+			{
+				dx: /^K7/,
+				dxName: "Liver disease",
+				rx: /\b(carbamazepine|tegretol)\b/i,
+				text: "Carbamazepine hepatotoxic — monitor LFTs; watch fatigue, jaundice, abdominal pain"
+			},
+			{
+				dx: /^E1[01]/,
+				dxName: "Diabetes",
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|haloperidol|haldol|lurasidone|latuda|asenapine|saphris|brexpiprazole|rexulti|cariprazine|vraylar|lumateperone|caplyta|iloperidone|fanapt|chlorpromazine|thorazine|fluphenazine|prolixin|perphenazine|trilafon|clozapine|clozaril)\b/i,
+				text: "Antipsychotics worsen glycemic control — monitor fasting glucose/HbA1c, weight, polyuria, polydipsia"
+			},
+			{
+				dx: /^E1[01]/,
+				dxName: "Diabetes",
+				rx: /\b(mirtazapine|remeron|paroxetine|paxil)\b/i,
+				text: "Weight gain risk — monitor weight, glucose, increased appetite"
+			},
+			{
+				dx: /^G40/,
+				dxName: "Seizure disorder",
+				rx: /\b(bupropion|wellbutrin)\b/i,
+				text: "Bupropion lowers seizure threshold — CONTRAINDICATED; monitor seizure frequency"
+			},
+			{
+				dx: /^G40/,
+				dxName: "Seizure disorder",
+				rx: /\b(clozapine|clozaril)\b/i,
+				text: "Clozapine dose-dependent seizure risk — monitor seizure frequency"
+			},
+			{
+				dx: /^G40/,
+				dxName: "Seizure disorder",
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|chlorpromazine|thorazine)\b/i,
+				text: "Lowers seizure threshold — monitor seizure frequency"
+			},
+			{
+				dx: /^G40/,
+				dxName: "Seizure disorder",
+				rx: /\b(amitriptyline|elavil|imipramine|tofranil|clomipramine|anafranil)\b/i,
+				text: "TCAs lower seizure threshold — monitor seizure frequency; consider SSRI instead"
+			},
+			{
+				dx: /^G20/,
+				dxName: "Parkinson's",
+				rx: /\b(haloperidol|haldol|risperidone|risperdal|paliperidone|invega|olanzapine|zyprexa|fluphenazine|prolixin|chlorpromazine|thorazine|perphenazine|trilafon)\b/i,
+				text: "Dopamine blockade worsens parkinsonism — monitor rigidity, tremor, bradykinesia, gait; prefer quetiapine/clozapine"
+			},
+			{
+				dx: /^F03|^G30|^G31/,
+				dxName: "Dementia",
+				rx: /\b(olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|haloperidol|haldol|ziprasidone|geodon)\b/i,
+				text: "Antipsychotic in dementia: increased mortality/stroke — document indication, lowest dose/duration; monitor sedation, falls, EPS"
+			},
+			{
+				dx: /^F03|^G30|^G31/,
+				dxName: "Dementia",
+				rx: /\b(oxybutynin|ditropan|tolterodine|detrol|solifenacin|vesicare|amitriptyline|elavil|paroxetine|paxil|diphenhydramine|benadryl)\b/i,
+				text: "Anticholinergics worsen cognition — monitor confusion, memory, urinary retention, constipation"
+			},
+			{
+				dx: /^I10/,
+				dxName: "Hypertension",
+				rx: /\b(venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|levomilnacipran|fetzima)\b/i,
+				text: "SNRIs raise BP dose-dependently — monitor BP, headache, chest pain"
+			},
+			{
+				dx: /^I10/,
+				dxName: "Hypertension",
+				rx: /\b(bupropion|wellbutrin)\b/i,
+				text: "Bupropion may raise BP — monitor BP, headache"
+			},
+			{
+				dx: /^I95/,
+				dxName: "Hypotension",
+				rx: /\b(quetiapine|seroquel|clozapine|clozaril|risperidone|risperdal|prazosin|minipress|trazodone|desyrel)\b/i,
+				text: "Orthostasis risk — monitor orthostatic vitals, dizziness, falls, syncope"
+			},
+			{
+				dx: /^I95/,
+				dxName: "Hypotension",
+				rx: /\b(amitriptyline|elavil|nortriptyline|pamelor|imipramine|tofranil|doxepin|sinequan)\b/i,
+				text: "TCAs: orthostasis — monitor orthostatics, dizziness, falls"
+			},
+			{
+				dx: /^I45\.8|^I49/,
+				dxName: "Cardiac conduction/QT risk",
+				rx: /\b(citalopram|celexa|escitalopram|lexapro)\b/i,
+				text: "QT prolongation — monitor EKG; watch syncope, palpitations"
+			},
+			{
+				dx: /^I45\.8|^I49/,
+				dxName: "Cardiac conduction/QT risk",
+				rx: /\b(ziprasidone|geodon|haloperidol|haldol|thioridazine|mellaril|chlorpromazine|thorazine)\b/i,
+				text: "QT prolongation — monitor EKG; watch syncope, palpitations"
+			},
+			{
+				dx: /^D6[89]|^Z79\.01/,
+				dxName: "Bleeding risk/anticoagulated",
+				rx: /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|luvox|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta)\b/i,
+				text: "SSRIs/SNRIs impair platelet function — monitor bruising, petechiae, GI bleed, Hgb"
+			},
+			{
+				dx: /^E87\.1/,
+				dxName: "Hyponatremia",
+				rx: /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|luvox|venlafaxine|effexor|duloxetine|cymbalta)\b/i,
+				text: "SIADH risk — monitor sodium, confusion, lethargy, falls; hold if Na <130"
+			},
+			{
+				dx: /^E87\.1/,
+				dxName: "Hyponatremia",
+				rx: /\b(carbamazepine|tegretol|oxcarbazepine|trileptal)\b/i,
+				text: "SIADH risk — monitor sodium, confusion"
+			},
+			{
+				dx: /^E0[03]/,
+				dxName: "Thyroid disorder",
+				rx: /\blithium\b/i,
+				text: "Lithium causes hypothyroidism — monitor TSH, fatigue, cold intolerance, weight gain"
+			},
+			{
+				dx: /^N40/,
+				dxName: "BPH",
+				rx: /\b(amitriptyline|elavil|nortriptyline|pamelor|imipramine|tofranil|olanzapine|zyprexa|quetiapine|seroquel|paroxetine|paxil)\b/i,
+				text: "Anticholinergic urinary retention — monitor hesitancy, weak stream, retention, UTIs"
+			},
+			{
+				dx: /^K59\.0/,
+				dxName: "Constipation",
+				rx: /\b(clozapine|clozaril)\b/i,
+				text: "Clozapine: severe constipation/ileus — monitor bowel movements daily; prophylactic laxatives"
+			},
+			{
+				dx: /^G47\.3/,
+				dxName: "Sleep apnea",
+				rx: /\b(clonazepam|klonopin|lorazepam|ativan|alprazolam|xanax|diazepam|valium|zolpidem|ambien|eszopiclone|lunesta)\b/i,
+				text: "Sedatives worsen apnea — monitor daytime sleepiness, morning headache, O2 desats"
+			},
+			{
+				dx: /^J4[34]/,
+				dxName: "COPD",
+				rx: /\b(clonazepam|klonopin|lorazepam|ativan|alprazolam|xanax|diazepam|valium)\b/i,
+				text: "Benzos: respiratory depression in COPD — monitor O2 sats, respiratory rate, sedation"
+			},
+			{
+				dx: /^F31/,
+				dxName: "Bipolar disorder",
+				rx: /\b(sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|venlafaxine|effexor|duloxetine|cymbalta|bupropion|wellbutrin)\b/i,
+				text: "Antidepressant alone may induce mania — monitor decreased sleep, pressured speech, impulsivity, grandiosity; ensure mood stabilizer co-prescribed"
+			}
+		];
+		var LITHIUM_RE = /\blithium\b/i;
+		var VALPROATE_RE = /\b(valpro|divalproex|depakote)/i;
+		var SEIZURE_RISK_DRUGS = /\b(bupropion|wellbutrin|clozapine|clozaril)/i;
+		var GLAUCOMA_RISK_DRUGS = new RegExp(ANTICHOLINERGIC.source + "|" + ORTHOSTATIC.source, "i");
+		var SEDATING_DRUGS = new RegExp(BENZO.source + "|" + ZDRUG.source + "|" + OPIOID.source, "i");
+		var CKD_RE = /^(N18|N19)/;
+		var LIVER_RE = /^(K7[0-7])/;
+		var SEIZURE_DX_RE = /^(G40)/;
+		var DIABETES_RE = /^(E10|E11)/;
+		var GLAUCOMA_DX_RE = /^(H402)/;
+		var SLEEP_APNEA_RE = /^(G473)/;
+		var PARKINSONS_RE = /^(G20)/;
+		var patientFlags = {};
+		var SEVERITY = {
+			"Multiple SSRIs": "LOW",
+			"antidepressants": "LOW",
+			"Bleed risk": "MEDIUM",
+			"Serotonin syndrome": "HIGH",
+			"QTc prolongation": "MEDIUM",
+			"Sedation": "HIGH",
+			"Risk for falls": "MEDIUM",
+			"kidney disease": "HIGH",
+			"liver disease": "HIGH",
+			"seizure disorder": "HIGH",
+			"diabetes": "MEDIUM",
+			"glaucoma": "HIGH",
+			"sleep apnea": "HIGH",
+			"Parkinson's": "HIGH",
+			"Beers:": "MEDIUM",
+			"UTI": "LOW"
+		};
+		function severityFor(reason) {
+			for (var k in SEVERITY) if (reason.indexOf(k) !== -1) return SEVERITY[k];
+			return "MEDIUM";
+		}
+		var RATIONALE_SENTENCES = {
+			"falls": [
+				"Fall risk increased by [meds]; reviewed with nursing team. Fall precautions reinforced and documented.",
+				"[Meds] contribute to fall risk in this elderly resident. Benefit for [indication] outweighs risk at this time; monitoring gait and balance.",
+				"Polypharmacy fall risk noted ([meds]). Non-pharmacologic fall prevention strategies in place."
+			],
+			"bleed": ["Bleed risk from [meds]; monitoring for signs of bleeding. GI prophylaxis considered.", "Combination of [meds] increases bleeding risk. Risks discussed; will monitor hemoglobin and stool guaiac as indicated."],
+			"serotonin": ["Serotonin syndrome risk from [meds]; team educated on signs (agitation, clonus, hyperthermia, rigidity). Monitoring.", "Multiple serotonergic agents ([meds]); risk/benefit reviewed. Will monitor for serotonin toxicity."],
+			"qtc": ["QTc prolongation risk with [meds]; baseline EKG reviewed. Monitoring for cardiac symptoms and electrolyte abnormalities.", "[Meds] may prolong QTc. Risk discussed; avoiding additional QTc-prolonging agents."],
+			"sedation": ["Sedating medications ([meds]); monitoring for oversedation and daytime somnolence. Dosing timed to minimize functional impact.", "Sedation risk from [meds] reviewed with team. Fall precautions in place due to sedation."],
+			"beers_anticholinergic": ["Per Beers Criteria, [meds] has strong anticholinergic properties — avoid in elderly due to cognitive impairment, delirium, and fall risk. Rationale for continued use: [indication]. Monitoring for confusion and urinary retention.", "Anticholinergic burden from [meds] noted (Beers Criteria). Benefit for [indication] outweighs risk; will reassess need regularly."],
+			"beers_benzo": ["Benzodiazepine ([meds]) flagged per Beers Criteria — increased fall, fracture, and cognitive impairment risk in elderly. Indicated for [indication]; using lowest effective dose. Tapering to be considered at each visit.", "Continued benzodiazepine after risk/benefit review; resident stable on current regimen. Fall precautions in place."],
+			"beers_zdrug": ["Non-benzodiazepine hypnotic ([meds]) flagged per Beers Criteria — similar adverse effects to benzodiazepines in elderly (delirium, falls, fractures). Indicated for [indication]; using lowest effective dose for shortest duration.", "Z-drug continued for insomnia refractory to sleep hygiene measures. Monitoring for daytime sedation and falls."],
+			"beers_nsaid": ["NSAID ([meds]) flagged per Beers Criteria — avoid chronic use in elderly due to GI bleed, renal injury, and cardiovascular risk. Rationale: [indication]. Using lowest effective dose; GI prophylaxis considered.", "Chronic NSAID use in elderly noted (Beers Criteria). Monitoring renal function and for GI symptoms."],
+			"beers_antipsychotic": [
+				"Per Beers Criteria, antipsychotic ([meds]) in elderly requires documented rationale: indicated for [psychosis/agitation] refractory to non-pharmacologic interventions. Risks of stroke, mortality, and metabolic effects reviewed. GDR to be attempted as tolerated.",
+				"Antipsychotic continued in elderly resident; risks of cerebrovascular events and mortality reviewed per Beers Criteria. Benefit for target symptoms outweighs risk at this time. Will reassess need at each visit.",
+				"In dementia, antipsychotic ([meds]) for behavioral disturbances requires documented rationale per Beers Criteria: severe symptoms refractory to non-pharmacologic measures. Risks/benefits discussed; informed consent obtained. Monitoring for EPS and sedation."
+			],
+			"diabetes": ["Antipsychotic ([meds]) may worsen glycemic control in diabetes; monitoring weight, glucose, and lipids per guidelines.", "Metabolic risk from [meds] in diabetic resident noted. Coordinating with primary team on glucose monitoring."],
+			"parkinsons": ["Antipsychotic ([meds]) may worsen Parkinsonian symptoms; using lowest effective dose. Monitoring movement symptoms.", "Dopamine-blocking agent ([meds]) in Parkinson's disease — risk/benefit reviewed. Will monitor for worsening rigidity and bradykinesia."],
+			"kidney": ["Lithium in kidney disease ([meds]); dose adjusted for renal function. Monitoring levels and renal labs.", "Nephrotoxic risk from [meds] in CKD noted. Renal function to be monitored closely."],
+			"liver": ["Valproate in liver disease ([meds]); monitoring LFTs. Dose adjusted as needed.", "Hepatotoxic risk from [meds] noted. Liver function to be followed."],
+			"seizure": ["[Meds] lowers seizure threshold in resident with seizure disorder; risk/benefit reviewed. Monitoring for seizure activity.", "Seizure threshold concern with [meds]; team educated on seizure precautions."],
+			"glaucoma": ["Anticholinergic ([meds]) in narrow-angle glaucoma — avoid; risk of acute angle closure. Alternative agents considered.", "[Meds] contraindicated in narrow-angle glaucoma per Beers Criteria. Discontinuation planned."],
+			"sleepapnea": ["Sedating medication ([meds]) in sleep apnea — breathing risk. Using lowest effective dose; monitoring respiratory status.", "[Meds] may worsen sleep apnea; sleep hygiene and positional measures reinforced."],
+			"uti": ["Resident appears to be treated for UTI ([meds]); will monitor response and review culture results when available.", "UTI treatment with [meds] noted; monitoring for symptom resolution and adverse effects."],
+			"general": ["Medication warning ([meds]) reviewed; risk/benefit discussed with care team. Monitoring as indicated.", "[Meds] flagged for review; rationale for continued use documented. Will reassess at each visit."]
+		};
+		function rationaleKeyFor(reason) {
+			var r = reason.toLowerCase();
+			if (r.indexOf("beers: anticholinergic") !== -1) return "beers_anticholinergic";
+			if (r.indexOf("beers: benzodiazepine") !== -1) return "beers_benzo";
+			if (r.indexOf("beers: z-drug") !== -1) return "beers_zdrug";
+			if (r.indexOf("beers: nsaid") !== -1) return "beers_nsaid";
+			if (r.indexOf("beers: antipsychotic") !== -1) return "beers_antipsychotic";
+			if (r.indexOf("falls") !== -1) return "falls";
+			if (r.indexOf("bleed") !== -1) return "bleed";
+			if (r.indexOf("serotonin") !== -1) return "serotonin";
+			if (r.indexOf("qtc") !== -1) return "qtc";
+			if (r.indexOf("sedation") !== -1 || r.indexOf("breathing risk") !== -1) return "sedation";
+			if (r.indexOf("diabetes") !== -1) return "diabetes";
+			if (r.indexOf("parkinson") !== -1) return "parkinsons";
+			if (r.indexOf("kidney") !== -1) return "kidney";
+			if (r.indexOf("liver") !== -1) return "liver";
+			if (r.indexOf("seizure") !== -1) return "seizure";
+			if (r.indexOf("glaucoma") !== -1) return "glaucoma";
+			if (r.indexOf("sleep apnea") !== -1) return "sleepapnea";
+			if (r.indexOf("uti") !== -1) return "uti";
+			return "general";
+		}
+		var COLOR_PSYCH = {
+			border: "#2563eb",
+			bg: "rgba(37,99,235,0.10)"
+		};
+		var COLOR_LOW = {
+			border: "#a16207",
+			bg: "rgba(161,98,7,0.10)"
+		};
+		var COLOR_MEDIUM = {
+			border: "#9a3412",
+			bg: "rgba(154,52,18,0.14)"
+		};
+		var COLOR_HIGH = {
+			border: "#b91c1c",
+			bg: "rgba(185,28,28,0.24)"
+		};
+		var COLOR_UTI = {
+			border: "#0d9488",
+			bg: "rgba(13,148,136,0.14)"
+		};
+		function colorFor(sev) {
+			return sev === "HIGH" ? COLOR_HIGH : sev === "LOW" ? COLOR_LOW : COLOR_MEDIUM;
+		}
+		var DX_FRAME = /diagnos/i;
+		var RELATED_G = /^(G30|G31|G240|G251|G257|G211|G47(?!3))/;
+		var RELATED_R = /^(R41|R44|R45|R46|R630)/;
+		var CODE_RE = /\b[A-TV-Z][0-9][0-9AB]\b(?:\.[0-9A-Z]{1,4})?/g;
+		var MEDLIST = [];
+		function addMeds(ind, tier, list) {
+			list.forEach(function(m) {
+				MEDLIST.push({
+					rx: new RegExp("\\b(" + m[0] + ")\\b", "i"),
+					name: m[1],
+					ind: m[2] || ind,
+					tier
+				});
+			});
+		}
+		addMeds("depression", 0, [
+			["fluoxetine|prozac", "Prozac"],
+			["sertraline|zoloft", "Zoloft"],
+			["paroxetine|paxil", "Paxil"],
+			["escitalopram|lexapro", "Lexapro"],
+			["citalopram|celexa", "Celexa"],
+			["fluvoxamine|luvox", "Luvox"],
+			["vilazodone|viibryd", "Viibryd"],
+			["desvenlafaxine|pristiq", "Pristiq"],
+			["venlafaxine|effexor", "Effexor"],
+			["duloxetine|cymbalta", "Cymbalta"],
+			["levomilnacipran|fetzima", "Fetzima"],
+			["milnacipran|savella", "Savella"],
+			["vortioxetine|trintellix", "Trintellix"],
+			["auvelity", "Auvelity ER"],
+			["bupropion|wellbutrin", "Wellbutrin"],
+			["mirtazapine|remeron", "Remeron"],
+			["trazodone|desyrel", "Trazodone"],
+			["nefazodone|serzone", "Serzone"],
+			["mianserin|tolvon", "Tolvon"],
+			["agomelatine|valdoxan", "Valdoxan"],
+			["reboxetine|edronax", "Edronax"],
+			["tianeptine|stablon", "Stablon"],
+			["gepirone|exxua", "Exxua"],
+			["esketamine|spravato", "Spravato"],
+			["ketamine", "ketamine"],
+			["brexanolone|zulresso", "Zulresso"],
+			["zuranolone|zurzuvae", "Zurzuvae"],
+			["amitriptyline|elavil", "Elavil"],
+			["nortriptyline|pamelor", "nortriptyline"],
+			["imipramine|tofranil", "Tofranil"],
+			["desipramine|norpramin", "Norpramin"],
+			["clomipramine|anafranil", "Anafranil"],
+			["doxepin|sinequan|silenor", "doxepin"],
+			["trimipramine|surmontil", "Surmontil"],
+			["protriptyline|vivactil", "Vivactil"],
+			["amoxapine|asendin", "Asendin"],
+			["maprotiline|ludiomil", "Ludiomil"],
+			["lofepramine|gamanil", "Gamanil"],
+			["dosulepin|dothiepin|prothiaden", "Prothiaden"],
+			["phenelzine|nardil", "Nardil"],
+			["tranylcypromine|parnate", "Parnate"],
+			["isocarboxazid|marplan", "Marplan"],
+			["selegiline|emsam", "Emsam"],
+			["moclobemide|manerix", "Manerix"]
+		]);
+		addMeds("psychosis", 0, [
+			["haloperidol|haldol", "Haldol"],
+			["chlorpromazine|thorazine", "Thorazine"],
+			["fluphenazine|prolixin|modecate", "Prolixin"],
+			["perphenazine|trilafon", "Trilafon"],
+			["trifluoperazine|stelazine", "Stelazine"],
+			["thioridazine|mellaril", "Mellaril"],
+			["thiothixene|navane", "Navane"],
+			["loxapine|loxitane", "Loxitane"],
+			["molindone|moban", "Moban"],
+			["pimozide|orap", "Orap"],
+			["flupentixol|fluanxol", "Fluanxol"],
+			["zuclopenthixol|clopixol", "Clopixol"],
+			["sulpiride|dogmatil", "Dogmatil"],
+			["mesoridazine|serentil", "Serentil"],
+			["clozapine|clozaril", "Clozaril"],
+			["risperidone|risperdal|rykindo|perseris|uzedy|risvan", "Risperdal"],
+			["olanzapine|zyprexa", "Zyprexa"],
+			["quetiapine|seroquel", "Seroquel"],
+			["ziprasidone|geodon", "Geodon"],
+			["aripiprazole|abilify|aristada|asimtufii", "Abilify"],
+			["paliperidone|invega|erzofri", "Invega"],
+			["asenapine|saphris", "Saphris"],
+			["iloperidone|fanapt", "Fanapt"],
+			["lurasidone|latuda", "Latuda"],
+			["brexpiprazole|rexulti", "Rexulti"],
+			["cariprazine|vraylar", "Vraylar"],
+			["lumateperone|caplyta", "Caplyta"],
+			["pimavanserin|nuplazid", "Nuplazid"],
+			["amisulpride|solian", "Solian"],
+			["zotepine|nipolept", "Nipolept"],
+			["sertindole|serdolect", "Serdolect"],
+			["xanomeline|cobenfy", "Cobenfy"],
+			["periciazine|neulactil", "Neulactil"],
+			["pipotiazine|piportil", "Piportil"],
+			["levomepromazine|methotrimeprazine|nozinan", "Nozinan"],
+			["promazine|sparine", "Sparine"],
+			["acetophenazine|tindal", "Tindal"],
+			["carphenazine|proketazine", "Proketazine"],
+			["remoxipride|roxiam", "Roxiam"]
+		]);
+		addMeds("mood", 0, [
+			["lithium|lithobid|eskalith", "Lithium"],
+			["divalproex|valproate|valproic|depakote|depakene", "Depakote"],
+			["carbamazepine|tegretol", "Tegretol"],
+			["oxcarbazepine|trileptal", "Trileptal"],
+			["lamotrigine|lamictal", "Lamictal"],
+			["topiramate|topamax", "Topamax"]
+		]);
+		addMeds("anxiety", 0, [
+			["alprazolam|xanax", "Xanax"],
+			["lorazepam|ativan", "Ativan"],
+			["clonazepam|klonopin", "Klonopin"],
+			["diazepam|valium", "Valium"],
+			["chlordiazepoxide|librium", "Librium"],
+			["oxazepam|serax", "Serax"],
+			["clorazepate|tranxene", "Tranxene"],
+			["bromazepam|lexotan", "Lexotan"],
+			["prazepam|centrax", "Centrax"],
+			["halazepam|paxipam", "Paxipam"],
+			["medazepam", "medazepam"],
+			["clobazam|onfi", "Onfi"],
+			["buspirone|buspar", "Buspar"],
+			["meprobamate|miltown", "Miltown"]
+		]);
+		addMeds("insomnia", 0, [
+			["temazepam|restoril", "Restoril"],
+			["flurazepam|dalmane", "Dalmane"],
+			["triazolam|halcion", "Halcion"],
+			["estazolam|prosom", "ProSom"],
+			["quazepam|doral", "Doral"],
+			["nitrazepam|mogadon", "Mogadon"],
+			["lormetazepam|noctamid", "Noctamid"],
+			["loprazolam", "loprazolam"],
+			["flunitrazepam|rohypnol", "Rohypnol"],
+			["zolpidem|ambien", "Ambien"],
+			["zaleplon|sonata", "Sonata"],
+			["eszopiclone|lunesta", "Lunesta"],
+			["zopiclone|imovane", "Imovane"],
+			["ramelteon|rozerem", "Ramelteon"],
+			["tasimelteon|hetlioz", "Hetlioz"],
+			["suvorexant|belsomra", "Belsomra"],
+			["lemborexant|dayvigo", "Dayvigo"],
+			["daridorexant|quviviq", "Quviviq"],
+			[
+				"melatonin",
+				"Melatonin",
+				"poor sleep"
+			],
+			["chloral hydrate", "chloral hydrate"]
+		]);
+		addMeds("ADHD", 0, [
+			["lisdexamfetamine|vyvanse", "Vyvanse"],
+			["amphetamine|adderall|mydayis", "Adderall"],
+			["dextroamphetamine|dexedrine", "Dexedrine"],
+			["dexmethylphenidate|focalin", "Focalin"],
+			["methylphenidate|ritalin|concerta|metadate|quillivant|daytrana", "methylphenidate"],
+			["methamphetamine|desoxyn", "Desoxyn"],
+			["atomoxetine|strattera", "Strattera"],
+			["viloxazine|qelbree", "Qelbree"],
+			["guanfacine|intuniv|tenex", "guanfacine"]
+		]);
+		addMeds("EPS", 1, [
+			["benztropine|cogentin", "Cogentin"],
+			["trihexyphenidyl|artane", "Artane"],
+			["procyclidine|kemadrin", "Kemadrin"],
+			["biperiden|akineton", "Akineton"],
+			["amantadine|symmetrel|gocovri|osmolex", "Amantadine"]
+		]);
+		addMeds("dementia", 0, [
+			["donepezil|aricept", "Aricept"],
+			["rivastigmine|exelon", "Rivastigmine"],
+			["galantamine|razadyne", "Razadyne"],
+			["memantine|namenda", "Namenda"],
+			["tacrine|cognex", "Cognex"]
+		]);
+		addMeds("tardive dyskinesia", 1, [
+			["deutetrabenazine|austedo", "Austedo"],
+			["valbenazine|ingrezza", "Ingrezza"],
+			["tetrabenazine|xenazine", "Xenazine"]
+		]);
+		addMeds("substance use", 1, [
+			["buprenorphine\\b.*\\bnaloxone|suboxone", "Suboxone"],
+			["buprenorphine|subutex|sublocade", "Subutex"],
+			["methadone|dolophine", "methadone"],
+			["naltrexone|revia|vivitrol", "naltrexone"],
+			["acamprosate|campral", "Campral"],
+			["disulfiram|antabuse", "Antabuse"],
+			["nalmefene|selincro", "Selincro"],
+			["varenicline|chantix", "Chantix"],
+			["chlormethiazole|heminevrin", "Heminevrin"]
+		]);
+		var IND_NORM = {
+			"depression": "depression",
+			"major depressive disorder": "depression",
+			"major depression": "depression",
+			"recurrent depression": "depression",
+			"sleep disorder": "insomnia",
+			"sleep": "insomnia",
+			"insomnia": "insomnia",
+			"parancia": "paranoia",
+			"paranoia": "paranoia",
+			"anxiety": "anxiety",
+			"anxiety disorder": "anxiety",
+			"generalized anxiety disorder": "anxiety",
+			"axiety": "anxiety",
+			"axiety disorder": "anxiety",
+			"psychosis": "psychosis",
+			"psychotic disorder": "psychosis",
+			"schizophrenia": "schizophrenia",
+			"schizoaffective disorder": "SAD",
+			"bipolar": "bipolar",
+			"bipolar disorder": "bipolar",
+			"bipolar i disorder": "bipolar",
+			"bipolar ii disorder": "bipolar",
+			"bipolar affective disorder": "bipolar",
+			"mood disorder": "mood",
+			"adhd": "ADHD",
+			"extrapyramidal and movement disorder": "EPS",
+			"extrapyramidal disorder": "EPS",
+			"convulsions": "seizures",
+			"unspecified convulsions": "seizures",
+			"tourette's disorder": "tourette's disorder",
+			"tourettes disorder": "tourette's disorder"
+		};
+		var FORCED_IND = {
+			"Namenda": "dementia",
+			"Aricept": "dementia",
+			"Rivastigmine": "dementia",
+			"Razadyne": "dementia",
+			"Melatonin": "sleep",
+			"Remeron": "depression",
+			"Trazodone": "depression",
+			"Ambien": "insomnia",
+			"Xanax": "anxiety",
+			"Ativan": "anxiety",
+			"Klonopin": "anxiety",
+			"Valium": "anxiety",
+			"Librium": "anxiety",
+			"Serax": "anxiety",
+			"Tranxene": "anxiety",
+			"Lexotan": "anxiety",
+			"Centrax": "anxiety",
+			"Paxipam": "anxiety",
+			"medazepam": "anxiety",
+			"Onfi": "anxiety"
+		};
+		function matchMed(line) {
+			for (var i = 0; i < MEDLIST.length; i++) if (MEDLIST[i].rx.test(line)) return MEDLIST[i];
+			return null;
+		}
+		function fmtNum(n) {
+			return n.toFixed(3).replace(/\.?0+$/, "");
+		}
+		function parseQty(s) {
+			if (s == null) return null;
+			s = s.replace("½", "0.5").replace("¼", "0.25").replace("¾", "0.75");
+			var m = s.match(/^\s*(\d+)\s*\/\s*(\d+)\s*$/);
+			if (m) return +m[2] ? +m[1] / +m[2] : null;
+			if (/^\s*\d*\.?\d+\s*$/.test(s)) return +s;
+			return null;
+		}
+		function normUnit(u) {
+			u = u.toLowerCase();
+			if (/^(mg|milligram)/.test(u)) return "mg";
+			if (/^(mcg|microgram)/.test(u)) return "mcg";
+			if (/^(g|gram)/.test(u)) return "g";
+			return u;
+		}
+		function freqOf(t) {
+			var hm = t.match(/\b(?:every|q)\s*(\d+)(?:\s*(?:-|–|to)\s*(\d+))?\s*(?:hours?|hrs?|h)\b/i);
+			if (hm) return "q" + hm[1] + (hm[2] ? "-" + hm[2] : "") + "h";
+			var m = t.match(/\b(every\s+\d+(?:\s*(?:-|–|to)\s*\d+)?\s*(?:hour|hr|day|week|wk|month|mo|year|yr)s?(?:\(s\))?)/i);
+			if (m) return m[1].toLowerCase().replace(/\s+/g, " ");
+			m = t.match(/\b(every\s+(?:week|month|year)s?)\b/i);
+			if (m) return m[1].toLowerCase().replace(/\s+/g, " ");
+			if (/\bmonthly\b/i.test(t)) return "monthly";
+			if (/\bweekly\b/i.test(t)) return "weekly";
+			var l = t.toLowerCase();
+			var lNoNeg = l.replace(/\b(?:it\s+is\s+)?not\s+(?:a\s+)?prn\b/g, "").replace(/\bno\s+prn\b/g, "");
+			if (!/\bmorning\b|\bbedtime\b|\bnight\b|\bevening\b|\bdaily\b|\btimes a day\b|\bevery\s|\bq\d|\bbid\b|\btid\b|\bqid\b|\bqhs\b|\bqam\b|\bqpm\b|\bweekly\b|\bmonthly\b/.test(l) && /\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(lNoNeg)) return "PRN";
+			if (/\bbefore meals?\b|\bante cibum\b|\ba\.c\.?|\bac\b/.test(l)) return "AC";
+			if (/\bafter meals?\b|\bpost cibum\b|\bp\.c\.?|\bpc\b/.test(l)) return "PC";
+			var hasAM = /\bmorning\b|\bqam\b|\bevery day\b|\bdaily\b/.test(l);
+			var hasPM = /\bbedtime\b|\bnight\b|\bevening\b|\bqhs\b/.test(l);
+			if (hasAM && hasPM && !/\bonce\b/.test(l)) return "BID";
+			if (/\bbedtime\b|\bat night\b|\bnightly\b|\bevery night\b|\bone time a night\b|\b1 time a night\b|\bonce nightly\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return "QHS";
+			if (/\bevery other day\b|\bqod\b/.test(l)) return "QOD";
+			if (/\btwo times a day\b|\btwice a day\b|\btwice daily\b|\bb\.i\.d\.?|\bbid\b|\b2 times a day\b/.test(l)) return "BID";
+			if (/\bthree times a day\b|\bthrice\b|\bt\.i\.d\.?|\btid\b|\b3 times a day\b/.test(l)) return "TID";
+			if (/\bfour times a day\b|\bq\.i\.d\.?|\bqid\b|\b4 times a day\b/.test(l)) return "QID";
+			if (/\bevery morning\b|\beach morning\b|\bin the morning\b|\bqam\b/.test(l)) return "QAM";
+			if (/\bevery evening\b|\bqpm\b/.test(l)) return "QPM";
+			if (/\bone[ -]time only\b|\bone[ -]time dose\b|\bsingle dose\b/.test(l)) return "ONCE";
+			if (/\bone time a day\b|\bonce a day\b|\bonce daily\b|\bevery day\b|\bdaily\b|\bq\.d\.?|\bqd\b|\bq day\b|\b1 time a day\b/.test(l)) return "QD";
+			return "";
+		}
+		function routeOf(t) {
+			t = t.toLowerCase();
+			if (/\bintramuscular(?:ly)?\b|\bi\.m\.?\b/.test(t)) return "IM";
+			if (/\bsubcutaneous(?:ly)?\b|\bsub-?q\b|\bsubcut\b/.test(t)) return "SC";
+			if (/\bintravenous(?:ly)?\b|\bi\.v\.?\b/.test(t)) return "IV";
+			if (/\bsublingual(?:ly)?\b/.test(t)) return "SL";
+			if (/\brectal(?:ly)?\b|\bper rectum\b/.test(t)) return "PR";
+			if (/\btransdermal(?:ly)?\b|\bpatch\b/.test(t)) return "TD";
+			if (/^\s*inject\b/.test(t)) return "IM";
+			return "";
+		}
+		function isLiquid(h) {
+			return /\b(concentrate|solution|suspension|elixir|syrup|oral liquid|liquid|tincture|drops)\b/i.test(h);
+		}
+		function indicationOf(t, def) {
+			var m, raw = null;
+			if (m = t.match(/\brelated to\s+(.+)$/is)) raw = m[1];
+			else if (m = t.match(/\bfor\s+(.+)$/is)) raw = m[1];
+			if (raw === null) return def;
+			raw = raw.replace(/[\t\r\n].*$/s, "");
+			raw = raw.replace(/\*+.*$/, "");
+			raw = raw.replace(/\s+(?:to\s+)?add\s+in\b.*$/i, "");
+			raw = raw.replace(/\s+with\s+(?:\S+\s+)?\d+(?:\.\d+)?\s*(?:mg|mcg|g)\b.*$/i, "");
+			raw = raw.replace(/\s+(?:related to|addition to|in addition|along with|to give|and give|give|total of|total\s+\d|by mouth|orally|po|sublingual|tablets?|capsules?|caps?|\d+\s*\/\s*\d+|[½¼¾]|\d+(?:\.\d+)?\s*(?:mg|mcg|ml|g)\b).*$/i, "");
+			raw = raw.replace(/\s*\([^)]*\)\s*$/, "");
+			raw = raw.replace(/,.*$/, "");
+			raw = raw.replace(/\s*\(\s*[A-Z]\d{2}(?:\.[0-9A-Z]{1,4})?\s*\)/g, "");
+			raw = raw.replace(/\s+(?:in the (?:morning|afternoon|evening)|at bedtime|at night)\b.*$/i, "");
+			raw = raw.replace(/\s+without\s+behaviou?ral\b.*$/i, "");
+			raw = raw.replace(/^for\s+/i, "");
+			raw = raw.replace(/^\s*(?:other|unspecified|acute|chronic|mild|moderate|severe)\s+/i, "");
+			raw = raw.replace(/\s+(?:to|in|for|with|and)\s*$/i, "");
+			raw = raw.replace(/^\s+|\s+$/g, "");
+			if (!raw.length) return def;
+			var key = raw.toLowerCase().replace(/\bd\/o\b/g, "disorder");
+			if (IND_NORM.hasOwnProperty(key)) return IND_NORM[key];
+			var primary = key.split(/\s+(?:for|and)\s+/)[0].replace(/^\s+|\s+$/g, "");
+			return IND_NORM.hasOwnProperty(primary) ? IND_NORM[primary] : primary;
+		}
+		function headerText(g) {
+			return g.rows[0].innerText.replace(/\s+/g, " ").trim();
+		}
+		function instrText(g) {
+			for (var i = 1; i < g.rows.length; i++) {
+				var t = (g.rows[i].textContent || "").replace(/\s+/g, " ").trim();
+				if (/^(?:Give|Inject|Take|Apply|Instill|Insert|Place|Infuse|Administer)\b/i.test(t)) return t;
+			}
+			return "";
+		}
+		function buildMedList(groups) {
+			var rows = [];
+			groups.forEach(function(g) {
+				var hdr = headerText(g);
+				if (!/\bActive\b/i.test(hdr + " " + (g.rows[0].textContent || ""))) return;
+				var med = matchMed(hdr);
+				if (!med) return;
+				var instr = instrText(g);
+				var comboDose = null;
+				var cdm = hdr.match(/(\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*(?:mg|mcg|g))\b/i);
+				if (cdm) comboDose = cdm[1].replace(/\s+/g, " ").trim().toUpperCase();
+				var ustr = null, uunit = null, cnum = null, cunit = null, cden = 1, m;
+				if (m = hdr.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b(?!\s*\/)/i)) {
+					ustr = m[1];
+					uunit = m[2].toLowerCase();
+				}
+				if (m = hdr.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g)\s*\/\s*(\d+(?:\.\d+)?)?\s*ml\b/i)) {
+					cnum = m[1];
+					cunit = m[2].toLowerCase();
+					cden = m[3] ? m[3] : 1;
+				}
+				var dnum = null, dunit = null;
+				if (m = instr.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i)) {
+					dnum = +m[1];
+					dunit = m[2].toLowerCase();
+				} else if (m = instr.match(/\b(?:Give|Inject|Take|Administer|Infuse|Instill)\s+(\d+(?:\.\d+)?)\s*(mg|milligrams?|mcg|micrograms?|g|grams?)\b/i)) {
+					dnum = +m[1];
+					dunit = normUnit(m[2]);
+				} else if (ustr !== null && (m = instr.match(/\b(?:Give|Take)\s+(\d+\s*\/\s*\d+|[½¼¾]|\d*\.?\d+)\s*(?:tablets?|capsules?|tabs?|caps?)\b/i))) {
+					var q = parseQty(m[1]);
+					if (q !== null) {
+						dnum = q * +ustr;
+						dunit = uunit;
+					}
+				} else if (cnum !== null && (m = instr.match(/\b(?:Give|Inject|Instill|Infuse)\s+(\d+(?:\.\d+)?)\s*(?:ml|milliliters?|cc)\b/i))) {
+					dnum = +m[1] * (+cnum / +cden);
+					dunit = cunit;
+				} else if (ustr !== null) {
+					dnum = +ustr;
+					dunit = uunit;
+				}
+				var dstr = dnum !== null ? fmtNum(dnum) + dunit : "";
+				var rt = routeOf(instr);
+				var disp = med.name + (isLiquid(hdr) && rt === "" ? " liquid" : "");
+				var fr = freqOf(instr);
+				if (fr === "ONCE") return;
+				var ind = indicationOf(instr, med.ind);
+				if (FORCED_IND.hasOwnProperty(med.name)) ind = FORCED_IND[med.name];
+				var raw = instr.replace(/\s+/g, " ").trim();
+				rows.push({
+					name: med.name,
+					disp,
+					dnum,
+					dunit,
+					dstr,
+					rt,
+					fr,
+					ind,
+					tier: med.tier,
+					raw,
+					comboDose
+				});
+			});
+			function bucketOf(fr) {
+				return fr === "QD" || fr === "QAM" || fr === "QPM" ? "QD" : fr;
+			}
+			var RANK = {
+				QAM: 0,
+				QD: 1,
+				QPM: 2,
+				QHS: 3
+			};
+			var combos = {}, order = [];
+			rows.forEach(function(r) {
+				var key = [
+					r.name,
+					r.rt,
+					r.ind,
+					r.disp
+				].join("|");
+				if (!combos[key]) {
+					combos[key] = {
+						r0: r,
+						buckets: {},
+						list: []
+					};
+					order.push(key);
+				}
+				var b = bucketOf(r.fr);
+				if (!combos[key].buckets[b]) {
+					combos[key].buckets[b] = [];
+					combos[key].list.push(b);
+				}
+				combos[key].buckets[b].push(r);
+			});
+			var main = [], last = [], review = [], seen = {};
+			order.forEach(function(key) {
+				var c = combos[key];
+				var bnames = c.list.slice().sort(function(a, b) {
+					return (RANK[a] == null ? 4 : RANK[a]) - (RANK[b] == null ? 4 : RANK[b]);
+				});
+				var pairs = [];
+				bnames.forEach(function(b) {
+					var uniq = [], rs = {};
+					c.buckets[b].forEach(function(r) {
+						var rk = r.dnum + "|" + r.raw;
+						if (!rs[rk]) {
+							rs[rk] = 1;
+							uniq.push(r);
+						}
+					});
+					var r0 = uniq[0];
+					var missing = uniq.some(function(r) {
+						return r.dnum === null || r.fr === "";
+					});
+					var unitMismatch = uniq.some(function(r) {
+						return r.dunit !== r0.dunit;
+					});
+					if (missing || unitMismatch) {
+						uniq.forEach(function(r) {
+							var why = [];
+							if (r.dnum === null) why.push("dose could not be determined");
+							if (r.fr === "") why.push("frequency not recognized");
+							if (unitMismatch) why.push("doses use different units");
+							var guess = [
+								r.dstr,
+								r.fr,
+								"for",
+								r.ind
+							].filter(function(x) {
+								return x.length;
+							}).join(" ");
+							review.push("- " + r.name + ": best guess \"" + guess + "\" — " + why.join("; ") + "\n    order: \"" + r.raw + "\"");
+						});
+						return;
+					}
+					var total = 0, statedTotal = null;
+					uniq.forEach(function(r) {
+						total += r.dnum;
+						var tm = r.raw.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i);
+						if (tm && Math.abs(+tm[1] - r.dnum) < .001 && tm[2].toLowerCase() === r.dunit) statedTotal = +tm[1];
+					});
+					if (statedTotal !== null) total = statedTotal;
+					var freqDisp = uniq.length > 1 && b === "QD" ? "QD" : r0.fr;
+					var dosePart = r0.comboDose ? r0.comboDose : fmtNum(total) + r0.dunit;
+					pairs.push([
+						dosePart,
+						r0.rt,
+						freqDisp
+					].filter(function(x) {
+						return x.length;
+					}).join(" "));
+				});
+				if (!pairs.length) return;
+				var rawNoNeg = c.r0.raw.replace(/\b(?:it\s+is\s+)?not\s+(?:a\s+)?prn\b/gi, "").replace(/\bno\s+prn\b/gi, "");
+				var isPrn = /\bas\s+needed\b|\bprn\b|p\.r\.n\.|\bas\s+necessary\b|\bwhen\s+needed\b|\bif\s+needed\b/i.test(rawNoNeg);
+				var freqWithPrn = pairs.join(" and ") + (isPrn && c.list.indexOf("PRN") === -1 ? " PRN" : "");
+				var entry = "- " + c.r0.disp + " " + freqWithPrn + " for " + c.r0.ind;
+				if (seen[entry]) return;
+				seen[entry] = 1;
+				(c.r0.tier === 1 ? last : main).push(entry);
+			});
+			function medsOrderLines(lines) {
+				var buckets = [], seen = {};
+				lines.forEach(function(ln, i) {
+					var m = / for (.+)$/.exec(ln);
+					var ind = m ? m[1].replace(/\s+/g, " ").replace(/[.\s]+$/, "").toLowerCase() : "";
+					var last = /seizure|epilep|parkinson/.test(ind || ln);
+					var key = (last ? "L|" : "M|") + (ind || "#" + i);
+					if (!seen[key]) {
+						seen[key] = [];
+						buckets.push(seen[key]);
+					}
+					seen[key].push({
+						ln,
+						last
+					});
+				});
+				var main = buckets.filter(function(b) {
+					return !b[0].last;
+				});
+				var lastB = buckets.filter(function(b) {
+					return b[0].last;
+				});
+				var out = [];
+				main.concat(lastB).forEach(function(b) {
+					b.forEach(function(it) {
+						out.push(it.ln);
+					});
+				});
+				return out;
+			}
+			return {
+				lines: medsOrderLines(main.concat(last)),
+				review
+			};
+		}
+		function copyToClipboard(doc, text, btn) {
+			function done() {
+				if (btn) {
+					btn.textContent = "Copied";
+					setTimeout(function() {
+						btn.textContent = "Copy";
+					}, 1200);
+				}
+			}
+			try {
+				if (navigator.clipboard && navigator.clipboard.writeText) {
+					navigator.clipboard.writeText(text).then(done, fallback);
+					return;
+				}
+			} catch (e) {}
+			fallback();
+			function fallback() {
+				try {
+					var ta = doc.createElement("textarea");
+					ta.value = text;
+					ta.style.cssText = "position:fixed;top:0;left:0;opacity:0;";
+					doc.body.appendChild(ta);
+					ta.focus();
+					ta.select();
+					doc.execCommand("copy");
+					doc.body.removeChild(ta);
+					done();
+				} catch (e) {}
+			}
+		}
+		function esc(s) {
+			return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+		}
+		function buildMedListHtml(res) {
+			var h = "<div style=\"font-weight:bold;margin-bottom:3px;color:#1d4ed8;\">Psych med list <button class=\"pcc-fill-copy\" id=\"copyMedListBtn\" data-fill-label=\"Psych meds\" type=\"button\" style=\"margin-left:10px;padding:3px 14px;font-size:16px;font-weight:700;cursor:pointer;border:2px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:8px;\">Copy</button></div>";
+			var lines = res.lines.length ? res.lines : ["- none"];
+			h += lines.map(function(l) {
+				return "<div>" + esc(l) + "</div>";
+			}).join("");
+			if (res.review.length) {
+				h += "<div style=\"margin-top:6px;font-weight:bold;color:#9a3412;\">⚠ REVIEW — interpret manually (excluded above):</div>";
+				h += res.review.map(function(l) {
+					return "<div style=\"white-space:pre-wrap;\">" + esc(l) + "</div>";
+				}).join("");
+			}
+			return h;
+		}
+		function buildLabsData(groups) {
+			var out = [];
+			groups.forEach(function(g) {
+				var t = g.rows[0].innerText;
+				var name = shortName(g);
+				LAB_MONITORING.forEach(function(m) {
+					if (m.rx.test(t)) {
+						if (!out.some(function(o) {
+							return o.name === name && o.labs === m.labs;
+						})) out.push({
+							name,
+							labs: m.labs
+						});
+					}
+				});
+			});
+			return {
+				items: out,
+				lines: ["Labs to monitor:"].concat(out.map(function(o) {
+					return "- " + o.name + ": " + o.labs;
+				}))
+			};
+		}
+		function buildLabsHtml(data) {
+			var h = "<div style=\"font-weight:bold;margin-bottom:4px;color:#1d4ed8;\">Labs to monitor <button id=\"copyLabsBtn\" type=\"button\" style=\"margin-left:10px;padding:3px 14px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #1d4ed8;background:#1d4ed8;color:#fff;border-radius:8px;\">Copy</button></div>";
+			if (!data.items.length) return h + "<em>No labs/monitoring needed for current meds.</em>";
+			h += data.items.map(function(o) {
+				return "<div style=\"margin:2px 0;\"><b>" + esc(o.name) + "</b> — " + esc(o.labs) + "</div>";
+			}).join("");
+			return h;
+		}
+		function buildWarningsData(groups, doc) {
+			var out = {
+				blackBox: [],
+				conditions: []
+			};
+			var allCodes = [];
+			try {
+				var bodyText = doc.body ? doc.body.innerText || "" : "";
+				var m, re = new RegExp(CODE_RE.source, "g");
+				while (m = re.exec(bodyText)) allCodes.push(m[0].replace(".", ""));
+			} catch (e) {}
+			groups.forEach(function(g) {
+				var t = g.rows[0].innerText;
+				var name = shortName(g);
+				BLACK_BOX.forEach(function(b) {
+					if (b.rx.test(t)) {
+						if (!out.blackBox.some(function(o) {
+							return o.name === name && o.text === b.text;
+						})) out.blackBox.push({
+							name,
+							text: b.text
+						});
+					}
+				});
+				CONDITION_WARNINGS.forEach(function(cw) {
+					if (allCodes.some(function(code) {
+						return cw.dx.test(code);
+					}) && cw.rx.test(t)) {
+						var key = cw.dxName + "|" + name;
+						if (!out.conditions.some(function(o) {
+							return o.key === key;
+						})) out.conditions.push({
+							key,
+							dx: cw.dxName,
+							name,
+							text: cw.text
+						});
+					}
+				});
+			});
+			var lines = ["Warnings:"];
+			out.blackBox.forEach(function(o) {
+				lines.push("- [BLACK BOX] " + o.name + ": " + o.text);
+			});
+			out.conditions.forEach(function(o) {
+				lines.push("- [" + o.dx + "] " + o.name + ": " + o.text);
+			});
+			return {
+				items: out,
+				lines
+			};
+		}
+		function buildWarningsHtml(data) {
+			var h = "";
+			var bb = data.items.blackBox, cond = data.items.conditions;
+			if (!bb.length && !cond.length) return "<em>No black box or condition warnings for current meds.</em>";
+			if (bb.length) {
+				h += "<div style=\"font-weight:bold;margin:0 0 2px;color:#991b1b;\">Black box:</div>";
+				h += bb.map(function(o) {
+					return "<div style=\"margin:2px 0;\"><b>" + esc(o.name) + "</b> — " + esc(o.text) + "</div>";
+				}).join("");
+			}
+			if (cond.length) {
+				h += "<div style=\"font-weight:bold;margin:6px 0 2px;color:#991b1b;\">Condition alerts:</div>";
+				h += cond.map(function(o) {
+					return "<div style=\"margin:3px 0;\"><b>[" + esc(o.dx) + "]</b> <b>" + esc(o.name) + "</b><br><span style=\"margin-left:4px;\">→ " + esc(o.text) + "</span></div>";
+				}).join("");
+			}
+			return h;
+		}
+		function isOn(key) {
+			try {
+				return localStorage.getItem(key) !== "off";
+			} catch (e) {
+				return true;
+			}
+		}
+		function setOn(key, v) {
+			try {
+				localStorage.setItem(key, v ? "on" : "off");
+			} catch (e) {}
+		}
+		function dashView() {
+			try {
+				return localStorage.getItem("tmDashView2") === "main" ? "main" : "mica";
+			} catch (e) {
+				return "mica";
+			}
+		}
+		function plantViewToggle() {
+			if (document.getElementById("tmViewBtn")) {
+				hideDashChrome();
+				return;
+			}
+			var tds = document.querySelectorAll("td");
+			var cell = null;
+			for (var i = 0; i < tds.length; i++) {
+				var tx = (tds[i].textContent || "").replace(/\s+/g, " ").trim();
+				if (/^Views:/.test(tx) && tx.length < 40) {
+					cell = tds[i];
+					break;
+				}
+			}
+			if (!cell) return;
+			var b = document.createElement("button");
+			b.id = "tmViewBtn";
+			b.type = "button";
+			b.textContent = dashView() === "main" ? "View: Mica" : "View: Main";
+			b.style.cssText = "padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid #7d8f69;border-radius:6px;background:#eef2e6;color:#334155;";
+			b.onclick = function() {
+				var next = dashView() === "main" ? "mica" : "main";
+				try {
+					localStorage.setItem("tmDashView2", next);
+				} catch (e) {}
+				b.textContent = next === "main" ? "View: Mica" : "View: Main";
+				processedSig = {};
+				fit();
+			};
+			var placed = false;
+			var pv = document.getElementById("idPrintableViewBtn");
+			if (!pv) {
+				var cands = document.querySelectorAll("input, button, a");
+				for (var pi = 0; pi < cands.length; pi++) if ((cands[pi].value || cands[pi].textContent || "").trim() === "Printable View") {
+					pv = cands[pi];
+					break;
+				}
+			}
+			if (pv && pv.parentNode) {
+				pv.style.display = "none";
+				pv.parentNode.insertBefore(b, pv);
+				placed = true;
+			}
+			if (!placed) {
+				var tbl = cell.closest ? cell.closest("table") : null;
+				if (tbl && tbl.parentNode) {
+					var host = document.createElement("div");
+					host.style.cssText = "margin:2px 0 6px;";
+					host.appendChild(b);
+					tbl.parentNode.insertBefore(host, tbl);
+				} else cell.appendChild(b);
+			}
+			hideDashChrome();
+		}
+		function hideDashChrome() {
+			var links = document.querySelectorAll("a");
+			for (var i = 0; i < links.length; i++) if ((links[i].textContent || "").trim() === "Resident Dashboard") {
+				var dv = links[i].closest ? links[i].closest("div") : null;
+				if (dv && (dv.textContent || "").length < 200) dv.style.display = "none";
+				break;
+			}
+			var el = document.getElementById("ESOLeditLayout");
+			if (el && el.closest) {
+				var tr = el.closest("tr");
+				if (tr && !tr.querySelector("#tmViewBtn")) tr.style.display = "none";
+			}
+			var tds = document.querySelectorAll("td");
+			for (var j = 0; j < tds.length; j++) {
+				var tx = (tds[j].textContent || "").replace(/\s+/g, " ").trim();
+				if (/^Views:/.test(tx) && tx.length < 40) {
+					var tb = tds[j].closest ? tds[j].closest("table") : null;
+					if (tb) tb.style.display = "none";
+					break;
+				}
+			}
+		}
+		function setButton(doc, id, text, onclick) {
+			var b = doc.getElementById(id);
+			if (!b) {
+				b = doc.createElement("button");
+				b.id = id;
+				b.type = "button";
+				b.style.cssText = "margin:0 6px 6px 0;padding:0 10px;height:26px;display:inline-flex;align-items:center;box-sizing:border-box;font-size:12px;cursor:pointer;vertical-align:top;";
+				b.onclick = onclick;
+				if (id === "psychToggle") {
+					var medBox = doc.getElementById("medListBox");
+					if (medBox && medBox.parentNode) medBox.parentNode.insertBefore(b, medBox);
+					else doc.body.insertBefore(b, doc.body.firstChild);
+				} else doc.body.insertBefore(b, doc.body.firstChild);
+			}
+			if (id === "psychToggle") b.innerHTML = text;
+			else b.textContent = text;
+		}
+		var FLAG_BOX_CSS = "display:block;flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:12px;border:1px solid #9a3412;background:#fff7ed;overflow-wrap:anywhere;";
+		var MED_BOX_CSS = "flex:0 0 calc(50% - 4px);width:calc(50% - 4px);margin-left:auto;box-sizing:border-box;padding:6px 10px;font-size:20px;border:1px solid #2563eb;background:#eff6ff;overflow-wrap:anywhere;";
+		function ensureRow(doc) {
+			var row = doc.getElementById("pccTopRow");
+			if (!row) {
+				row = doc.createElement("div");
+				row.id = "pccTopRow";
+				row.style.cssText = "display:flex;gap:8px;align-items:stretch;width:100%;box-sizing:border-box;margin:0 0 6px 0;";
+				var btn = doc.getElementById("interactionInfo");
+				if (btn && btn.parentNode) btn.parentNode.insertBefore(row, btn.nextSibling);
+				else doc.body.insertBefore(row, doc.body.firstChild);
+			}
+			return row;
+		}
+		function setBox(doc, id, css, html) {
+			var row = ensureRow(doc);
+			var p = doc.getElementById(id);
+			if (!p) {
+				p = doc.createElement("div");
+				p.id = id;
+				p.style.cssText = css;
+				row.appendChild(p);
+			}
+			p.innerHTML = html;
+		}
+		function togglePanel(doc, id) {
+			var p = doc.getElementById(id);
+			if (!p) try {
+				p = doc.defaultView.parent.document.getElementById(id);
+			} catch (e) {}
+			if (p) p.style.display = p.style.display === "none" ? "block" : "none";
+		}
+		function topDocOf(doc) {
+			try {
+				var td = doc.defaultView.parent.document;
+				return td && td !== doc ? td : null;
+			} catch (e) {
+				return null;
+			}
+		}
+		var BOX_IDS = [
+			"interactionPanel",
+			"labsBox",
+			"warnBox"
+		];
+		function plantBoxes(doc) {
+			var td = topDocOf(doc);
+			if (!td) return;
+			var area = td.getElementById("dragArea");
+			if (!area || !area.parentNode) return;
+			var row = td.getElementById("tmBoxesRow");
+			if (!row) {
+				row = td.createElement("div");
+				row.id = "tmBoxesRow";
+				row.style.cssText = "display:flex;gap:10px;align-items:stretch;width:100%;box-sizing:border-box;margin:0 0 10px 0;";
+				area.parentNode.insertBefore(row, area);
+			}
+			BOX_IDS.forEach(function(id) {
+				var fresh = doc.getElementById(id);
+				var stale = td.getElementById(id);
+				if (fresh) {
+					if (stale && stale !== fresh) stale.remove();
+					row.appendChild(fresh);
+					fresh.style.flex = "1 1 0";
+					fresh.style.width = "auto";
+					fresh.style.minWidth = "0";
+					fresh.style.marginLeft = "0";
+					fresh.style.marginBottom = "0";
+					fresh.style.display = "block";
+				}
+			});
+		}
+		function tidyMedsTop(doc) {
+			["pccTopRow", "pccLabsRow"].forEach(function(id) {
+				var r = doc.getElementById(id);
+				if (r) {
+					r.style.margin = "0";
+					r.style.padding = "0";
+				}
+			});
+			var bar = doc.getElementById("interactionInfo");
+			var tog = doc.getElementById("psychToggle");
+			if (bar && tog && bar.parentNode) {
+				bar.parentNode.insertBefore(tog, bar.nextSibling);
+				var sub = tog.querySelector("div");
+				if (sub) sub.style.display = "none";
+			}
+		}
+		function untidyMedsTop(doc) {
+			var tog = doc.getElementById("psychToggle");
+			var medBox = doc.getElementById("medListBox");
+			if (tog) {
+				var sub = tog.querySelector("div");
+				if (sub) sub.style.display = "";
+				if (medBox && medBox.parentNode) medBox.parentNode.insertBefore(tog, medBox);
+			}
+		}
+		function pullBoxes(doc) {
+			var td = topDocOf(doc);
+			if (!td) return;
+			BOX_IDS.forEach(function(id) {
+				if (!doc.getElementById(id)) {
+					var b = td.getElementById(id);
+					if (b && doc.body) doc.body.appendChild(b);
+				}
+			});
+			var row = td.getElementById("tmBoxesRow");
+			if (row && !row.children.length) row.remove();
+		}
+		function clearRowStyle(g) {
+			g.rows.forEach(function(r) {
+				r.style.removeProperty("border-left");
+				r.style.removeProperty("border-right");
+				r.style.removeProperty("border-top");
+				r.style.removeProperty("border-bottom");
+				r.style.removeProperty("background-color");
+				r.removeAttribute("title");
+				for (var c = 0; c < r.cells.length; c++) {
+					r.cells[c].style.removeProperty("border-left");
+					r.cells[c].style.removeProperty("border-right");
+					r.cells[c].style.removeProperty("border-top");
+					r.cells[c].style.removeProperty("border-bottom");
+				}
+			});
+		}
+		function applyColor(g, c, title) {
+			g.rows.forEach(function(r, i) {
+				r.style.setProperty("border-left", "4px solid " + c.border, "important");
+				r.style.setProperty("background-color", c.bg, "important");
+				if (title && i === 0) r.title = title;
+			});
+		}
+		function boxTier(groups, tierFilter, borderColor) {
+			var tierGroups = groups.filter(function(g) {
+				return typeof tierFilter === "function" ? tierFilter(g) : g.tier === tierFilter;
+			});
+			if (!tierGroups.length) return;
+			var rows = [];
+			tierGroups.forEach(function(g) {
+				g.rows.forEach(function(r) {
+					rows.push(r);
+				});
+			});
+			if (!rows.length) return;
+			var W = "5px solid " + borderColor;
+			var lastVisible = null;
+			for (var vi = rows.length - 1; vi >= 0; vi--) {
+				var vr = rows[vi];
+				try {
+					var cs = vr.ownerDocument.defaultView.getComputedStyle(vr);
+					if (cs && cs.display !== "none" && cs.visibility !== "hidden") {
+						lastVisible = vr;
+						break;
+					}
+				} catch (e) {
+					lastVisible = vr;
+					break;
+				}
+			}
+			if (!lastVisible) lastVisible = rows[rows.length - 1];
+			rows.forEach(function(r, idx) {
+				var cells = r.cells;
+				if (!cells.length) return;
+				cells[0].style.setProperty("border-left", W, "important");
+				cells[cells.length - 1].style.setProperty("border-right", W, "important");
+				if (idx === 0) for (var c = 0; c < cells.length; c++) cells[c].style.setProperty("border-top", W, "important");
+				if (r === lastVisible) for (var c2 = 0; c2 < cells.length; c2++) cells[c2].style.setProperty("border-bottom", W, "important");
+			});
+		}
+		function filled(r) {
+			var n = 0;
+			for (var i = 0; i < r.cells.length; i++) if (r.cells[i].innerText.trim()) n++;
+			return n;
+		}
+		function getMedGroups(tbody) {
+			var groups = [], cur = null;
+			Array.prototype.forEach.call(tbody.children, function(r) {
+				if (r.tagName !== "TR") return;
+				if (filled(r) >= 2) {
+					cur = { rows: [r] };
+					groups.push(cur);
+				} else if (cur) cur.rows.push(r);
+			});
+			return groups;
+		}
+		function hash(s) {
+			var h = 0;
+			for (var i = 0; i < s.length; i++) h = (h << 5) - h + s.charCodeAt(i) | 0;
+			return String(h);
+		}
+		function medKey(r) {
+			return hash(r.innerText.replace(/\s+/g, " ").trim().slice(0, 100));
+		}
+		function recentlyOpened(key) {
+			try {
+				var m = JSON.parse(sessionStorage.getItem("pccOpened") || "{}");
+				return !!(m[key] && Date.now() - m[key] < 6e4);
+			} catch (e) {
+				return false;
+			}
+		}
+		function markOpened(key) {
+			try {
+				var m = JSON.parse(sessionStorage.getItem("pccOpened") || "{}");
+				var now = Date.now();
+				Object.keys(m).forEach(function(k) {
+					if (now - m[k] > 6e4) delete m[k];
+				});
+				m[key] = now;
+				sessionStorage.setItem("pccOpened", JSON.stringify(m));
+			} catch (e) {}
+		}
+		function shouldOpen(doc, key) {
+			doc.__opened = doc.__opened || {};
+			return !doc.__opened[key] && !recentlyOpened(key);
+		}
+		function noteOpened(doc, key) {
+			doc.__opened = doc.__opened || {};
+			doc.__opened[key] = true;
+			markOpened(key);
+		}
+		function isCollapsed(doc, g) {
+			var d = g.rows[1];
+			return !d || doc.defaultView.getComputedStyle(d).display === "none";
+		}
+		function findExpander(doc, r) {
+			var cell = null, best = -1;
+			for (var c = 0; c < Math.min(3, r.cells.length); c++) {
+				var len = r.cells[c].innerText.trim().length;
+				if (len > best) {
+					best = len;
+					cell = r.cells[c];
+				}
+			}
+			if (!cell) return null;
+			var els = cell.querySelectorAll("*");
+			for (var i = 0; i < els.length; i++) {
+				var e = els[i];
+				if (e.innerText && e.innerText.trim()) continue;
+				var a = e.closest("a");
+				if (a) {
+					var href = a.getAttribute("href") || "";
+					if (href && !/^(#|javascript:)/i.test(href)) continue;
+				}
+				var pointer = doc.defaultView.getComputedStyle(e).cursor === "pointer";
+				if (e.tagName === "IMG" || e.hasAttribute("onclick") || pointer || a) return a || e;
+			}
+			return null;
+		}
+		function shortName(g) {
+			var r = g.rows[0], cell = null, best = -1;
+			for (var c = 0; c < Math.min(3, r.cells.length); c++) {
+				var len = r.cells[c].innerText.trim().length;
+				if (len > best) {
+					best = len;
+					cell = r.cells[c];
+				}
+			}
+			var t = (cell ? cell.innerText : r.innerText).trim().split(/\n|\t/)[0];
+			var w = t.split(/[\s(]/)[0].replace(/[^A-Za-z\-]/g, "");
+			return w ? w.charAt(0).toUpperCase() + w.slice(1).toLowerCase() : t.slice(0, 30);
+		}
+		var GENERIC_OF = {
+			prozac: "fluoxetine",
+			zoloft: "sertraline",
+			lexapro: "escitalopram",
+			celexa: "citalopram",
+			paxil: "paroxetine",
+			effexor: "venlafaxine",
+			pristiq: "desvenlafaxine",
+			cymbalta: "duloxetine",
+			viibryd: "vilazodone",
+			trintellix: "vortioxetine"
+		};
+		function canonName(g) {
+			var s = shortName(g).toLowerCase();
+			return GENERIC_OF[s] || s;
+		}
+		function flagAll(groups) {
+			var ssriRows = [], adRows = [], serotRows = [], anticoagRows = [], qtcRows = [], benzoRows = [], opioidRows = [], fallRows = [];
+			var lithiumRows = [], valproateRows = [], seizureDrugRows = [], antipsychoticRows = [], glaucomaRiskRows = [], sedatingRows = [];
+			var beersAnticholinergicRows = [], beersBenzoRows = [], beersZdrugRows = [], beersNsaidRows = [];
+			var utiTreatmentRows = [], utiSymptomRows = [], utiPossibleRows = [], utiPreventionRows = [];
+			groups.forEach(function(g) {
+				var t = g.rows[0].innerText;
+				g.reasons = [];
+				if (SSRI_ONLY.test(t)) ssriRows.push(g);
+				if (ANTIDEPRESSANT.test(t)) adRows.push(g);
+				if (SEROTONERGIC.test(t)) serotRows.push(g);
+				if (MAOI.test(t)) g.isMAOI = true;
+				if (ANTICOAG_NSAID.test(t)) anticoagRows.push(g);
+				if (QTC.test(t)) qtcRows.push(g);
+				if (BENZO.test(t)) benzoRows.push(g);
+				if (OPIOID.test(t)) opioidRows.push(g);
+				if (FALL_RISK.test(t)) fallRows.push(g);
+				if (LITHIUM_RE.test(t)) lithiumRows.push(g);
+				if (VALPROATE_RE.test(t)) valproateRows.push(g);
+				if (SEIZURE_RISK_DRUGS.test(t)) seizureDrugRows.push(g);
+				if (ANTIPSYCHOTIC.test(t)) antipsychoticRows.push(g);
+				if (GLAUCOMA_RISK_DRUGS.test(t)) glaucomaRiskRows.push(g);
+				if (SEDATING_DRUGS.test(t)) sedatingRows.push(g);
+				if (BEERS_ANTICHOLINERGIC.test(t)) beersAnticholinergicRows.push(g);
+				if (BEERS_BENZO.test(t)) beersBenzoRows.push(g);
+				if (BEERS_ZDRUG.test(t)) beersZdrugRows.push(g);
+				if (BEERS_NSAID.test(t)) beersNsaidRows.push(g);
+				if (UTI_TREATMENT.test(t)) utiTreatmentRows.push(g);
+				if (UTI_SYMPTOM.test(t)) utiSymptomRows.push(g);
+				if (UTI_POSSIBLE.test(t)) utiPossibleRows.push(g);
+				if (UTI_PREVENTION.test(t)) utiPreventionRows.push(g);
+			});
+			function flag(list, reason) {
+				list.forEach(function(g) {
+					if (g.reasons.indexOf(reason) === -1) g.reasons.push(reason);
+				});
+			}
+			var uniqueSSRIs = {};
+			ssriRows.forEach(function(g) {
+				uniqueSSRIs[canonName(g)] = true;
+			});
+			if (Object.keys(uniqueSSRIs).length >= 2) flag(ssriRows, "Multiple SSRIs");
+			var uniqueADs = {};
+			adRows.forEach(function(g) {
+				uniqueADs[canonName(g)] = true;
+			});
+			var uniqueADNames = Object.keys(uniqueADs);
+			if (uniqueADNames.length >= 3) flag(adRows, uniqueADNames.length + " antidepressants");
+			var ssriSnriRows = groups.filter(function(g) {
+				return SSRI_SNRI.test(g.rows[0].innerText);
+			});
+			if (ssriSnriRows.length && anticoagRows.length) {
+				flag(ssriSnriRows, "Bleed risk (SSRI/SNRI + NSAID/blood thinner)");
+				flag(anticoagRows, "Bleed risk (SSRI/SNRI + NSAID/blood thinner)");
+			}
+			var maoiRows = groups.filter(function(g) {
+				return g.isMAOI;
+			});
+			if (serotRows.length >= 2) flag(serotRows, "Serotonin syndrome risk");
+			if (serotRows.length && maoiRows.length) {
+				flag(serotRows, "Serotonin syndrome risk (with MAOI)");
+				flag(maoiRows, "Serotonin syndrome risk (with MAOI)");
+			}
+			if (qtcRows.length >= 2) flag(qtcRows, "QTc prolongation");
+			if (benzoRows.length && opioidRows.length) {
+				flag(benzoRows, "Sedation/breathing risk (benzo + opioid)");
+				flag(opioidRows, "Sedation/breathing risk (benzo + opioid)");
+			}
+			if (fallRows.length >= 2) flag(fallRows, "Risk for falls");
+			var patientAge = getPatientAge();
+			if (patientAge === null || patientAge >= 65) {
+				if (beersAnticholinergicRows.length) flag(beersAnticholinergicRows, "Beers: anticholinergic — avoid in elderly");
+				if (beersBenzoRows.length) flag(beersBenzoRows, "Beers: benzodiazepine — avoid in elderly");
+				if (beersZdrugRows.length) flag(beersZdrugRows, "Beers: Z-drug — avoid in elderly");
+				if (beersNsaidRows.length) flag(beersNsaidRows, "Beers: NSAID — avoid chronic use in elderly");
+				if (antipsychoticRows.length) flag(antipsychoticRows, "Beers: antipsychotic — document rationale");
+			}
+			var pf = patientFlags;
+			if (pf.ckd && pf.ckd.found && lithiumRows.length) flag(lithiumRows, "Lithium + kidney disease (" + pf.ckd.code + "): adjust dose, check levels");
+			if (pf.liver && pf.liver.found && valproateRows.length) flag(valproateRows, "Valproate + liver disease (" + pf.liver.code + "): check LFTs");
+			if (pf.seizure && pf.seizure.found && seizureDrugRows.length) flag(seizureDrugRows, "Bupropion/clozapine + seizure disorder (" + pf.seizure.code + "): lowers seizure threshold");
+			if (pf.diabetes && pf.diabetes.found && antipsychoticRows.length) flag(antipsychoticRows, "Antipsychotic + diabetes (" + pf.diabetes.code + "): monitor weight, glucose, lipids");
+			if (pf.glaucoma && pf.glaucoma.found && glaucomaRiskRows.length) flag(glaucomaRiskRows, "Anticholinergic/TCA + narrow-angle glaucoma (" + pf.glaucoma.code + "): avoid");
+			if (pf.sleepApnea && pf.sleepApnea.found && sedatingRows.length) flag(sedatingRows, "Sedating med + sleep apnea (" + pf.sleepApnea.code + "): breathing risk");
+			if (pf.parkinsons && pf.parkinsons.found && antipsychoticRows.length) flag(antipsychoticRows, "Antipsychotic + Parkinson's (" + pf.parkinsons.code + "): may worsen movement symptoms");
+			if (utiTreatmentRows.length) flag(utiTreatmentRows, "Likely UTI treatment");
+			if (utiSymptomRows.length) flag(utiSymptomRows, "UTI urinary symptom relief (phenazopyridine — not an antibiotic)");
+			if (utiPossibleRows.length) flag(utiPossibleRows, "Possible UTI antibiotic — check indication");
+			if (utiPreventionRows.length) flag(utiPreventionRows, "UTI prevention (methenamine)");
+			var flagged = [];
+			groups.forEach(function(g) {
+				if (g.reasons.length) flagged.push(g);
+			});
+			return flagged;
+		}
+		function collectEntries(flagged) {
+			var byReason = {}, out = [];
+			flagged.forEach(function(g) {
+				var n = shortName(g);
+				g.reasons.forEach(function(reason) {
+					var e = byReason[reason];
+					if (!e) {
+						e = byReason[reason] = {
+							reason,
+							names: [],
+							sev: severityFor(reason)
+						};
+						out.push(e);
+					}
+					if (e.names.indexOf(n) === -1) e.names.push(n);
+				});
+			});
+			var order = {
+				HIGH: 0,
+				MEDIUM: 1,
+				LOW: 2
+			};
+			out.sort(function(a, b) {
+				return order[a.sev] - order[b.sev];
+			});
+			return out;
+		}
+		function buildPanelHtml(entries) {
+			if (!entries.length) return "<em>No flags.</em>";
+			return entries.map(function(e) {
+				var color = colorFor(e.sev).border;
+				return "<div class=\"pcc-flag\" data-rkey=\"" + rationaleKeyFor(e.reason) + "\" data-meds=\"" + esc(e.names.join(", ")) + "\" style=\"margin:2px 0;cursor:pointer;padding:2px 4px;border-radius:4px;\" title=\"Click to copy a documentation sentence\"><b style=\"color:" + color + "\">[" + e.sev + "]</b> " + esc(e.reason) + " — " + esc(e.names.join(", ")) + " <span style=\"color:#666;font-size:11px;\">⧉</span></div>";
+			}).join("");
+		}
+		function showRationalePopup(doc, rkey, meds, anchorEl) {
+			closeRationalePopup(doc);
+			var sentences = RATIONALE_SENTENCES[rkey] || RATIONALE_SENTENCES["general"];
+			var pop = doc.createElement("div");
+			pop.id = "pccRationalePop";
+			pop.style.cssText = "position:fixed;z-index:999999;max-width:480px;background:#fff;border:2px solid #1d4ed8;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,.3);padding:10px 12px;font-size:13px;";
+			var title = doc.createElement("div");
+			title.style.cssText = "font-weight:bold;margin-bottom:8px;color:#1d4ed8;";
+			title.textContent = "Copy documentation sentence (" + meds + ") — click to copy:";
+			pop.appendChild(title);
+			sentences.forEach(function(s) {
+				var filled = s.replace(/\[meds\]/gi, meds).replace(/\[Meds\]/g, meds);
+				var btn = doc.createElement("button");
+				btn.type = "button";
+				btn.style.cssText = "display:block;width:100%;text-align:left;margin:0 0 6px 0;padding:6px 8px;font-size:12px;cursor:pointer;border:1px solid #93c5fd;background:#eff6ff;border-radius:4px;";
+				btn.textContent = filled;
+				btn.onmouseenter = function() {
+					btn.style.background = "#dbeafe";
+				};
+				btn.onmouseleave = function() {
+					btn.style.background = "#eff6ff";
+				};
+				btn.onclick = function(ev) {
+					ev.stopPropagation();
+					copyToClipboard(doc, filled, null);
+					btn.textContent = "✓ Copied: " + filled;
+					setTimeout(function() {
+						closeRationalePopup(doc);
+					}, 900);
+				};
+				pop.appendChild(btn);
+			});
+			var close = doc.createElement("button");
+			close.type = "button";
+			close.textContent = "Close";
+			close.style.cssText = "margin-top:2px;padding:3px 12px;font-size:12px;cursor:pointer;";
+			close.onclick = function(ev) {
+				ev.stopPropagation();
+				closeRationalePopup(doc);
+			};
+			pop.appendChild(close);
+			pop.style.visibility = "hidden";
+			doc.body.appendChild(pop);
+			var r = null;
+			try {
+				r = anchorEl.getBoundingClientRect();
+			} catch (e) {}
+			var x = r ? r.left + window.scrollX : window.innerWidth / 2 - 240;
+			var y = r ? r.bottom + window.scrollY + 6 : window.innerHeight / 2 - 100;
+			x = Math.max(8, Math.min(x, window.innerWidth - 496));
+			pop.style.left = x + "px";
+			pop.style.top = y + "px";
+			pop.style.visibility = "visible";
+			setTimeout(function() {
+				doc.addEventListener("click", closeRationalePopupOnOutside);
+			}, 50);
+			function closeRationalePopupOnOutside(ev) {
+				if (!pop.contains(ev.target)) closeRationalePopup(doc);
+			}
+			pop.__outsideHandler = closeRationalePopupOnOutside;
+		}
+		function closeRationalePopup(doc) {
+			var pop = doc.getElementById("pccRationalePop");
+			if (pop) {
+				if (pop.__outsideHandler) try {
+					doc.removeEventListener("click", pop.__outsideHandler);
+				} catch (e) {}
+				pop.remove();
+			}
+		}
+		function medTierOf(rowText) {
+			var t = rowText || "";
+			var isPsych = PSYCH.test(t);
+			var isT2c = !isPsych && TIER2_COUNTED.test(t);
+			var isT2u = !isPsych && !isT2c && TIER2_UNCOUNTED.test(t);
+			var isPain = !isPsych && !isT2c && !isT2u && PAIN.test(t);
+			if (isPsych) return 0;
+			if (isT2c || isT2u) return 1;
+			if (isPain) return 3;
+			return 2;
+		}
+		function sortMedDisplay(groups, on) {
+			return groups.slice().sort(function(a, b) {
+				return (on ? a.tier : 2) - (on ? b.tier : 2) || a.po - b.po;
+			});
+		}
+		function paintMedRows(doc, groups, sorted, on) {
+			groups.forEach(function(g) {
+				clearRowStyle(g);
+				if (g.tier <= 1) applyColor(g, COLOR_PSYCH);
+				else {
+					var t = g.rows[0].innerText;
+					if (UTI_TREATMENT.test(t)) applyColor(g, COLOR_UTI, "Likely UTI treatment");
+					else if (UTI_SYMPTOM.test(t)) applyColor(g, COLOR_UTI, "Urinary symptom relief — not an antibiotic");
+					else if (UTI_PREVENTION.test(t)) applyColor(g, COLOR_UTI, "UTI prevention");
+					else if (UTI_POSSIBLE.test(t)) applyColor(g, COLOR_UTI, "Often UTI — check indication");
+				}
+			});
+			if (on) {
+				boxTier(sorted, function(g) {
+					return g.tier <= 1;
+				}, "#2563eb");
+				boxTier(sorted, 3, "#ea580c");
+			}
+		}
+		function sortMeds(doc) {
+			var tbody = doc.querySelector("table.scrollTable > tbody");
+			if (!tbody) return;
+			var groups = getMedGroups(tbody);
+			if (!groups.length) return;
+			var on = isOn("pccPsychFirst");
+			tbody.__po = tbody.__po || 0;
+			var psychOnly = 0, tier2c = 0, tier2u = 0, painCount = 0;
+			groups.forEach(function(g) {
+				var r = g.rows[0];
+				if (!r.hasAttribute("data-po")) r.setAttribute("data-po", tbody.__po++);
+				g.po = +r.getAttribute("data-po");
+				g.tier = medTierOf(r.innerText);
+				if (g.tier === 0) psychOnly++;
+				else if (g.tier === 1) {
+					if (TIER2_COUNTED.test(r.innerText)) tier2c++;
+					else tier2u++;
+				} else if (g.tier === 3) painCount++;
+				g.listed = !!matchMed(headerText(g));
+			});
+			var psychCount = psychOnly + tier2c;
+			var sorted = sortMedDisplay(groups, on);
+			if (sorted.some(function(g, i) {
+				return g !== groups[i];
+			})) sorted.forEach(function(g) {
+				g.rows.forEach(function(r) {
+					tbody.appendChild(r);
+				});
+			});
+			var noExp = 0;
+			if (on) groups.forEach(function(g) {
+				var isPsychTier = g.tier <= 1;
+				if (!isPsychTier && (g.tier > 1 && !g.listed || !isCollapsed(doc, g))) return;
+				if (isPsychTier && !isCollapsed(doc, g)) return;
+				var key = medKey(g.rows[0]);
+				if (!isPsychTier && !shouldOpen(doc, key)) return;
+				var x = findExpander(doc, g.rows[0]);
+				if (x) {
+					noteOpened(doc, key);
+					x.click();
+				} else noExp++;
+			});
+			paintMedRows(doc, groups, sorted, on);
+			if (!tbody.__tmBorderWatch) {
+				tbody.__tmBorderWatch = true;
+				tbody.addEventListener("click", function(ev) {
+					var t = ev.target && ev.target.closest ? ev.target.closest("a.row_toggle, .row_toggle") : null;
+					if (!t || !tbody.contains(t)) return;
+					setTimeout(function() {
+						var gs = getMedGroups(tbody);
+						gs.forEach(function(g) {
+							var r = g.rows[0];
+							g.tier = medTierOf(r.innerText);
+							g.po = +(r.getAttribute("data-po") || 0);
+						});
+						paintMedRows(doc, gs, sortMedDisplay(gs, isOn("pccPsychFirst")), isOn("pccPsychFirst"));
+					}, 150);
+				});
+			}
+			var flagged = flagAll(groups);
+			flagged.forEach(function(g) {
+				applyColor(g, colorFor(g.reasons.reduce(function(acc, r) {
+					var s = severityFor(r);
+					var rank = {
+						HIGH: 0,
+						MEDIUM: 1,
+						LOW: 2
+					};
+					return rank[s] < rank[acc] ? s : acc;
+				}, "LOW")), g.reasons.map(function(x) {
+					return severityFor(x) + ": " + x;
+				}).join(" | "));
+			});
+			var entries = collectEntries(flagged);
+			var highCount = entries.filter(function(e) {
+				return e.sev === "HIGH";
+			}).length;
+			try {
+				var cid = (location.search.match(/ESOLclientid=(\d+)/) || [])[1] || "";
+				var highs = entries.filter(function(e) {
+					return e.sev === "HIGH";
+				}).map(function(e) {
+					return e.reason;
+				});
+				localStorage.setItem("tmHighFlags", JSON.stringify({
+					id: cid,
+					highs,
+					ts: Date.now()
+				}));
+				localStorage.setItem("tmRowPing", String(Date.now()));
+			} catch (e) {}
+			var psychToggleHtml = "<span style=\"font-weight:bold;\">Psych meds first: " + (on ? "ON" : "OFF") + "</span> <span style=\"font-size:15px;font-weight:bold;background:#2563eb;color:#fff;border-radius:10px;padding:2px 10px;margin-left:8px;white-space:nowrap;\">" + psychCount + " psych</span><div style=\"font-size:11px;color:#666;margin-top:2px;\">" + groups.length + " meds" + (tier2u ? " · +" + tier2u + " addiction uncounted" : "") + (painCount ? " · " + painCount + " pain at bottom" : "") + (noExp ? " · could not open " + noExp : "") + "</div>";
+			setButton(doc, "interactionInfo", "⚠ " + entries.length + (entries.length === 1 ? " flag" : " flags") + " (" + highCount + " high) — click to hide/show · screening only", function() {
+				togglePanel(doc, "interactionPanel");
+			});
+			setBox(doc, "interactionPanel", FLAG_BOX_CSS, buildPanelHtml(entries));
+			try {
+				var panel = doc.getElementById("interactionPanel");
+				if (panel) {
+					var flags = panel.querySelectorAll(".pcc-flag");
+					for (var fi = 0; fi < flags.length; fi++) (function(f) {
+						f.onclick = function(ev) {
+							ev.stopPropagation();
+							showRationalePopup(doc, f.getAttribute("data-rkey"), f.getAttribute("data-meds"), f);
+						};
+						f.onmouseenter = function() {
+							f.style.background = "#ffedd5";
+						};
+						f.onmouseleave = function() {
+							f.style.background = "";
+						};
+					})(flags[fi]);
+				}
+			} catch (e) {}
+			var medRes = buildMedList(sorted);
+			setBox(doc, "medListBox", MED_BOX_CSS, buildMedListHtml(medRes));
+			setButton(doc, "psychToggle", psychToggleHtml, function() {
+				setOn("pccPsychFirst", !isOn("pccPsychFirst"));
+				sortMeds(doc);
+			});
+			var copyBtn = doc.getElementById("copyMedListBtn");
+			var mbHide = doc.getElementById("medListBox");
+			if (mbHide) mbHide.style.display = "none";
+			var ptHide = doc.getElementById("psychToggle");
+			if (ptHide) ptHide.style.display = "none";
+			var seenMethadone = false;
+			var medText = medRes.lines.map(function(l) {
+				var body = l.replace(/^\s*-\s*/, "");
+				if (/^methadone\b/i.test(body)) {
+					if (seenMethadone) return null;
+					seenMethadone = true;
+					return "-Methadone managed by medical";
+				}
+				return l;
+			}).filter(function(l) {
+				return l !== null;
+			}).join("\n");
+			if (copyBtn) {
+				copyBtn.setAttribute("data-fill-value", medText);
+				copyBtn.onclick = function(e) {
+					e.stopPropagation();
+					copyToClipboard(doc, medText, copyBtn);
+					try {
+						localStorage.setItem("pccFillPsychMeds", JSON.stringify({
+							value: medText,
+							ts: Date.now()
+						}));
+					} catch (err) {}
+				};
+			}
+			var labsData = buildLabsData(groups);
+			var warnData = buildWarningsData(groups, doc);
+			var labsRow = doc.getElementById("pccLabsRow");
+			if (!labsRow) {
+				labsRow = doc.createElement("div");
+				labsRow.id = "pccLabsRow";
+				labsRow.style.cssText = "display:flex;gap:8px;align-items:stretch;width:100%;box-sizing:border-box;margin:0 0 6px 0;";
+				var topRow = doc.getElementById("pccTopRow");
+				if (topRow && topRow.parentNode) topRow.parentNode.insertBefore(labsRow, topRow.nextSibling);
+				else doc.body.insertBefore(labsRow, doc.body.firstChild);
+			}
+			var labsBox = doc.getElementById("labsBox");
+			if (!labsBox) {
+				labsBox = doc.createElement("div");
+				labsBox.id = "labsBox";
+				labsBox.style.cssText = "flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #1d4ed8;background:#eff6ff;overflow-wrap:anywhere;";
+				labsRow.appendChild(labsBox);
+			}
+			labsBox.innerHTML = buildLabsHtml(labsData);
+			var labsCopyBtn = doc.getElementById("copyLabsBtn");
+			if (labsCopyBtn) labsCopyBtn.onclick = function(e) {
+				e.stopPropagation();
+				copyToClipboard(doc, labsData.lines.join("\n"), labsCopyBtn);
+			};
+			var warnBox = doc.getElementById("warnBox");
+			if (!warnBox) {
+				warnBox = doc.createElement("div");
+				warnBox.id = "warnBox";
+				warnBox.style.cssText = "flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #991b1b;background:#fef2f2;overflow-wrap:anywhere;";
+				labsRow.appendChild(warnBox);
+			}
+			warnBox.innerHTML = buildWarningsHtml(warnData);
+			applyMedsView(doc, groups);
+			if (dashView() !== "main") {
+				plantBoxes(doc);
+				tidyMedsTop(doc);
+			}
+		}
+		var LAB_BOX_CSS = "flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #1d4ed8;background:#eff6ff;overflow-wrap:anywhere;";
+		var WARN_BOX_CSS = "flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #991b1b;background:#fef2f2;overflow-wrap:anywhere;";
+		function watchCollapse(doc, box, label) {
+			if (!box || box.querySelector(".tmWatchBody")) return;
+			var body = doc.createElement("div");
+			body.className = "tmWatchBody";
+			while (box.firstChild) body.appendChild(box.firstChild);
+			body.style.display = "none";
+			var names = [];
+			body.querySelectorAll("b, strong").forEach(function(b) {
+				var w = (b.textContent || "").trim().split(/\s+/)[0].replace(/[^A-Za-z\-]/g, "");
+				if (w && w.length > 2 && names.indexOf(w) === -1 && names.length < 6) names.push(w);
+			});
+			var bar = doc.createElement("div");
+			bar.className = "tmWatchBar";
+			bar.style.cssText = "font-weight:600;padding:2px 0;";
+			var suffix = names.length ? " — " + names.join(" · ") : "";
+			bar.textContent = "▸ " + label + suffix;
+			box.onmouseenter = function() {
+				body.style.display = "block";
+				bar.textContent = "▾ " + label + suffix;
+				refitFrame(doc);
+			};
+			box.onmouseleave = function() {
+				body.style.display = "none";
+				bar.textContent = "▸ " + label + suffix;
+				refitFrame(doc);
+			};
+			box.appendChild(bar);
+			box.appendChild(body);
+		}
+		function applyMedsView(doc, groups) {
+			var mica = dashView() === "main";
+			var flags = doc.getElementById("interactionPanel");
+			var labs = doc.getElementById("labsBox");
+			var warn = doc.getElementById("warnBox");
+			var topRow = doc.getElementById("pccTopRow");
+			var labsRow = doc.getElementById("pccLabsRow");
+			var watch = doc.getElementById("tmWatchBox");
+			if (mica) {
+				if (!watch && topRow && topRow.parentNode) {
+					watch = doc.createElement("div");
+					watch.id = "tmWatchBox";
+					watch.style.cssText = "display:block;width:100%;box-sizing:border-box;margin:0 0 6px 0;";
+					topRow.parentNode.insertBefore(watch, topRow);
+				}
+				if (watch) {
+					[
+						flags,
+						labs,
+						warn
+					].forEach(function(b) {
+						if (!b) return;
+						watch.appendChild(b);
+						b.style.flex = "none";
+						b.style.width = "100%";
+						b.style.marginLeft = "0";
+						b.style.marginBottom = "8px";
+						b.style.display = "block";
+					});
+					watchCollapse(doc, labs, "Labs to monitor");
+					watchCollapse(doc, warn, "Black box");
+				}
+				if (topRow) topRow.style.display = "none";
+				if (labsRow) labsRow.style.display = "none";
+			} else if (watch) {
+				watch.remove();
+				if (topRow) {
+					topRow.style.display = "";
+					if (flags) {
+						topRow.appendChild(flags);
+						flags.style.cssText = FLAG_BOX_CSS;
+					}
+				}
+				if (labsRow) {
+					labsRow.style.display = "";
+					if (labs) {
+						labsRow.appendChild(labs);
+						labs.style.cssText = LAB_BOX_CSS;
+					}
+					if (warn) {
+						labsRow.appendChild(warn);
+						warn.style.cssText = WARN_BOX_CSS;
+					}
+				}
+			}
+			renderMedsPanel(doc, groups, mica);
+			var mTable = null;
+			if (groups && groups.length && groups[0].rows[0]) mTable = groups[0].rows[0].closest("table");
+			trimTable(doc, mTable, ["Order"], !mica);
+			sealBoxes(mTable);
+		}
+		function ensurePadStyle(doc) {
+			if (doc.getElementById("tmPadStyle")) return;
+			var st = doc.createElement("style");
+			st.id = "tmPadStyle";
+			st.textContent = ".tmPadTable td, .tmPadTable th { padding-left: 10px !important; }";
+			doc.head.appendChild(st);
+		}
+		function sealBoxes(table) {
+			if (!table) return;
+			table.querySelectorAll("tr").forEach(function(r) {
+				var cells = r.cells || [];
+				var color = "";
+				for (var i = 0; i < cells.length; i++) {
+					var c = cells[i].style.borderLeftColor || cells[i].style.borderTopColor || "";
+					if (c) {
+						color = c;
+						break;
+					}
+				}
+				if (!color) return;
+				var vis = [];
+				for (var j = 0; j < cells.length; j++) if (!cells[j].hasAttribute("data-tm-colhide")) vis.push(cells[j]);
+				if (!vis.length) return;
+				var hasTop = false, hasBottom = false;
+				for (var k = 0; k < cells.length; k++) {
+					if (cells[k].style.borderTop) hasTop = true;
+					if (cells[k].style.borderBottom) hasBottom = true;
+				}
+				vis[0].style.borderLeft = "3px solid " + color;
+				vis[vis.length - 1].style.borderRight = "3px solid " + color;
+				if (hasTop) vis.forEach(function(c) {
+					c.style.borderTop = "3px solid " + color;
+				});
+				if (hasBottom) vis.forEach(function(c) {
+					c.style.borderBottom = "3px solid " + color;
+				});
+			});
+		}
+		function trimTable(doc, table, keep, folded) {
+			if (!table) return;
+			if (!folded) {
+				table.querySelectorAll("[data-tm-colhide=\"1\"]").forEach(function(c) {
+					c.style.display = "";
+					c.removeAttribute("data-tm-colhide");
+				});
+				table.classList.remove("tmPadTable");
+				return;
+			}
+			table.classList.add("tmPadTable");
+			ensurePadStyle(doc);
+			var rows = table.querySelectorAll("tr");
+			var hdr = null, hideIdx = [];
+			rows.forEach(function(r) {
+				if (hdr) return;
+				var cells = r.cells || [];
+				var texts = [];
+				for (var i = 0; i < cells.length; i++) texts.push((cells[i].textContent || "").replace(/\s+/g, " ").trim());
+				if (texts.indexOf(keep[0]) !== -1 && texts.length >= 3) {
+					hdr = r;
+					texts.forEach(function(tx, i) {
+						if (keep.indexOf(tx) === -1) hideIdx.push(i);
+					});
+				}
+			});
+			if (!hdr || !hideIdx.length) return;
+			rows.forEach(function(r) {
+				var cells = r.cells || [];
+				for (var i = 0; i < cells.length; i++) if (cells[i].colSpan > 1) return;
+				hideIdx.forEach(function(i) {
+					if (cells[i]) {
+						cells[i].style.display = "none";
+						cells[i].setAttribute("data-tm-colhide", "1");
+					}
+				});
+			});
+		}
+		function escHtml(s) {
+			return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+		}
+		function giveText(g) {
+			if (!g.rows[1]) return "";
+			return (g.rows[1].innerText || "").trim().split(/\n/)[0].replace(/^Give\s+/i, "");
+		}
+		function strengthOf(g) {
+			var m = ((g.rows[0].innerText || "").trim().split(/\n|\t/)[0] || "").match(/(\d[\d.,\/]*\s*(?:MG\/ML|UNIT\/GM|MG|MCG|ML|%|UNITS?|GM|G))(?=[\s(]|$)/i);
+			return m ? m[1].toUpperCase() : "";
+		}
+		function freqWord(give) {
+			var s = (give || "").toLowerCase();
+			var base = "";
+			if (/two times a day/.test(s)) base = "BID";
+			else if (/three times a day/.test(s)) base = "TID";
+			else if (/four times a day/.test(s)) base = "QID";
+			else if (/at bedtime/.test(s)) base = "QHS";
+			else if (/every other day/.test(s)) base = "QOD";
+			else {
+				var h = s.match(/every (\d+) hours?/);
+				if (h) base = "q" + h[1] + "h";
+			}
+			if (!base && /one time a day|once daily|one time each day/.test(s)) base = "daily";
+			if (!base && /in the morning/.test(s)) base = "QAM";
+			if (!base && /once a week|one time a week/.test(s)) base = "weekly";
+			if (/as needed/.test(s)) return base ? base + " PRN" : "PRN";
+			return base;
+		}
+		function oneLiner(g) {
+			var fw = freqWord(giveText(g));
+			return escHtml(shortName(g) + " " + strengthOf(g) + (fw ? " " + fw : ""));
+		}
+		function orderLine(g) {
+			var give = giveText(g);
+			return "<b>" + escHtml(shortName(g) + " " + strengthOf(g)) + "</b>" + (give ? " — " + escHtml(give) : "");
+		}
+		function renderMedsPanel(doc, groups, folded) {
+			doc.querySelectorAll("[data-tm-compact=\"1\"]").forEach(function(r) {
+				r.style.display = "";
+				r.removeAttribute("data-tm-compact");
+			});
+			var table = null;
+			if (groups && groups.length && groups[0].rows[0]) table = groups[0].rows[0].closest("table");
+			var panel = doc.getElementById("tmMedsPanel");
+			if (!folded) {
+				if (panel) panel.remove();
+				if (table) table.style.display = "";
+				return;
+			}
+			if (!table || !table.parentNode) return;
+			if (!panel) {
+				panel = doc.createElement("div");
+				panel.id = "tmMedsPanel";
+				table.parentNode.insertBefore(panel, table);
+			}
+			panel.style.cssText = "background:#fff;border:1px solid #d6d0bd;border-radius:6px;margin:0 0 6px 0;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+			var psych = [], pain = [], others = [];
+			(groups || []).forEach(function(g) {
+				if (g.tier <= 1) psych.push(orderLine(g));
+				else if (g.tier === 3) pain.push(oneLiner(g));
+				else others.push(oneLiner(g));
+			});
+			var html = "<div style=\"padding:8px 10px;font-size:13px;line-height:1.6;\">";
+			if (psych.length) html += "<div style=\"border:2px solid #2563eb;border-radius:4px;padding:6px 9px;margin-bottom:8px;\">" + psych.join("<br>") + "</div>";
+			if (others.length) html += "<div style=\"color:#44403c;\">" + others.join(" · ") + "</div>";
+			if (pain.length) html += "<div style=\"color:#7c2d12;border:2px solid #ea580c;border-radius:4px;padding:5px 9px;margin-top:8px;\">Pain: " + pain.join(" · ") + "</div>";
+			html += "<div id=\"tmMedsFullBar\" style=\"margin-top:7px;color:#334155;cursor:pointer;font-weight:600;\">▸ show full order text (" + (groups ? groups.length : 0) + " orders)</div>";
+			html += "</div>";
+			panel.innerHTML = html;
+			table.style.display = "none";
+			var bar = panel.querySelector("#tmMedsFullBar");
+			if (bar) bar.onclick = function() {
+				var show = table.style.display === "none";
+				table.style.display = show ? "" : "none";
+				bar.textContent = show ? "▾ hide full order text" : "▸ show full order text (" + (groups ? groups.length : 0) + " orders)";
+				refitFrame(doc);
+			};
+		}
+		function codesIn(r) {
+			return r.innerText.match(CODE_RE) || [];
+		}
+		function dxTier(r) {
+			var best = 3;
+			codesIn(r).forEach(function(code) {
+				var c = code.replace(".", "");
+				var t = c.charAt(0) === "F" ? 0 : RELATED_G.test(c) ? 1 : RELATED_R.test(c) ? 2 : 3;
+				if (t < best) best = t;
+			});
+			return best;
+		}
+		function scanPatientConditions(groups) {
+			var flags = {};
+			function set(name, code) {
+				flags[name] = {
+					found: true,
+					code
+				};
+			}
+			groups.forEach(function(g) {
+				codesIn(g.rows[0]).forEach(function(code) {
+					var c = code.replace(".", "");
+					if (CKD_RE.test(c)) set("ckd", code);
+					if (LIVER_RE.test(c)) set("liver", code);
+					if (SEIZURE_DX_RE.test(c)) set("seizure", code);
+					if (DIABETES_RE.test(c)) set("diabetes", code);
+					if (GLAUCOMA_DX_RE.test(c)) set("glaucoma", code);
+					if (SLEEP_APNEA_RE.test(c)) set("sleepApnea", code);
+					if (PARKINSONS_RE.test(c)) set("parkinsons", code);
+				});
+			});
+			patientFlags = flags;
+		}
+		function sortDx(doc) {
+			var trs = doc.querySelectorAll("tr"), first = null;
+			for (var i = 0; i < trs.length; i++) if (!trs[i].querySelector("tr") && codesIn(trs[i]).length) {
+				first = trs[i];
+				break;
+			}
+			if (!first) return;
+			var tbody = first.parentElement;
+			var groups = [], cur = null;
+			Array.prototype.forEach.call(tbody.children, function(r) {
+				if (r.tagName !== "TR") return;
+				if (codesIn(r).length) {
+					cur = { rows: [r] };
+					groups.push(cur);
+				} else if (cur) cur.rows.push(r);
+			});
+			if (!groups.length) return;
+			scanPatientConditions(groups);
+			tbody.__dpo = tbody.__dpo || 0;
+			var fCount = 0, gCount = 0, rCount = 0;
+			groups.forEach(function(g) {
+				var r = g.rows[0];
+				if (!r.hasAttribute("data-dpo")) r.setAttribute("data-dpo", tbody.__dpo++);
+				g.po = +r.getAttribute("data-dpo");
+				g.tier = dxTier(r);
+				if (g.tier === 0) fCount++;
+				else if (g.tier === 1) gCount++;
+				else if (g.tier === 2) rCount++;
+			});
+			groups.forEach(function(g) {
+				clearRowStyle(g);
+				if (g.tier <= 1) applyColor(g, COLOR_PSYCH);
+			});
+			var on = isOn("pccDxFirst");
+			var sorted = groups.slice().sort(function(a, b) {
+				return (on ? a.tier : 3) - (on ? b.tier : 3) || a.po - b.po;
+			});
+			if (sorted.some(function(g, i) {
+				return g !== groups[i];
+			})) sorted.forEach(function(g) {
+				g.rows.forEach(function(r) {
+					tbody.appendChild(r);
+				});
+			});
+			doc.querySelectorAll("a").forEach(function(a) {
+				if ((a.textContent || "").replace(/\s+/g, " ").trim() === "Add Diagnosis") a.style.display = "none";
+			});
+			if (on) boxTier(sorted, function(g) {
+				return g.tier <= 1;
+			}, "#2563eb");
+			setButton(doc, "dxToggle", "Psych dx first: " + (on ? "ON" : "OFF") + " (F: " + fCount + ", G: " + gCount + ", R: " + rCount + ", of " + groups.length + " dx)", function() {
+				setOn("pccDxFirst", !isOn("pccDxFirst"));
+				sortDx(doc);
+			});
+			applyDxView(doc, sorted, tbody);
+		}
+		function applyDxView(doc, groups, tbody) {
+			doc.querySelectorAll("[data-tm-dxhide=\"1\"]").forEach(function(r) {
+				r.style.display = "";
+				r.removeAttribute("data-tm-dxhide");
+			});
+			var oldBar = doc.getElementById("tmDxBar");
+			if (oldBar && oldBar.tagName === "TR") oldBar.remove();
+			var folded = dashView() === "main";
+			var table = null;
+			var firstRow = null;
+			(groups || []).some(function(g) {
+				if (g.rows[0]) {
+					firstRow = g.rows[0];
+					return true;
+				}
+				return false;
+			});
+			if (firstRow) table = firstRow.closest("table");
+			var panel = doc.getElementById("tmDxPanel");
+			trimTable(doc, table, ["ICD-10", "Short Description"], !folded);
+			sealBoxes(table);
+			if (!folded) {
+				if (panel) panel.remove();
+				if (table) table.style.display = "";
+				return;
+			}
+			if (!table || !table.parentNode) return;
+			if (!panel) {
+				panel = doc.createElement("div");
+				panel.id = "tmDxPanel";
+				table.parentNode.insertBefore(panel, table);
+			}
+			panel.style.cssText = "background:#fff;border:1px solid #d6d0bd;border-radius:6px;margin:0 0 6px 0;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+			function dxLine(g) {
+				var parts = g.rows.map(function(r) {
+					return r.innerText || "";
+				}).join("\n").split(/\t|\n/).map(function(s) {
+					return s.trim();
+				}).filter(function(s) {
+					return s;
+				});
+				var ci = -1, code = "";
+				for (var i = 0; i < parts.length; i++) if (/^[A-Z]\d{2}(\.\d{1,2})?$/.test(parts[i])) {
+					ci = i;
+					code = parts[i];
+					break;
+				}
+				if (ci === -1) return parts.join(" ");
+				var desc = parts.slice(ci + 1).filter(function(p) {
+					return p !== code;
+				}).join(" ");
+				return (code + " " + desc).trim();
+			}
+			var psych = [], rest = [];
+			(groups || []).forEach(function(g) {
+				if (g.tier <= 1) psych.push(dxLine(g));
+				else rest.push(dxLine(g));
+			});
+			var html = "<div style=\"padding:8px 10px;font-size:13px;line-height:1.6;\">";
+			if (psych.length) html += "<div style=\"border:2px solid #2563eb;border-radius:4px;padding:6px 9px;\">" + psych.map(escHtml).join("<br>") + "</div>";
+			if (rest.length) {
+				html += "<div id=\"tmDxMore\" style=\"display:none;margin-top:7px;\">" + rest.map(escHtml).join("<br>") + "</div>";
+				html += "<div id=\"tmDxBar\" style=\"margin-top:7px;color:#334155;cursor:pointer;font-weight:600;\">▸ " + rest.length + " more diagnoses — click to show all</div>";
+			}
+			html += "</div>";
+			panel.innerHTML = html;
+			table.style.display = "none";
+			var bar = panel.querySelector("#tmDxBar");
+			var more = panel.querySelector("#tmDxMore");
+			if (bar && more) bar.onclick = function() {
+				var show = more.style.display === "none";
+				more.style.display = show ? "block" : "none";
+				bar.textContent = show ? "▾ " + rest.length + " more diagnoses — click to hide" : "▸ " + rest.length + " more diagnoses — click to show all";
+				refitFrame(doc);
+			};
+		}
+		function expand(doc) {
+			var win = doc.defaultView;
+			var clips = [];
+			doc.querySelectorAll("body *").forEach(function(e) {
+				if (e.scrollHeight > e.clientHeight + 1) {
+					var cs = win.getComputedStyle(e);
+					if (/(auto|scroll|hidden)/.test(cs.overflowY)) clips.push(e);
+				}
+			});
+			clips.forEach(function(e) {
+				e.style.setProperty("height", "auto", "important");
+				e.style.setProperty("max-height", "none", "important");
+				e.style.setProperty("overflow", "visible", "important");
+			});
+			[doc.documentElement, doc.body].forEach(function(e) {
+				e.style.setProperty("overflow", "visible", "important");
+			});
+		}
+		function contentBottom(doc) {
+			var bottom = 0;
+			doc.querySelectorAll("tr, #tmMedsPanel, #tmDxPanel, #tmWatchBox, #pccTopRow, #pccLabsRow").forEach(function(r) {
+				var b = r.getBoundingClientRect().bottom;
+				if (b > bottom) bottom = b;
+			});
+			return bottom || doc.body.scrollHeight;
+		}
+		function unclipParents(f) {
+			var el = f.parentElement;
+			while (el && el !== document.body && el !== document.documentElement) {
+				if (el.clientHeight < f.offsetHeight - 2) {
+					el.style.setProperty("height", "auto", "important");
+					el.style.setProperty("max-height", "none", "important");
+					el.style.setProperty("overflow", "visible", "important");
+				}
+				el = el.parentElement;
+			}
+		}
+		function refitFrame(doc) {
+			document.querySelectorAll("iframe[id^=\"iFramePanel_\"]").forEach(function(f) {
+				try {
+					if ((f.contentDocument || f.contentWindow.document) !== doc) return;
+					expand(doc);
+					var h = Math.ceil(contentBottom(doc)) + 30;
+					if (h > 80 && Math.abs(h - f.offsetHeight) > 5) f.style.height = h + "px";
+					unclipParents(f);
+				} catch (e) {}
+			});
+		}
+		function applySideBySide() {
+			var st = document.getElementById("tmSideStyle");
+			if (dashView() !== "main") {
+				if (!st) {
+					st = document.createElement("style");
+					st.id = "tmSideStyle";
+					st.textContent = "#dragArea{display:flex !important;gap:10px;align-items:flex-start;}#dragArea > tbody{display:contents;}#dragArea > tbody > tr{flex:1 1 0;min-width:0;height:auto !important;}#dragArea > tbody > tr > td{display:block;width:auto !important;}";
+					document.head.appendChild(st);
+				}
+			} else if (st) st.remove();
+		}
+		var processedSig = {};
+		function frameSig(doc) {
+			var best = null, bestRows = 0;
+			doc.querySelectorAll("table").forEach(function(tb) {
+				var n = tb.rows ? tb.rows.length : 0;
+				if (n > bestRows) {
+					bestRows = n;
+					best = tb;
+				}
+			});
+			if (!best || bestRows < 2) return "";
+			var sum = 0;
+			for (var i = 0; i < best.rows.length; i++) sum += (best.rows[i].textContent || "").length;
+			return bestRows + ":" + sum;
+		}
+		function fit() {
+			plantViewToggle();
+			applySideBySide();
+			document.querySelectorAll("iframe[id^=\"iFramePanel_\"]").forEach(function(f) {
+				try {
+					var doc = f.contentDocument || f.contentWindow.document;
+					if (!doc || !doc.body) return;
+					var isMeds = f.id === "iFramePanel_Medications";
+					if (!isMeds && !DX_FRAME.test(f.id)) return;
+					var sig = frameSig(doc);
+					if (sig && processedSig[f.id] === sig) return;
+					if (isMeds && dashView() === "main") {
+						pullBoxes(doc);
+						untidyMedsTop(doc);
+					}
+					if (isMeds) sortMeds(doc);
+					else sortDx(doc);
+					expand(doc);
+					var h = Math.ceil(contentBottom(doc)) + 30;
+					if (h > 80 && Math.abs(h - f.offsetHeight) > 5) f.style.height = h + "px";
+					unclipParents(f);
+					if (sig) processedSig[f.id] = sig;
+				} catch (e) {}
+			});
+		}
+		try {
+			window.__tmDashCurateMeds = function(doc) {
+				try {
+					var all = doc.querySelectorAll("*");
+					for (var ai = 0; ai < all.length; ai++) try {
+						Object.defineProperty(all[ai], "innerText", {
+							value: all[ai].textContent,
+							configurable: true
+						});
+					} catch (e2) {}
+					var tbody = doc.querySelector("table.scrollTable > tbody");
+					if (!tbody) return null;
+					var groups = getMedGroups(tbody);
+					if (!groups.length) return null;
+					groups.forEach(function(g, i) {
+						g.tier = medTierOf(g.rows[0].innerText);
+						g.po = i;
+					});
+					var res = buildMedList(sortMedDisplay(groups, isOn("pccPsychFirst")));
+					if (!res || !res.lines || !res.lines.length) return null;
+					return res.lines.join("\n");
+				} catch (e) {
+					return null;
+				}
+			};
+		} catch (e) {}
+		document.querySelectorAll("iframe[id^=\"iFramePanel_\"]").forEach(function(f) {
+			f.addEventListener("load", function() {
+				setTimeout(fit, 100);
+			});
+		});
+		window.__tmCore.ladder(fit, [
+			600,
+			1600,
+			3200
+		]);
+	})();
+	(function() {
+		"use strict";
+		var stopped = false;
+		var NODE_ID = "tmGatherPacket";
+		function nowT() {
+			var d = new Date();
+			return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+		}
+		function norm(s) {
+			return (s || "").replace(/\s+/g, " ").trim();
+		}
+		function txt(el) {
+			return norm(el && (el.innerText !== void 0 ? el.innerText : el.textContent));
+		}
+		var STOP_KEYS = [
+			"header",
+			"behaviors",
+			"diagnoses",
+			"bims",
+			"relations",
+			"facesheet",
+			"admission",
+			"labs",
+			"ownnotes",
+			"orders",
+			"weights",
+			"dashmeds"
+		];
+		function emptyPacket() {
+			var stops = {};
+			STOP_KEYS.forEach(function(k) {
+				stops[k] = {
+					status: "not-loaded",
+					source: "",
+					at: ""
+				};
+			});
+			return {
+				v: 3,
+				startedAt: nowT(),
+				stops
+			};
+		}
+		var packet = emptyPacket();
+		function residentKey() {
+			try {
+				var _ck = window.__tmCore && window.__tmCore.key();
+				if (_ck) return _ck;
+			} catch (e) {}
+			try {
+				var els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
+				for (var i = 0; i < els.length; i++) {
+					var tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
+					if (tx.length > 70 || tx.length < 5) continue;
+					if (/^clinical\s/i.test(tx)) continue;
+					var em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+					if (em) return "chart:" + em[1].toUpperCase();
+				}
+			} catch (e) {}
+			var m = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+			if (m) return "eid:" + m[1];
+			var as = document.querySelectorAll("a[href*=\"ESOLclientid=\"]");
+			for (var i = 0; i < as.length; i++) {
+				var mm = (as[i].getAttribute("href") || "").match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+				if (mm) return "eid:" + mm[1];
+			}
+			return null;
+		}
+		var storeKey = null;
+		function refreshKey() {
+			try {
+				if (storeKey && storeKey.indexOf("chart:") === 0) return;
+				var k = residentKey();
+				if (k && k.indexOf("chart:") === 0 && k !== storeKey) {
+					storeKey = k;
+					loadStored();
+					mergeStored();
+					publish();
+				}
+			} catch (e) {}
+		}
+		function badRelations(stop) {
+			return !!(stop && stop.summary && /^relationships\b[\s:—–-]*$/i.test(norm(stop.summary)));
+		}
+		function loadStored() {
+			try {
+				storeKey = residentKey();
+				if (!storeKey) return;
+				var raw = localStorage.getItem("tmGatherV2:" + storeKey);
+				if (!raw) return;
+				var stored = JSON.parse(raw);
+				if (!stored || !stored.stops) return;
+				if (stored.v !== 3) return;
+				STOP_KEYS.forEach(function(k) {
+					if (stored.stops[k] && stored.stops[k].status === "landed") {
+						if (k === "relations" && badRelations(stored.stops[k])) return;
+						packet.stops[k] = stored.stops[k];
+					}
+				});
+			} catch (e) {}
+		}
+		function mergeStored() {
+			try {
+				if (!storeKey) storeKey = residentKey();
+				if (!storeKey) return;
+				var raw = localStorage.getItem("tmGatherV2:" + storeKey);
+				if (!raw) return;
+				var stored = JSON.parse(raw);
+				if (!stored || !stored.stops) return;
+				if (stored.v !== 3) return;
+				var changed = false;
+				STOP_KEYS.forEach(function(k) {
+					if (packet.stops[k].status !== "landed" && stored.stops[k] && stored.stops[k].status === "landed") {
+						if (k === "relations" && badRelations(stored.stops[k])) return;
+						packet.stops[k] = stored.stops[k];
+						changed = true;
+					}
+				});
+				if (changed) publish();
+			} catch (e) {}
+		}
+		function feedBimsTile(stop) {
+			try {
+				if (!stop || !stop.series || !stop.series[0]) return;
+				var s0 = stop.series[0];
+				var d = new Date(s0.date);
+				if (isNaN(d.getTime())) return;
+				var val = s0.score + " on " + (d.getMonth() + 1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(2);
+				feedEvent({ bims: val });
+				var k = storeKey || residentKey();
+				if (k) localStorage.setItem("tmBimsFor:" + k, JSON.stringify({
+					value: val,
+					ts: Date.now()
+				}));
+			} catch (e) {}
+		}
+		function saveStored() {
+			try {
+				if (!storeKey) storeKey = residentKey();
+				if (storeKey) localStorage.setItem("tmGatherV2:" + storeKey, JSON.stringify(packet));
+			} catch (e) {}
+		}
+		function publish() {
+			var node = document.getElementById(NODE_ID);
+			if (!node) {
+				node = document.createElement("script");
+				node.type = "application/json";
+				node.id = NODE_ID;
+				node.style.display = "none";
+				(document.body || document.documentElement).appendChild(node);
+				feedFromPacket();
+			}
+			node.textContent = JSON.stringify(packet);
+			try {
+				document.dispatchEvent(new CustomEvent("tm-gather-update"));
+			} catch (e) {}
+		}
+		function land(key, data) {
+			if (stopped) return;
+			if (packet.stops[key] && packet.stops[key].status === "landed") return;
+			data.status = "landed";
+			packet.stops[key] = data;
+			publish();
+			saveStored();
+		}
+		function fmtAllergies(raw) {
+			if (!raw) return "";
+			var cleaned = raw.trim();
+			if (/^no\s+known\s+(?:drug\s+)?allergies/i.test(cleaned) || /^nkda?/i.test(cleaned)) return "NKA";
+			var list = cleaned.split(/[,;\/\n]+/);
+			var out = [];
+			for (var i = 0; i < list.length; i++) {
+				var item = list[i].replace(/\s+/g, " ").trim();
+				item = item.replace(/(?:Copy|Copied)$/i, "").trim();
+				if (!item) continue;
+				item = item.replace(/\bpen[ie]cill?in\b/gi, "PCN");
+				out.push(item);
+			}
+			return out.join(", ");
+		}
+		function isCrownHeights(doc) {
+			try {
+				var els = doc.querySelectorAll("select, button, a, span, div, td");
+				for (var i = 0; i < els.length; i++) {
+					var tx = (els[i].textContent || "").trim();
+					if (tx.length > 90 || tx.length < 6) continue;
+					if (!/crown\s*heights/i.test(tx)) continue;
+					return true;
+				}
+			} catch (e) {}
+			return false;
+		}
+		function roomBedNumber(doc, withWing) {
+			try {
+				var t = doc.body && doc.body.textContent ? doc.body.textContent : "";
+				var v = "";
+				var m = t.match(/\bLocation\s*:?\s*([^\n]*?)(?=\s*(?:Status|Code Status|Physician|DOB|Admission|Initial Admission|Discharge|Allergies|Special Instructions)\b|\n|$)/);
+				if (m) v = m[1].replace(/\s+/g, " ").trim();
+				if (!v) {
+					var li = t.search(/\bLocation\b/i);
+					if (li !== -1) v = t.substr(li, 40).replace(/\s+/g, " ").trim();
+				}
+				var rm = v.match(/\b(\d{2,4})\s*-?\s*([A-Za-z])?\b/);
+				if (!rm) return "";
+				var pre = "";
+				if (withWing) {
+					var tok = v.slice(0, rm.index).match(/([A-Za-z]+)\s*$/);
+					if (tok && /^(east|west)$/i.test(tok[1])) pre = tok[1].charAt(0).toUpperCase();
+					else if (tok && tok[1].length === 1 && /[ew]/i.test(tok[1])) pre = tok[1].toUpperCase();
+				}
+				return pre + rm[1] + (rm[2] ? rm[2].toUpperCase() : "");
+			} catch (e) {
+				return "";
+			}
+		}
+		function weightBlock(doc) {
+			var blocks = doc.querySelectorAll(".vitalDetails");
+			for (var i = 0; i < blocks.length; i++) {
+				var b = blocks[i].querySelector("b");
+				var v = blocks[i].querySelector(".vitalValue");
+				if (b && v && /^weight$/i.test((b.textContent || "").trim())) {
+					var m = (v.textContent || "").match(/([\d.]+)\s*lbs/i);
+					if (m) {
+						var td = blocks[i].closest ? blocks[i].closest("td") : null;
+						return {
+							value: m[1] + " lbs",
+							flagged: !!(td && td.classList && td.classList.contains("vitalWithException"))
+						};
+					}
+				}
+			}
+			return null;
+		}
+		function selfHeader(doc) {
+			var out = {};
+			try {
+				var t = doc.body && doc.body.textContent ? doc.body.textContent : "";
+				var m = t.match(/\((\d{1,3})\/(Male|Female)\)/);
+				if (m) out.ageSex = m[1] + (m[2] === "Male" ? "M" : "F");
+				var room = roomBedNumber(doc, isCrownHeights(doc));
+				if (room) out.room = room;
+				var al = doc.querySelector(".residentAllergies .residentDetailValue");
+				if (al) {
+					var fa = fmtAllergies((al.textContent || "").trim());
+					if (fa) out.allergies = fa;
+				}
+				var a1 = t.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+				if (a1) out.admission = a1[1];
+				else {
+					var a2 = t.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+					if (a2) out.admission = a2[1];
+				}
+				var wb = weightBlock(doc);
+				if (wb) {
+					out.weight = wb.value;
+					if (wb.flagged) out.weightFlagged = true;
+				}
+				var mbox = doc.getElementById("medListBox");
+				if (mbox) {
+					var mdivs = mbox.querySelectorAll("div");
+					var mlines = [];
+					for (var mi = 1; mi < mdivs.length; mi++) {
+						var mtx = (mdivs[mi].textContent || "").trim();
+						if (mtx.indexOf("⚠ REVIEW") === 0) break;
+						if (mtx) mlines.push(mtx);
+					}
+					if (mlines.length) out.medsList = mlines.join("\n").slice(0, 2e3);
+				}
+				var btn = doc.getElementById("copyMedListBtn");
+				if (btn) {
+					var bNode = btn.parentElement;
+					for (var bUp = 0; bUp < 3 && bNode; bUp++) {
+						var bTx = norm(bNode.textContent);
+						if (/psych med list/i.test(bTx) && bTx.length > 30) {
+							var meds2 = bTx.replace(/^Psych med list\s*(Copy\s*)?/i, "").trim();
+							if (meds2) {
+								out.psychMeds = meds2.slice(0, 300);
+								break;
+							}
+						}
+						bNode = bNode.parentElement;
+					}
+				}
+			} catch (e) {}
+			return out;
+		}
+		function readTile(titleRx, maxLen) {
+			var wrap = document.getElementById("pnTilesWrap");
+			if (!wrap) return null;
+			var tiles = wrap.children;
+			for (var i = 0; i < tiles.length; i++) {
+				var tx = norm(tiles[i].textContent);
+				if (titleRx.test(tx)) return tx.slice(0, maxLen);
+			}
+			return null;
+		}
+		function readWeightsPage(doc) {
+			if (!/Weights and Vitals/i.test(doc.title || "")) return null;
+			var tables = doc.querySelectorAll("table");
+			for (var ti = 0; ti < tables.length; ti++) {
+				var trows = tables[ti].querySelectorAll("tr");
+				if (!trows.length) continue;
+				var headCells = trows[0].cells ? Array.prototype.map.call(trows[0].cells, txt) : [];
+				var wIdx = headCells.findIndex(function(c) {
+					return /weight/i.test(c);
+				});
+				var dIdx = headCells.findIndex(function(c) {
+					return /date/i.test(c);
+				});
+				if (wIdx < 0) continue;
+				var pts = [];
+				for (var i = 1; i < trows.length; i++) {
+					var cells = trows[i].cells ? Array.prototype.map.call(trows[i].cells, txt) : [];
+					var wv = parseFloat((cells[wIdx] || "").replace(/[^\d.]/g, ""));
+					var dm = (dIdx >= 0 ? cells[dIdx] || "" : cells.find(function(c) {
+						return /\d{1,2}\/\d{1,2}\/\d{4}/.test(c);
+					}) || "").match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+					if (dm && wv >= 50 && wv <= 700) pts.push({
+						date: dm[0],
+						weight: wv
+					});
+				}
+				if (pts.length >= 2) return pts.slice(0, 40);
+			}
+			return null;
+		}
+		function gatherPage() {
+			if (stopped) return;
+			mergeStored();
+			var h = selfHeader(document);
+			if (Object.keys(h).length >= 2) land("header", {
+				source: "Dash",
+				at: nowT(),
+				facts: h
+			});
+			var b = readTile(/^Behaviors?\b/i, 700);
+			var behBox = document.getElementById("pnBehBox");
+			if (behBox) b = norm(behBox.textContent).slice(0, 700);
+			if (b) land("behaviors", {
+				source: "Progress Notes",
+				at: nowT(),
+				summary: b
+			});
+			var dx = readTile(/^Diagnoses\b/i, 700);
+			var dxBox = document.getElementById("pnDxBox");
+			if (dxBox) dx = norm(dxBox.textContent).slice(0, 700);
+			if (dx) land("diagnoses", {
+				source: "Progress Notes",
+				at: nowT(),
+				summary: dx
+			});
+			var wp = readWeightsPage(document);
+			if (wp) land("weights", {
+				source: "Wts/Vitals",
+				at: nowT(),
+				series: wp,
+				summary: wp.length + " dated weights; latest " + wp[0].weight + " lbs on " + wp[0].date
+			});
+			try {
+				parseAssessments(document);
+			} catch (e) {}
+			try {
+				parseProfile(document);
+			} catch (e) {}
+			try {
+				parseOrders(document);
+			} catch (e) {}
+			try {
+				parseResults(document);
+			} catch (e) {}
+		}
+		function discoverUrls() {
+			var want = [
+				{
+					key: "assess",
+					label: /assmnts|assessments/i,
+					href: /cp_assessment|assessments/i
+				},
+				{
+					key: "profile",
+					label: /^profile$/i,
+					href: /careclientprofile/i
+				},
+				{
+					key: "results",
+					label: /results/i,
+					href: /resultsportal|labresults/i
+				},
+				{
+					key: "orders",
+					label: /orders/i,
+					href: /orders/i
+				},
+				{
+					key: "weights",
+					label: /wts|weights/i,
+					href: /weightsandvitals/i
+				}
+			];
+			var map = {};
+			var anchors = document.querySelectorAll("a[href]");
+			function accept(a) {
+				var h = a.getAttribute("href") || "";
+				if (/editmyprofile|myprofile/i.test(h)) return null;
+				try {
+					return new URL(h, location.href).href;
+				} catch (e) {
+					return null;
+				}
+			}
+			for (var p = 0; p < 2; p++) for (var i = 0; i < anchors.length; i++) {
+				var a = anchors[i];
+				var href = a.getAttribute("href") || "";
+				var label = norm(a.textContent);
+				for (var j = 0; j < want.length; j++) {
+					var w = want[j];
+					if (map[w.key]) continue;
+					if (p === 0 ? w.href.test(href) : label && label.length <= 24 && w.label.test(label)) {
+						var u = accept(a);
+						if (u) map[w.key] = u;
+					}
+				}
+			}
+			return map;
+		}
+		var controllers = [];
+		var fetchLog = [];
+		function noteFetch(key, url, doc, err) {
+			var line = {
+				key,
+				at: nowT(),
+				url: (url || "").split("?")[0].split("/").pop()
+			};
+			if (err) line.error = String(err).slice(0, 60);
+			if (doc) {
+				line.title = (doc.title || "").slice(0, 40);
+				line.tables = doc.querySelectorAll ? doc.querySelectorAll("table").length : 0;
+				line.bytes = doc.documentElement ? (doc.documentElement.outerHTML || "").length : 0;
+			}
+			fetchLog.push(line);
+			if (fetchLog.length > 14) fetchLog.shift();
+			packet.fetchLog = fetchLog;
+			publish();
+		}
+		function fetchDoc(url) {
+			var ctl = typeof AbortController !== "undefined" ? new AbortController() : null;
+			if (ctl) {
+				controllers.push(ctl);
+				setTimeout(function() {
+					try {
+						ctl.abort();
+					} catch (e) {}
+				}, 12e3);
+			}
+			return fetch(url, {
+				credentials: "same-origin",
+				signal: ctl ? ctl.signal : void 0
+			}).then(function(r) {
+				return r.text();
+			}).then(function(html) {
+				return new DOMParser().parseFromString(html, "text/html");
+			});
+		}
+		function ctxt(el) {
+			if (!el) return "";
+			var c = el.cloneNode(true);
+			var junk = c.querySelectorAll("script, style, pre");
+			for (var i = 0; i < junk.length; i++) junk[i].remove();
+			return norm(c.textContent);
+		}
+		function firstDate(cells) {
+			for (var i = 0; i < cells.length; i++) {
+				var m = cells[i].match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+				if (m) return m[0];
+			}
+			return "";
+		}
+		var BIMS_RE = /BIMS|cognitive|cognitively|impair|intact/i;
+		var PSYCH_RE = /psychiatr|psych\s*:|psych\s+consult/i;
+		var MDACK_RE = /MD:\s*Psychiatry\s+Consult\s+Ack/i;
+		var SCORE_RE = /^\d{1,2}(\.\d+)?$/;
+		function parseAssessments(doc) {
+			var heads = doc.querySelectorAll("th, td");
+			var hasScore = false;
+			for (var i = 0; i < heads.length; i++) if (/^Score$/i.test(ctxt(heads[i]))) {
+				hasScore = true;
+				break;
+			}
+			if (!hasScore) {
+				try {
+					packet.stops.bims.why = "no Score column in fetched list";
+					publish();
+				} catch (e) {}
+				return;
+			}
+			var bims = [], visits = [], mdAck = "", bimsRowsSeen = 0;
+			var rows = doc.querySelectorAll("tr");
+			for (var r = 0; r < rows.length; r++) {
+				var row = rows[r];
+				if (!row.cells || row.cells.length < 6 || row.querySelector("tr")) continue;
+				var t = Array.prototype.map.call(row.cells, ctxt);
+				var dateStr = firstDate(t);
+				if (!dateStr) continue;
+				var rowText = t.join(" | ");
+				var score = t.find(function(c) {
+					return SCORE_RE.test(c);
+				});
+				if (MDACK_RE.test(rowText)) {
+					if (!mdAck) mdAck = dateStr;
+				} else if (PSYCH_RE.test(rowText)) visits.push(dateStr);
+				else if (t.some(function(c) {
+					return BIMS_RE.test(c);
+				}) && score !== void 0) {
+					bimsRowsSeen++;
+					var n = parseFloat(score);
+					if (n >= 0 && n <= 15) bims.push({
+						date: dateStr,
+						score: n
+					});
+				}
+			}
+			if (!bims.length) try {
+				packet.stops.bims.why = "Score column present; BIMS-like rows matched=" + bimsRowsSeen + " (0 = the fetched list holds no BIMS rows)";
+				publish();
+			} catch (e) {}
+			if (bims.length) {
+				bims.sort(function(a, b2) {
+					return new Date(b2.date) - new Date(a.date);
+				});
+				land("bims", {
+					source: "Assessments",
+					at: nowT(),
+					facts: { latest: bims[0].score + " on " + bims[0].date },
+					series: bims.slice(0, 24),
+					summary: "BIMS " + bims[0].score + " on " + bims[0].date + " · " + bims.length + " scored"
+				});
+			}
+			if (visits.length || mdAck) land("ownnotes", {
+				source: "Assessments",
+				at: nowT(),
+				summary: (visits.length ? "Your consults: " + visits.slice(0, 12).join(", ") : "") + (mdAck ? " · latest MD acknowledgement " + mdAck : "")
+			});
+		}
+		var fedSent = {};
+		function feedEvent(detail) {
+			var keys = Object.keys(detail);
+			for (var i = 0; i < keys.length; i++) {
+				if (fedSent[keys[i]] === detail[keys[i]]) return;
+				fedSent[keys[i]] = detail[keys[i]];
+			}
+			try {
+				document.dispatchEvent(new CustomEvent("tm-gather-feed", { detail }));
+			} catch (e) {}
+		}
+		function bimsLine(stop) {
+			if (!stop || !stop.series || !stop.series[0]) return "";
+			var s0 = stop.series[0];
+			var d = new Date(s0.date);
+			if (isNaN(d.getTime())) return "";
+			return s0.score + " on " + (d.getMonth() + 1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(2);
+		}
+		function feedFromPacket(force) {
+			if (force) fedSent = {};
+			var s = packet.stops;
+			if (s.relations.status === "landed" && s.relations.summary) feedEvent({ rel: s.relations.summary });
+			if (s.bims.status === "landed") {
+				var bl = bimsLine(s.bims);
+				if (bl) feedEvent({ bims: bl });
+			}
+			var ml = s.header.status === "landed" && s.header.medsList ? s.header.medsList : s.dashmeds && s.dashmeds.status === "landed" && s.dashmeds.lines ? s.dashmeds.lines : "";
+			if (ml) feedEvent({ meds: ml });
+		}
+		function feedRowTile(summary) {
+			feedEvent({ rel: summary });
+			try {
+				localStorage.setItem("pccFillRelationships", JSON.stringify({
+					value: summary,
+					ts: Date.now()
+				}));
+			} catch (e) {}
+			try {
+				var k = storeKey || residentKey();
+				if (k) localStorage.setItem("tmRelFor:" + k, JSON.stringify({
+					value: summary,
+					ts: Date.now()
+				}));
+			} catch (e) {}
+		}
+		function landRelations(summary) {
+			var cur = packet.stops.relations;
+			summary = norm(summary).slice(0, 300);
+			if (/^relationships\b[\s:—–-]*$/i.test(summary)) return;
+			if (cur.status !== "landed") {
+				land("relations", {
+					source: "Profile",
+					at: nowT(),
+					summary
+				});
+				feedRowTile(summary);
+				return;
+			}
+			if (cur.summary !== summary) {
+				packet.stops.relations = {
+					status: "landed",
+					source: "Profile",
+					at: nowT(),
+					summary
+				};
+				feedRowTile(summary);
+				publish();
+				saveStored();
+				try {
+					document.dispatchEvent(new CustomEvent("tm-gather-update"));
+				} catch (e) {}
+			}
+		}
+		var RELSET = {
+			self: 1,
+			spouse: 1,
+			wife: 1,
+			husband: 1,
+			daughter: 1,
+			son: 1,
+			sister: 1,
+			brother: 1,
+			mother: 1,
+			father: 1,
+			friend: 1,
+			niece: 1,
+			nephew: 1,
+			partner: 1,
+			guardian: 1,
+			cousin: 1,
+			grandson: 1,
+			granddaughter: 1,
+			aunt: 1,
+			uncle: 1,
+			"daughter-in-law": 1,
+			"son-in-law": 1,
+			"mother-in-law": 1,
+			"father-in-law": 1,
+			"sister-in-law": 1,
+			"brother-in-law": 1
+		};
+		function parseContacts(doc) {
+			var tables = doc.querySelectorAll("table");
+			for (var ti = 0; ti < tables.length; ti++) {
+				var ttxt = tables[ti].textContent || "";
+				if (!/Relation/.test(ttxt) && !/Emergency Contact/.test(ttxt)) continue;
+				var rows = tables[ti].querySelectorAll("tr");
+				var seen = [], counts = {}, hasSelf = false;
+				for (var r = 0; r < rows.length; r++) {
+					var cells = rows[r].querySelectorAll("td");
+					var rel = "";
+					for (var c = 0; c < cells.length; c++) {
+						var ct = norm(cells[c].textContent).toLowerCase();
+						if (RELSET[ct]) {
+							rel = ct;
+							break;
+						}
+					}
+					if (!rel) for (var c2 = 0; c2 < cells.length; c2++) {
+						var pm = (cells[c2].textContent || "").match(/\(([a-z]+)\)/i);
+						if (pm && RELSET[pm[1].toLowerCase()]) {
+							rel = pm[1].toLowerCase();
+							break;
+						}
+					}
+					if (!rel) continue;
+					if (rel === "self") {
+						hasSelf = true;
+						continue;
+					}
+					if (!counts[rel]) {
+						counts[rel] = 0;
+						seen.push(rel);
+					}
+					counts[rel]++;
+				}
+				if (!seen.length && !hasSelf) continue;
+				seen.sort(function(a, b) {
+					return counts[b] - counts[a];
+				});
+				var parts = seen.map(function(w) {
+					return counts[w] > 1 ? counts[w] + " " + w + "s" : w;
+				});
+				if (hasSelf) parts.unshift("self");
+				return parts.join(", ");
+			}
+			return "";
+		}
+		function parseProfile(doc) {
+			var el = doc.querySelector("[data-fill-label=\"Relationships\"]");
+			if (el && (el.tagName && el.tagName.toLowerCase() === "tm-tile" || el.closest && el.closest("tm-tile"))) el = null;
+			var val = el ? el.getAttribute("data-fill-value") || txt(el) : "";
+			if (!val || /^[—–-]+$/.test(norm(val)) || /^N\/?A$/i.test(norm(val))) {
+				var cv = parseContacts(doc);
+				if (cv) {
+					landRelations(cv);
+					return;
+				}
+			}
+			if (!val) {
+				var els = doc.querySelectorAll("div, span, td");
+				for (var i = 0; i < els.length; i++) if (/^Relationships$/i.test(txt(els[i])) && els[i].parentElement) {
+					var pt = txt(els[i].parentElement);
+					if (pt.length > 14) {
+						val = pt.replace(/^Relationships\s*/i, "");
+						break;
+					}
+				}
+			}
+			if (val && !/^[—–-]+$/.test(norm(val)) && !/^N\/?A$/i.test(norm(val))) {
+				landRelations(val);
+				return;
+			}
+			if (el) return;
+			if (!val && /Resident Profile/i.test(doc.title || "")) {
+				var words = [
+					"spouse",
+					"wife",
+					"husband",
+					"daughter",
+					"son",
+					"sister",
+					"brother",
+					"mother",
+					"father",
+					"friend",
+					"niece",
+					"nephew",
+					"partner",
+					"guardian",
+					"cousin",
+					"grandson",
+					"granddaughter",
+					"aunt",
+					"uncle"
+				];
+				var bodyT = doc.body && doc.body.textContent || "";
+				var found = words.filter(function(wd) {
+					return new RegExp("\\b" + wd + "\\b", "i").test(bodyT);
+				});
+				if (found.length) val = found.join(", ");
+			}
+			if (val && !/^[—–-]+$/.test(norm(val)) && !/^N\/?A$/i.test(norm(val))) {
+				if (packet.stops.relations.status !== "landed") land("relations", {
+					source: "Profile",
+					at: nowT(),
+					summary: norm(val).slice(0, 300)
+				});
+			}
+		}
+		function parseResults(doc) {
+			var reports = [];
+			var rows = doc.querySelectorAll("tr");
+			for (var i = 0; i < rows.length; i++) {
+				if (!rows[i].querySelector("[onclick*=\"viewReportPopup\"]")) continue;
+				var cells = rows[i].cells ? Array.prototype.map.call(rows[i].cells, ctxt) : [];
+				var date = firstDate(cells);
+				var name = "";
+				for (var k = 0; k < cells.length; k++) if (cells[k].length > name.length && !/Actions/i.test(cells[k])) name = cells[k];
+				reports.push({
+					name: name.slice(0, 80),
+					date
+				});
+			}
+			if (reports.length) land("labs", {
+				source: "Results",
+				at: nowT(),
+				reports: reports.slice(0, 40),
+				summary: reports.length + " reports · latest " + (reports[0].name || "") + " " + (reports[0].date || "")
+			});
+		}
+		var PSYCH_MED_RE = /alprazolam|xanax|citalopram|celexa|escitalopram|lexapro|sertraline|zoloft|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|duloxetine|cymbalta|desvenlafaxine|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|vortioxetine|clozapine|clozaril|olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|lurasidone|latuda|cariprazine|brexpiprazole|haloperidol|haldol|fluphenazine|chlorpromazine|perphenazine|loxapine|asenapine|iloperidone|divalproex|depakote|valproate|lamotrigine|lamictal|carbamazepine|tegretol|oxcarbazepine|lithium|gabapentin|neurontin|pregabalin|lyrica|topiramate|hydroxyzine|vistaril|buspirone|clonazepam|klonopin|lorazepam|ativan|diazepam|valium|temazepam|zolpidem|ambien|eszopiclone|zaleplon|ramelteon|suvorexant|doxepin|amitriptyline|nortriptyline|imipramine|clomipramine|methylphenidate|amphetamine|adderall|lisdexamfetamine|vyvanse|atomoxetine|guanfacine|clonidine|prazosin|propranolol|benztropine|donepezil|memantine|rivastigmine|galantamine|naltrexone|acamprosate|disulfiram|methadone|buprenorphine/i;
+		function parseOrders(doc) {
+			var active = [], psych = [];
+			var rows = doc.querySelectorAll("tr");
+			for (var i = 0; i < rows.length; i++) {
+				var row = rows[i];
+				if (!row.cells || row.cells.length < 5) continue;
+				var t = Array.prototype.map.call(row.cells, ctxt);
+				var statusIdx = t.findIndex(function(c) {
+					return /^Active$/i.test(c);
+				});
+				if (statusIdx < 0) continue;
+				var sigIdx = t.findIndex(function(c) {
+					return /^(Give|Apply|Inject|Take|Instill|Inhale)\b/i.test(c);
+				});
+				var medCell = sigIdx > 0 ? t[sigIdx - 1] : "";
+				var sig = sigIdx >= 0 ? t[sigIdx] : "";
+				var start = "";
+				for (var k = statusIdx + 1; k < t.length; k++) if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(t[k])) {
+					start = t[k];
+					break;
+				}
+				if (!medCell) continue;
+				var rec = {
+					name: medCell.slice(0, 90),
+					sig: sig.slice(0, 140),
+					start: start.slice(0, 16)
+				};
+				active.push(rec);
+				if (PSYCH_MED_RE.test(medCell)) psych.push(rec);
+			}
+			if (active.length) land("orders", {
+				source: "Orders",
+				at: nowT(),
+				active: active.length,
+				psych: psych.slice(0, 30),
+				summary: active.length + " active orders · " + psych.length + " psychiatric: " + psych.slice(0, 8).map(function(p) {
+					return p.name;
+				}).join("; ")
+			});
+		}
+		function parseWeights(doc) {
+			var wp = readWeightsPage(doc);
+			if (wp) land("weights", {
+				source: "Wts/Vitals",
+				at: nowT(),
+				series: wp,
+				summary: wp.length + " dated weights; latest " + wp[0].weight + " lbs on " + wp[0].date
+			});
+		}
+		var lastFetchAt = 0;
+		function allTypesUrl(u) {
+			if (!u) return u;
+			function setParam(url, name, val) {
+				var re = new RegExp("([?&])" + name + "=[^&]*");
+				if (re.test(url)) return url.replace(re, "$1" + name + "=" + val);
+				return url + (url.indexOf("?") === -1 ? "?" : "&") + name + "=" + val;
+			}
+			return setParam(setParam(u, "ESOLstdassessid", "-1"), "ESOLstatusFilter", "");
+		}
+		function gatherFetches() {
+			refreshKey();
+			if (stopped) return;
+			var now = Date.now();
+			if (now - lastFetchAt < 4e3) return;
+			var urls = discoverUrls();
+			var jobs = [];
+			function add(key, url, fn, stops) {
+				if (!url) return;
+				if (!stops.some(function(s) {
+					return packet.stops[s].status !== "landed";
+				})) return;
+				jobs.push(fetchDoc(url).then(function(doc) {
+					noteFetch(key, url, doc);
+					if (!stopped) fn(doc);
+				}).catch(function(e) {
+					noteFetch(key, url, null, e);
+				}));
+			}
+			add("assess", allTypesUrl(urls.assess), parseAssessments, ["bims", "ownnotes"]);
+			add("profile", urls.profile, parseProfile, ["relations"]);
+			add("results", urls.results, parseResults, ["labs"]);
+			add("orders", urls.orders, parseOrders, ["orders"]);
+			add("weights", urls.weights, parseWeights, ["weights"]);
+			if (!(packet.stops.header.medsList || packet.stops.dashmeds && packet.stops.dashmeds.status === "landed")) {
+				var eid = null;
+				var dashLink = document.querySelector("a[href*=\"cp_residentdashboard.jsp?ESOLclientid=\"]");
+				if (dashLink) {
+					var dm = (dashLink.getAttribute("href") || "").match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+					if (dm) eid = dm[1];
+				}
+				if (!eid) {
+					var em2 = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+					if (em2) eid = em2[1];
+				}
+				if (!eid) {
+					var as2 = document.querySelectorAll("a[href*=\"ESOLclientid=\"]");
+					for (var ai2 = 0; ai2 < as2.length; ai2++) {
+						var mm2 = (as2[ai2].getAttribute("href") || "").match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+						if (mm2) {
+							eid = mm2[1];
+							break;
+						}
+					}
+				}
+				if (!eid) {
+					var hm = document.documentElement.innerHTML.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+					if (hm) eid = hm[1];
+				}
+				var shellUrl = "";
+				try {
+					if (/cp_residentdashboard\.jsp/.test(window.top.location.href)) shellUrl = window.top.location.href;
+				} catch (e) {}
+				if (!shellUrl && eid) shellUrl = location.origin + "/admin/client/cp_residentdashboard.jsp?ESOLclientid=" + eid;
+				if (eid || shellUrl) jobs.push((function() {
+					function curateAndLand(medDoc, tag) {
+						if (stopped || !medDoc) return false;
+						var hasFn = typeof window.__tmDashCurateMeds === "function";
+						var cur = null;
+						if (hasFn) try {
+							cur = window.__tmDashCurateMeds(medDoc);
+						} catch (e) {
+							cur = null;
+						}
+						if (!cur) {
+							try {
+								packet.stops.dashmeds.why = !hasFn ? "export-missing" : "curate-null (tables=" + (medDoc.querySelectorAll ? medDoc.querySelectorAll("table").length : "?") + ", scrollTable=" + (medDoc.querySelector && medDoc.querySelector("table.scrollTable") ? "yes" : "no") + ")";
+								publish();
+							} catch (e) {}
+							return false;
+						}
+						land("dashmeds", {
+							source: "Dash (fetched)",
+							at: nowT(),
+							lines: cur.slice(0, 2e3),
+							summary: "curated psych meds (Dash format)"
+						});
+						return true;
+					}
+					function shellHop() {
+						if (!shellUrl) return;
+						return fetchDoc(shellUrl).then(function(dashDoc) {
+							noteFetch("dash", shellUrl, dashDoc);
+							if (stopped || !dashDoc) return;
+							var frames = dashDoc.querySelectorAll("iframe");
+							var medsUrl = "";
+							for (var fi = 0; fi < frames.length; fi++) {
+								var fsrc = frames[fi].getAttribute("src") || frames[fi].getAttribute("data-src") || "";
+								if (/res_medications\.jsp/.test(fsrc)) {
+									try {
+										medsUrl = new URL(fsrc, shellUrl).href;
+									} catch (e) {}
+									break;
+								}
+							}
+							if (!medsUrl) return;
+							return fetchDoc(medsUrl).then(function(medDoc) {
+								noteFetch("dashmeds", medsUrl, medDoc);
+								curateAndLand(medDoc, "shell");
+							});
+						}).catch(function(e) {
+							noteFetch("dash", shellUrl, null, e);
+						});
+					}
+					if (!eid) return shellHop();
+					var directUrl = location.origin + "/care/dashboards/res_medications.jsp?ESOLviewId=25&ESOLtitle=Medications&ESOLtabtype=C&ESOLclientid=" + eid + "&ESOLcolspan=2";
+					return fetchDoc(directUrl).then(function(medDoc) {
+						noteFetch("dashmeds", directUrl, medDoc);
+						if (!curateAndLand(medDoc, "direct")) return shellHop();
+					}).catch(function() {
+						return shellHop();
+					});
+				})());
+			}
+			if (jobs.length) {
+				lastFetchAt = now;
+				Promise.allSettled(jobs);
+			}
+		}
+		document.addEventListener("keydown", function(e) {
+			if (e.key !== "0" || e.metaKey || e.ctrlKey || e.altKey) return;
+			var t = e.target;
+			if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
+			stopped = true;
+			controllers.forEach(function(c) {
+				try {
+					c.abort();
+				} catch (err) {}
+			});
+		}, true);
+		document.addEventListener("click", function() {
+			gatherPage();
+			gatherFetches();
+			feedFromPacket(true);
+		}, true);
+		loadStored();
+		if (packet.stops.relations.status === "landed") feedEvent({ rel: packet.stops.relations.summary });
+		if (packet.stops.bims.status === "landed") feedBimsTile(packet.stops.bims);
+		window.__tmCore.ladder(function(ms) {
+			gatherPage();
+			gatherFetches();
+			if (ms === 3e3) feedFromPacket(true);
+		}, [
+			0,
+			600,
+			1500,
+			3e3
+		]);
+		publish();
+		try {
+			window.__tmGather = {
+				packet,
+				parseAssessments,
+				parseProfile,
+				parseResults,
+				parseOrders,
+				land,
+				gatherFetches
+			};
+		} catch (e) {}
+	})();
+	(function() {
+		"use strict";
+		var BTN_ID = "tmMoreLessBtn";
+		var STYLE_ID = "tmTilesStyle";
+		var shown = false;
+		var TILE_CSS = "#residentHeaderExtended .residentHeaderPropsFlexGrid.tmTilesOn{display:flex!important;justify-content:flex-start!important;gap:12px!important;}#residentHeaderExtended .residentHeaderPropsFlexGrid.tmTilesOn .residentHeaderPropsFlexGridCol{flex:0 1 auto!important;max-width:660px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);padding:16px 18px;}";
+		function targets() {
+			var out = [];
+			var cp = document.querySelector("#residentHeaderButtons [data-testid=\"care-profile\"]");
+			if (cp) out.push(cp);
+			var cq = document.getElementById("carequality-app");
+			if (cq) out.push(cq);
+			return out;
+		}
+		function tilesGrid() {
+			var grids = document.querySelectorAll("#residentHeaderExtended .residentHeaderPropsFlexGrid");
+			for (var i = 0; i < grids.length; i++) if (grids[i].querySelector(".residentHeaderPropsFlexGridCol")) return grids[i];
+			return null;
+		}
+		function apply() {
+			targets().forEach(function(el) {
+				el.style.display = shown ? "" : "none";
+			});
+			var b = document.getElementById(BTN_ID);
+			if (b) b.textContent = shown ? "Less" : "More";
+			var st = document.getElementById(STYLE_ID);
+			var grid = tilesGrid();
+			if (!shown) {
+				if (!st) {
+					st = document.createElement("style");
+					st.id = STYLE_ID;
+					st.textContent = TILE_CSS;
+					document.head.appendChild(st);
+				}
+				if (grid) grid.classList.add("tmTilesOn");
+			} else {
+				if (grid) grid.classList.remove("tmTilesOn");
+				if (st) st.remove();
+			}
+		}
+		function triggerS() {
+			document.dispatchEvent(new KeyboardEvent("keydown", {
+				key: "s",
+				bubbles: true,
+				cancelable: true
+			}));
+		}
+		function triggerG() {
+			var badge = document.querySelector(".pcc-g-badge");
+			if (badge) {
+				badge.click();
+				return;
+			}
+			try {
+				localStorage.setItem("pccGrabSignal", String(Date.now()));
+			} catch (e) {}
+		}
+		var ROW_ID = "tmCardsRow";
+		function fmtAllergies(raw) {
+			if (!raw) return "";
+			var cleaned = raw.trim();
+			if (/^no\s+known\s+(?:drug\s+)?allergies/i.test(cleaned) || /^nkda?/i.test(cleaned)) return "NKA";
+			var list = cleaned.split(/[,;\/\n]+/);
+			var out = [];
+			for (var i = 0; i < list.length; i++) {
+				var item = list[i].replace(/\s+/g, " ").trim();
+				item = item.replace(/(?:Copy|Copied)$/i, "").trim();
+				if (!item) continue;
+				item = item.replace(/\bpen[ie]cill?in\b/gi, "PCN");
+				out.push(item);
+			}
+			return out.join(", ");
+		}
+		function isCrownHeights() {
+			try {
+				var els = document.querySelectorAll("select, button, a, span, div, td");
+				for (var i = 0; i < els.length; i++) {
+					var tx = (els[i].textContent || "").trim();
+					if (tx.length > 90 || tx.length < 6) continue;
+					if (!/crown\s*heights/i.test(tx)) continue;
+					var r = null;
+					try {
+						r = els[i].getBoundingClientRect();
+					} catch (e) {}
+					if (r && r.top >= -50 && r.top < 300) return true;
+				}
+			} catch (e) {}
+			return false;
+		}
+		function roomBedNumber(withWing) {
+			try {
+				var txt = document.body && document.body.textContent ? document.body.textContent : "";
+				var v = "";
+				var m = txt.match(/\bLocation\s*:?\s*([^\n]*?)(?=\s*(?:Status|Code Status|Physician|DOB|Admission|Initial Admission|Discharge|Allergies|Special Instructions)\b|\n|$)/);
+				if (m) v = m[1].replace(/\s+/g, " ").trim();
+				if (!v) {
+					var li = txt.search(/\bLocation\b/i);
+					if (li !== -1) v = txt.substr(li, 40).replace(/\s+/g, " ").trim();
+				}
+				var rm = v.match(/\b(\d{2,4})\s*-?\s*([A-Za-z])?\b/);
+				if (!rm) return "";
+				var pre = "";
+				if (withWing) {
+					var tok = v.slice(0, rm.index).match(/([A-Za-z]+)\s*$/);
+					if (tok && /^(east|west)$/i.test(tok[1])) pre = tok[1].charAt(0).toUpperCase();
+					else if (tok && tok[1].length === 1 && /[ew]/i.test(tok[1])) pre = tok[1].toUpperCase();
+				}
+				return pre + rm[1] + (rm[2] ? rm[2].toUpperCase() : "");
+			} catch (e) {
+				return "";
+			}
+		}
+		function selfData() {
+			var out = {};
+			try {
+				var txt = document.body && document.body.textContent ? document.body.textContent : "";
+				var m = txt.match(/\((\d{1,3})\/(Male|Female)\)/);
+				if (m) out.ageSex = m[1] + (m[2] === "Male" ? "M" : "F");
+				var room = roomBedNumber(isCrownHeights());
+				if (room) out.room = room;
+				var al = document.querySelector(".residentAllergies .residentDetailValue");
+				if (al) {
+					var f = fmtAllergies((al.textContent || "").trim());
+					if (f) out.allergies = f;
+				}
+				var a1 = txt.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+				if (a1) out.admission = a1[1] + " (re-entry)";
+				else {
+					var a2 = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+					if (a2) out.admission = a2[1] + " (initial)";
+				}
+			} catch (e) {}
+			return out;
+		}
+		function cardData() {
+			var out = selfData();
+			var card = document.getElementById("copyInfoTable");
+			if (!card) return out.ageSex || out.room || out.allergies || out.admission ? out : null;
+			var cells = card.children;
+			for (var i = 0; i < cells.length; i++) {
+				var c = cells[i];
+				if (!c.querySelector) continue;
+				var lab = c.querySelector("span");
+				if (!lab || !lab.firstChild) continue;
+				var name = (lab.firstChild.textContent || "").trim().toLowerCase();
+				var valSpan = c.querySelectorAll("span")[1];
+				var val = valSpan ? (valSpan.textContent || "").trim() : "";
+				var btn = c.querySelector(".pcc-fill-copy");
+				var qv = btn ? btn.getAttribute("data-fill-value") : null;
+				if (name.indexOf("age") === 0) {
+					if (!out.ageSex) out.ageSex = qv || val;
+				} else if (name.indexOf("room") === 0) {
+					if (!out.room) out.room = val;
+				} else if (name.indexOf("allergies") === 0) {
+					if (!out.allergies) out.allergies = qv || val;
+				} else if (name.indexOf("admission") === 0) {
+					if (!out.admission) out.admission = val;
+				}
+			}
+			return out.ageSex || out.room || out.allergies || out.admission ? out : null;
+		}
+		function weightValue() {
+			var blocks = document.querySelectorAll(".vitalDetails");
+			for (var i = 0; i < blocks.length; i++) {
+				var b = blocks[i].querySelector("b");
+				var v = blocks[i].querySelector(".vitalValue");
+				if (b && v && /^weight$/i.test((b.textContent || "").trim())) {
+					var m = (v.textContent || "").match(/([\d.]+)\s*lbs/i);
+					if (m) return m[1] + " lbs";
+				}
+			}
+			return null;
+		}
+		function weightFlagged() {
+			var blocks = document.querySelectorAll(".vitalDetails");
+			for (var i = 0; i < blocks.length; i++) {
+				var b = blocks[i].querySelector("b");
+				if (b && /^weight$/i.test((b.textContent || "").trim())) {
+					var td = blocks[i].closest ? blocks[i].closest("td") : null;
+					return !!(td && td.classList && td.classList.contains("vitalWithException"));
+				}
+			}
+			return false;
+		}
+		function queueCopy(label, value) {
+			try {
+				if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(value);
+			} catch (err) {}
+			var key = {
+				"Age/Sex": "pccFillAgeSex",
+				"Allergies": "pccFillAllergies",
+				"Psych meds": "pccFillPsychMeds",
+				"Relationships": "pccFillRelationships",
+				"BIMS": "pccFillBims"
+			}[label] || null;
+			if (key) try {
+				localStorage.setItem(key, JSON.stringify({
+					value,
+					ts: Date.now()
+				}));
+			} catch (err) {}
+		}
+		function hlTile(tl, withLabel) {
+			if (tl.hasAttribute("data-tm-hl")) return;
+			tl.setAttribute("data-tm-hl", "1");
+			tl.setAttribute("data-tm-bg", tl.style.background || "");
+			tl.setAttribute("data-tm-bd", tl.style.borderColor || "");
+			tl.style.background = "#dbeafe";
+			tl.style.borderColor = "#93c5fd";
+			if (withLabel) {
+				var ls = tl.querySelector("span");
+				if (ls && !ls.getAttribute("data-tm-orig")) {
+					ls.setAttribute("data-tm-orig", ls.textContent);
+					ls.textContent = "Copied";
+				}
+			}
+		}
+		function hlAllTiles() {
+			var row = document.getElementById("tmCardsRow");
+			if (!row) return;
+			var tiles = row.querySelectorAll(".pcc-fill-copy, [data-tm-copy=\"1\"]");
+			for (var i = 0; i < tiles.length; i++) hlTile(tiles[i], true);
+		}
+		function hlRestoreAll() {
+			var lit = document.querySelectorAll("#tmCardsRow [data-tm-hl=\"1\"]");
+			for (var i = 0; i < lit.length; i++) {
+				var tl = lit[i];
+				tl.removeAttribute("data-tm-hl");
+				tl.style.background = tl.getAttribute("data-tm-bg") || "";
+				tl.style.borderColor = tl.getAttribute("data-tm-bd") || "";
+				tl.removeAttribute("data-tm-bg");
+				tl.removeAttribute("data-tm-bd");
+				var ls = tl.querySelector("span");
+				if (ls && ls.getAttribute("data-tm-orig")) {
+					ls.textContent = ls.getAttribute("data-tm-orig");
+					ls.removeAttribute("data-tm-orig");
+				}
+			}
+		}
+		function flashLabel(ls, tl) {
+			if (!ls.getAttribute("data-tm-orig")) ls.setAttribute("data-tm-orig", ls.textContent);
+			ls.textContent = "Copied";
+			setTimeout(function() {
+				if (tl.hasAttribute("data-tm-hl")) return;
+				var o = ls.getAttribute("data-tm-orig");
+				if (o) {
+					ls.textContent = o;
+					ls.removeAttribute("data-tm-orig");
+				}
+			}, 1e3);
+		}
+		window.addEventListener("mouseup", hlRestoreAll);
+		try {
+			if (window.__tmCore) window.__tmCore.hooks = {
+				queueCopy,
+				hlTile,
+				goWtsVitals,
+				medsPanel,
+				fireClick,
+				flashLabel
+			};
+		} catch (e) {}
+		function fireClick(el) {
+			var W = el.ownerDocument && el.ownerDocument.defaultView || window;
+			[
+				"mousedown",
+				"mouseup",
+				"click"
+			].forEach(function(type) {
+				el.dispatchEvent(new W.MouseEvent(type, {
+					bubbles: true,
+					cancelable: true,
+					view: W
+				}));
+			});
+			try {
+				el.click();
+			} catch (e) {}
+		}
+		var ALL_TAB_LABELS = [
+			"DASH",
+			"PROFILE",
+			"CENSUS",
+			"MED DIAG",
+			"PROBLEMS",
+			"ALLERGIES",
+			"IMMUN",
+			"ORDERS",
+			"WTS/VITALS",
+			"RESULTS",
+			"MDS",
+			"FORMS",
+			"THERAPY",
+			"PROG NOTES",
+			"CARE PLAN",
+			"TASKS",
+			"MISC",
+			"ASSMNTS",
+			"ASSESSMENTS"
+		];
+		function tabNorm(s) {
+			return (s || "").replace(/\s+/g, " ").trim().toUpperCase();
+		}
+		function tabVisible(el) {
+			return !!(el.getClientRects && el.getClientRects().length);
+		}
+		function tabDepth(el, doc) {
+			var d = 0, p = el;
+			while (p && p !== doc.body && d < 60) {
+				d++;
+				p = p.parentNode;
+			}
+			return d;
+		}
+		function findTabStrip(doc) {
+			var cands = doc.querySelectorAll("div, table, ul, nav, section, td, tr, tbody, header");
+			var best = null, bestDepth = -1;
+			for (var i = 0; i < cands.length; i++) {
+				var el = cands[i];
+				if (!tabVisible(el)) continue;
+				var tx = " " + tabNorm(el.textContent) + " ";
+				var count = 0;
+				for (var j = 0; j < ALL_TAB_LABELS.length; j++) if (tx.indexOf(" " + ALL_TAB_LABELS[j] + " ") !== -1) count++;
+				if (count >= 8) {
+					var d = tabDepth(el, doc);
+					if (d > bestDepth) {
+						bestDepth = d;
+						best = el;
+					}
+				}
+			}
+			return best;
+		}
+		function findTabInDoc(doc, label) {
+			var els = (findTabStrip(doc) || doc).querySelectorAll("a, button, td, li, span, div, th");
+			var best = null, bestDepth = -1;
+			for (var i = 0; i < els.length; i++) {
+				var el = els[i];
+				if (tabNorm(el.textContent) !== label) continue;
+				if (!tabVisible(el)) continue;
+				var d = tabDepth(el, doc);
+				if (d > bestDepth) {
+					bestDepth = d;
+					best = el;
+				}
+			}
+			return best;
+		}
+		function activateTab(el) {
+			var W = el.ownerDocument && el.ownerDocument.defaultView || window;
+			try {
+				el.click();
+			} catch (e) {}
+			try {
+				var init = {
+					key: "Enter",
+					code: "Enter",
+					keyCode: 13,
+					which: 13,
+					bubbles: true,
+					cancelable: true
+				};
+				el.dispatchEvent(new W.KeyboardEvent("keydown", init));
+				el.dispatchEvent(new W.KeyboardEvent("keypress", init));
+			} catch (e2) {}
+			try {
+				[
+					"mousedown",
+					"mouseup",
+					"click"
+				].forEach(function(type) {
+					el.dispatchEvent(new W.MouseEvent(type, {
+						bubbles: true,
+						cancelable: true,
+						view: W
+					}));
+				});
+			} catch (e3) {}
+		}
+		function goWtsVitals() {
+			try {
+				localStorage.setItem("tmGoWts", String(Date.now()));
+			} catch (e) {}
+			var found = null;
+			(function search(w) {
+				if (found) return;
+				try {
+					found = findTabInDoc(w.document, "WTS/VITALS");
+					if (found) return;
+					for (var i = 0; i < w.frames.length && !found; i++) search(w.frames[i]);
+				} catch (e) {}
+			})(window.top || window);
+			if (found) {
+				activateTab(found);
+				return true;
+			}
+			return false;
+		}
+		function medsPanel() {
+			var docs = allDocs();
+			for (var i = 0; i < docs.length; i++) {
+				var box = docs[i].getElementById("medListBox");
+				var btn = docs[i].getElementById("copyMedListBtn");
+				if (box || btn) return {
+					doc: docs[i],
+					box,
+					btn
+				};
+			}
+			return null;
+		}
+		function medsDisplay() {
+			var p = medsPanel();
+			if (!p) return "";
+			if (!p.box) return "- none";
+			var divs = p.box.querySelectorAll("div");
+			var lines = [];
+			for (var i = 1; i < divs.length; i++) {
+				var tx = (divs[i].textContent || "").trim();
+				if (tx.indexOf("⚠ REVIEW") === 0) break;
+				if (tx) lines.push(tx);
+			}
+			return lines.length ? lines.join("\n") : "- none";
+		}
+		function buildCards() {
+			pullFromPacket();
+			var bar = document.getElementById("residentHeaderButtons");
+			if (!bar || !bar.parentNode) return;
+			var d = cardData();
+			if (d) {
+				d.weight = weightValue();
+				d.weightRed = weightFlagged();
+				d.meds = medsDisplay() || feedMeds || "";
+				var mp = medsPanel();
+				d.medsFill = mp && mp.btn && mp.btn.hasAttribute("data-fill-value") ? mp.btn.getAttribute("data-fill-value") : feedMeds || null;
+				d.bims = bimsValue();
+				d.rel = relValue();
+			}
+			function medsOrderLines(lines) {
+				var buckets = [], seen = {};
+				lines.forEach(function(ln, i) {
+					var m = / for (.+)$/.exec(ln);
+					var ind = m ? m[1].replace(/\s+/g, " ").replace(/[.\s]+$/, "").toLowerCase() : "";
+					var last = /seizure|epilep|parkinson/.test(ind || ln);
+					var key = (last ? "L|" : "M|") + (ind || "#" + i);
+					if (!seen[key]) {
+						seen[key] = [];
+						buckets.push(seen[key]);
+					}
+					seen[key].push({
+						ln,
+						last
+					});
+				});
+				var main = buckets.filter(function(b) {
+					return !b[0].last;
+				});
+				var lastB = buckets.filter(function(b) {
+					return b[0].last;
+				});
+				var out = [];
+				main.concat(lastB).forEach(function(b) {
+					b.forEach(function(it) {
+						out.push(it.ln);
+					});
+				});
+				return out;
+			}
+			var medsLast = function(txt) {
+				if (!txt || txt.indexOf("\n") === -1) return txt;
+				return medsOrderLines(txt.split("\n")).join("\n");
+			};
+			if (d.meds) d.meds = medsLast(d.meds);
+			if (d.medsFill) d.medsFill = medsLast(d.medsFill);
+			var row = document.getElementById(ROW_ID);
+			if (!d) {
+				if (row) row.remove();
+				return;
+			}
+			try {
+				var chartVals = [
+					d.ageSex || "",
+					d.allergies || "",
+					d.medsFill !== null && d.medsFill !== void 0 ? d.medsFill : d.meds || "",
+					d.rel || ""
+				].join("|");
+				if (window.__tmChartLast !== chartVals || Date.now() - (window.__tmChartTs || 0) > 2e4) {
+					window.__tmChartLast = chartVals;
+					window.__tmChartTs = Date.now();
+					localStorage.setItem("tmTileChart", JSON.stringify({
+						ageSex: d.ageSex || null,
+						allergies: d.allergies || null,
+						meds: d.medsFill !== null && d.medsFill !== void 0 ? d.medsFill : d.meds || null,
+						rel: d.rel || null,
+						key: chartNumMatch() || null,
+						ts: window.__tmChartTs
+					}));
+				}
+			} catch (e) {}
+			var tw = null;
+			try {
+				tw = window.__tmCore && window.__tmCore.warn ? window.__tmCore.warn() : JSON.parse(localStorage.getItem("tmTileWarn") || "null");
+			} catch (e) {}
+			if (tw && Date.now() - (tw.ts || 0) > 12e4) tw = null;
+			if (tw) {
+				var noteOpen = false;
+				try {
+					var no = window.__tmCore && window.__tmCore.noteOpen ? window.__tmCore.noteOpen() : JSON.parse(localStorage.getItem("tmNoteOpen") || "null");
+					noteOpen = !!(no && no.ts && Date.now() - no.ts < 75e3);
+				} catch (e) {}
+				if (!noteOpen) tw = null;
+			}
+			if (tw && tw.key) {
+				var myKey = chartNumMatch();
+				if (myKey && tw.key !== myKey) tw = null;
+			}
+			var sig = [
+				d.admission || "",
+				d.ageSex || "",
+				d.room || "",
+				d.allergies || "",
+				d.weight || "",
+				d.weightRed ? "R" : "",
+				d.meds || "",
+				d.medsFill === null ? "~" : d.medsFill,
+				d.bims || "",
+				d.rel || "",
+				tw ? (tw.age ? "1" : "0") + (tw.allergies ? "1" : "0") + (tw.meds ? "1" : "0") + (tw.rel ? "1" : "0") : "----"
+			].join("|");
+			if (row && row.getAttribute("data-sig") === sig) return;
+			if (row) row.remove();
+			row = document.createElement("div");
+			row.id = ROW_ID;
+			row.setAttribute("data-sig", sig);
+			row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+			function mkTile(label, value, opts, chip) {
+				var el = document.createElement("tm-tile");
+				el.label = label;
+				el.value = value || "";
+				el.opts = opts || {};
+				if (chip) el.chip = chip;
+				if (opts && opts.fill) {
+					el.classList.add("pcc-fill-copy");
+					el.setAttribute("data-g-badge", "1");
+					el.setAttribute("data-fill-label", opts.fill.label);
+					el.setAttribute("data-fill-value", opts.fill.value);
+				}
+				if (opts && opts.delegate === "meds") el.setAttribute("data-tm-copy", "1");
+				el.style.display = "contents";
+				return el;
+			}
+			var admM = (d.admission || "").match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
+			var admKind = admM && admM[3] ? admM[3].toLowerCase() : "";
+			row.appendChild(mkTile(admKind ? "Admission (" + admKind + ")" : "Admission (re-entry)", admM ? admM[1] : d.admission || "", {}));
+			row.appendChild(mkTile("Age / Sex", d.ageSex || "", {
+				pad: "12px 13px 14px",
+				warn: !!(tw && tw.age),
+				click: {
+					label: "Age/Sex",
+					value: d.ageSex || ""
+				},
+				fill: {
+					label: "Age/Sex",
+					value: d.ageSex || ""
+				}
+			}));
+			row.appendChild(mkTile("Room", d.room || "", {}));
+			row.appendChild(mkTile("Allergies", d.allergies || "", {
+				natW: true,
+				maxW: 300,
+				weight: 600,
+				color: "#a33327",
+				fit: true,
+				warn: !!(tw && tw.allergies),
+				click: {
+					label: "Allergies",
+					value: d.allergies || ""
+				},
+				fill: {
+					label: "Allergies",
+					value: d.allergies || ""
+				}
+			}));
+			row.appendChild(mkTile("Weight", d.weight || "", {
+				nav: true,
+				color: d.weightRed ? "#a33327" : void 0
+			}));
+			row.appendChild(mkTile("BIMS", d.bims || "", {
+				natW: true,
+				nowrap: true,
+				fit: true,
+				click: {
+					label: "BIMS",
+					value: d.bims || ""
+				},
+				fill: {
+					label: "BIMS",
+					value: d.bims || ""
+				}
+			}));
+			row.appendChild(mkTile("Relationships", d.rel || "", {
+				natW: true,
+				maxW: 280,
+				minW: 168,
+				fit: true,
+				warn: !!(tw && tw.rel),
+				click: {
+					label: "Relationships",
+					value: d.rel || ""
+				},
+				fill: {
+					label: "Relationships",
+					value: d.rel || ""
+				}
+			}));
+			var medsChip = String(d.meds === "- none" ? 0 : d.meds ? d.meds.split("\n").length : 0);
+			if (d.medsFill !== null && d.medsFill !== void 0) row.appendChild(mkTile("Psych meds", d.meds || "", {
+				cols: true,
+				wide: true,
+				multi: true,
+				size: 13,
+				weight: 600,
+				maxw: "920px",
+				warn: !!(tw && tw.meds),
+				click: {
+					label: "Psych meds",
+					value: d.medsFill
+				},
+				fill: {
+					label: "Psych meds",
+					value: d.medsFill
+				}
+			}, medsChip));
+			else row.appendChild(mkTile("Psych meds", d.meds || "", {
+				cols: true,
+				wide: true,
+				multi: true,
+				size: 13,
+				weight: 600,
+				maxw: "920px",
+				warn: !!(tw && tw.meds),
+				delegate: "meds"
+			}, medsChip));
+			bar.parentNode.insertBefore(row, bar.nextSibling);
+			var fitIt = function() {
+				fitAllergies(row);
+				fitMeds(row);
+			};
+			if (window.requestAnimationFrame) requestAnimationFrame(function() {
+				requestAnimationFrame(fitIt);
+			});
+			else setTimeout(fitIt, 60);
+			addFaceSheetButton(bar, row);
+		}
+		var faceUrlCache = "";
+		function addFaceSheetButton(bar, row) {
+			try {
+				if (location.pathname.indexOf("cp_residentdashboard") === -1) return;
+				var nameEl = null;
+				var els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
+				for (var i = 0; i < els.length; i++) {
+					var tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
+					if (tx.length > 70 || tx.length < 5) continue;
+					if (/^clinical\s/i.test(tx)) continue;
+					if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
+					var r = els[i].getBoundingClientRect();
+					if (!r || r.width < 50) continue;
+					nameEl = els[i];
+					break;
+				}
+				if (!nameEl) return;
+				var seat = nameEl, hops = 0;
+				while (seat.parentNode && hops < 4) {
+					var p = seat.parentNode;
+					if (!p || p.nodeType !== 1 || p.tagName === "BODY" || p.tagName === "HTML") break;
+					var disp = "";
+					try {
+						disp = getComputedStyle(p).display;
+					} catch (e3) {}
+					if (disp === "flex" || disp === "inline-flex") break;
+					seat = p;
+					hops++;
+				}
+				while (seat && seat !== nameEl && (!seat.parentNode || seat.parentNode.nodeType !== 1)) seat = seat.firstElementChild || nameEl;
+				var host = seat.parentNode;
+				if (!host) {
+					seat = nameEl;
+					host = nameEl.parentNode;
+				}
+				if (!host) return;
+				var btn = document.getElementById("tmFaceBtn");
+				if (!btn) {
+					btn = document.createElement("button");
+					btn.type = "button";
+					btn.id = "tmFaceBtn";
+					btn.setAttribute("data-tooltip", "Face Sheet Report");
+					btn.innerHTML = "<svg aria-hidden=\"true\" style=\"width:18px;height:18px;flex-shrink:0;margin-right:4px;\" viewBox=\"0 0 22 22\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\"><path d=\"M12.833 1.83301L18.333 7.33301V18.333C18.333 19.3413 17.5083 20.167 16.5 20.167H5.49121C4.48288 20.167 3.66699 19.3413 3.66699 18.333L3.67578 3.66699C3.67578 2.65866 4.49167 1.83301 5.5 1.83301H12.833ZM7.33301 14.667V16.5H14.667V14.667H7.33301ZM7.33301 11V12.833H14.667V11H7.33301ZM11.917 8.25H16.958L11.917 3.20801V8.25Z\" fill=\"currentColor\"></path></svg>Face Sheet";
+					btn.addEventListener("click", function() {
+						openFaceSheet();
+					});
+				}
+				btn.style.cssText = "position:static;background:linear-gradient(135deg,#fef9c3,#fde68a);border:2px solid #eab308;border-radius:6px;padding:4px 8px;box-shadow:0 2px 8px rgba(234,179,8,.4);font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",system-ui,sans-serif;font-size:15px;font-weight:600;color:#1c2430;cursor:pointer;display:inline-flex;align-items:center;gap:2px;margin-left:14px;vertical-align:middle;flex:none;align-self:center;";
+				if (btn.previousElementSibling !== seat || btn.parentNode !== host) host.insertBefore(btn, seat.nextSibling);
+			} catch (e) {}
+		}
+		function openFaceSheet() {
+			if (faceUrlCache) {
+				window.open(faceUrlCache, "_blank");
+				return;
+			}
+			var a = document.querySelector("a[href*=\"cp_careclientprofile\"]");
+			if (!a) return;
+			fetch(a.href, { credentials: "include" }).then(function(r) {
+				return r.text();
+			}).then(function(html) {
+				var m = /admissionRecord\.xhtml\?[^'"<\s]+/.exec(html.replace(/&amp;/g, "&"));
+				if (!m) return;
+				faceUrlCache = "/reporting/setup/runtime/" + m[0];
+				window.open(faceUrlCache, "_blank");
+			}).catch(function() {});
+		}
+		function fitAllergies(row) {
+			var els = row.querySelectorAll("[data-fit=\"1\"]");
+			for (var k = 0; k < els.length; k++) {
+				var el = els[k];
+				var size = 21;
+				el.style.fontSize = size + "px";
+				var guard = 0;
+				while (guard < 14 && size > 10 && (el.scrollHeight > 56 || el.scrollWidth > el.clientWidth)) {
+					size -= 1;
+					el.style.fontSize = size + "px";
+					guard++;
+				}
+			}
+		}
+		function fitMeds(row) {
+			var boxes = row.querySelectorAll("[data-medsfit=\"1\"]");
+			for (var b = 0; b < boxes.length; b++) {
+				var lines = boxes[b].querySelectorAll(".tmMedLine");
+				if (!lines.length) continue;
+				var size = parseFloat(lines[0].style.fontSize) || 13;
+				var guard = 0;
+				var over = function() {
+					for (var i = 0; i < lines.length; i++) if (lines[i].scrollWidth > lines[i].clientWidth + 2) return true;
+					return false;
+				};
+				while (guard < 5 && size > 10 && over()) {
+					size -= 1;
+					for (var j = 0; j < lines.length; j++) lines[j].style.fontSize = size + "px";
+					guard++;
+				}
+				if (over()) {
+					for (var k = 0; k < lines.length; k++) if (lines[k].scrollWidth > lines[k].clientWidth + 2) lines[k].style.whiteSpace = "normal";
+				}
+			}
+		}
+		function allDocs() {
+			var docs = [];
+			(function walk(w) {
+				try {
+					docs.push(w.document);
+				} catch (e) {
+					return;
+				}
+				for (var i = 0; i < w.frames.length; i++) walk(w.frames[i]);
+			})(window.top || window);
+			return docs;
+		}
+		function crossValue(fn) {
+			var docs = allDocs();
+			for (var i = 0; i < docs.length; i++) {
+				var v = fn(docs[i]);
+				if (v) return v;
+			}
+			return "";
+		}
+		function bimsValue() {
+			var bv = crossValue(function(doc) {
+				var box = doc.getElementById("custom-bims-badge");
+				if (!box) return "";
+				var btn = box.querySelector(".pcc-fill-copy");
+				if (btn && btn.getAttribute("data-fill-value")) return btn.getAttribute("data-fill-value");
+				var vv = box.querySelector(".bims-value");
+				return vv ? (vv.textContent || "").trim() : "";
+			});
+			if (bv && bv !== "N/A") return bv;
+			if (feedBims) return feedBims;
+			return scopedFeed("tmBimsFor:");
+		}
+		function scopedFeed(prefix) {
+			try {
+				var hrefs = "";
+				var as = document.querySelectorAll("a[href]");
+				for (var ai = 0; ai < as.length; ai++) hrefs += " " + (as[ai].getAttribute("href") || "");
+				var bodyT = document.body && document.body.textContent || "";
+				for (var i = 0; i < localStorage.length; i++) {
+					var k = localStorage.key(i);
+					if (!k || k.indexOf(prefix) !== 0) continue;
+					var token = k.slice(prefix.length).replace(/^(chart|eid):/, "");
+					if (!token || token.length < 4) continue;
+					if (bodyT.indexOf(token) === -1 && hrefs.indexOf(token) === -1) continue;
+					var f = JSON.parse(localStorage.getItem(k) || "null");
+					if (f && f.value && Date.now() - (f.ts || 0) < 864e5) return String(f.value);
+				}
+			} catch (e) {}
+			return "";
+		}
+		var feedRel = "", feedBims = "", feedMeds = "";
+		var buildTimer = null, burstAt = 0;
+		function scheduleBuild() {
+			var now = Date.now();
+			if (!burstAt) burstAt = now;
+			if (buildTimer) clearTimeout(buildTimer);
+			var wait = now - burstAt > 1200 ? 0 : 300;
+			buildTimer = setTimeout(function() {
+				buildTimer = null;
+				burstAt = 0;
+				buildCards();
+				renderReadmitChip();
+				renderHighChip();
+			}, wait);
+		}
+		function pullFromPacket() {
+			try {
+				var n = document.getElementById("tmGatherPacket");
+				if (!n) return;
+				var pkt = JSON.parse(n.textContent || "{}");
+				if (!pkt.stops) return;
+				var changed = false;
+				var rel = pkt.stops.relations;
+				if (rel && rel.status === "landed" && rel.summary && rel.summary !== feedRel) {
+					feedRel = rel.summary;
+					changed = true;
+				}
+				var b = pkt.stops.bims;
+				if (b && b.status === "landed" && b.series && b.series[0]) {
+					var d = new Date(b.series[0].date);
+					if (!isNaN(d.getTime())) {
+						var bl = b.series[0].score + " on " + (d.getMonth() + 1) + "/" + d.getDate() + "/" + String(d.getFullYear()).slice(2);
+						if (bl !== feedBims) {
+							feedBims = bl;
+							changed = true;
+						}
+					}
+				}
+				var hd = pkt.stops.header;
+				if (hd && hd.status === "landed" && hd.medsList) {
+					if (hd.medsList !== feedMeds) {
+						feedMeds = hd.medsList;
+						changed = true;
+					}
+				}
+				var dm = pkt.stops.dashmeds;
+				if (!(hd && hd.medsList) && dm && dm.status === "landed" && dm.lines) {
+					if (dm.lines !== feedMeds) {
+						feedMeds = dm.lines;
+						changed = true;
+					}
+				}
+				if (changed) scheduleBuild();
+			} catch (e) {}
+		}
+		document.addEventListener("tm-gather-update", pullFromPacket);
+		pullFromPacket();
+		setTimeout(pullFromPacket, 300);
+		setTimeout(pullFromPacket, 900);
+		setTimeout(pullFromPacket, 3500);
+		document.addEventListener("tm-gather-feed", function(e) {
+			var d = e && e.detail || {};
+			var changed = false;
+			if (d.rel && d.rel !== feedRel) {
+				feedRel = d.rel;
+				changed = true;
+			}
+			if (d.bims && d.bims !== feedBims) {
+				feedBims = d.bims;
+				changed = true;
+			}
+			if (d.meds && d.meds !== feedMeds) {
+				feedMeds = d.meds;
+				changed = true;
+			}
+			if (changed) scheduleBuild();
+		});
+		function relValue() {
+			var v = crossValue(function(doc) {
+				var btn = doc.getElementById("relCopyBtn");
+				return btn ? btn.getAttribute("data-fill-value") || "" : "";
+			});
+			if (v) return v;
+			if (feedRel) return feedRel;
+			return scopedFeed("tmRelFor:");
+		}
+		function chartNumMatch() {
+			try {
+				var _cd = window.__tmCore && window.__tmCore.chartDigits();
+				if (_cd) return _cd;
+			} catch (e) {}
+			try {
+				var els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
+				for (var i = 0; i < els.length; i++) {
+					var tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
+					if (tx.length > 70 || tx.length < 5) continue;
+					if (/^clinical\s/i.test(tx)) continue;
+					var em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}(\d{3,})\s*\)/);
+					if (em) return em[1];
+				}
+			} catch (e) {}
+			return "";
+		}
+		function renderReadmitChip() {
+			var g = document.getElementById("tmGBtn");
+			var old = document.getElementById("tmReadmitChip");
+			var note = null;
+			try {
+				note = JSON.parse(localStorage.getItem("tmReadmitNote") || "null");
+			} catch (e) {}
+			var show = false;
+			var chipMode = "";
+			var verdict = null;
+			try {
+				verdict = JSON.parse(localStorage.getItem("tmReadmitVerdict") || "null");
+			} catch (e) {}
+			if (verdict && verdict.id && g) {
+				var idm0 = chartNumMatch();
+				var cur0 = (selfData().admission || "").replace(/\s*\((re-entry|initial)\)/i, "");
+				if (idm0 && idm0 === verdict.id && cur0 === verdict.reentry) {
+					show = verdict.verdict === "readmit" || verdict.verdict === "new";
+					chipMode = verdict.verdict;
+					note = null;
+				}
+			}
+			if (note && note.id && g) {
+				var idm = chartNumMatch();
+				var curDate = (selfData().admission || "").replace(/\s*\((re-entry|initial)\)/i, "");
+				show = !!idm && idm === note.id && curDate === note.date;
+			}
+			if (!show) {
+				if (old) old.remove();
+				return;
+			}
+			if (old && old.getAttribute("data-mode") === chipMode) return;
+			if (old) old.remove();
+			var chip = document.createElement("span");
+			chip.id = "tmReadmitChip";
+			chip.setAttribute("data-mode", chipMode);
+			if (chipMode === "new") {
+				chip.textContent = "NEW ADMISSION";
+				chip.style.cssText = "display:inline-block;margin-left:10px;padding:5px 14px;background:#059669;color:#fff;border:3px solid #6ee7b7;border-radius:8px;font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;";
+			} else {
+				chip.textContent = "READMISSION";
+				chip.style.cssText = "display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;";
+			}
+			g.parentNode.insertBefore(chip, g.nextSibling);
+		}
+		function renderHighChip() {
+			var g = document.getElementById("tmGBtn");
+			var old = document.getElementById("tmHighChip");
+			var note = null;
+			try {
+				note = JSON.parse(localStorage.getItem("tmHighFlags") || "null");
+			} catch (e) {}
+			var show = false;
+			if (note && note.highs && note.highs.length && g) {
+				var ifr = document.querySelectorAll("iframe");
+				for (var i = 0; i < ifr.length; i++) {
+					var mm = (ifr[i].getAttribute("src") || "").match(/ESOLclientid=(\d+)/);
+					if (mm) {
+						show = mm[1] === note.id;
+						break;
+					}
+				}
+			}
+			if (!show) {
+				if (old) old.remove();
+				return;
+			}
+			var txt = note.highs.length === 1 ? "HIGH: " + note.highs[0] : note.highs.length + " HIGH FLAGS";
+			if (old) {
+				if (old.textContent !== txt) old.textContent = txt;
+				old.title = note.highs.join(" · ");
+				return;
+			}
+			var chip = document.createElement("span");
+			chip.id = "tmHighChip";
+			chip.textContent = txt;
+			chip.title = note.highs.join(" · ");
+			chip.style.cssText = "display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;";
+			var anchorEl = document.getElementById("tmReadmitChip") || g;
+			anchorEl.parentNode.insertBefore(chip, anchorEl.nextSibling);
+		}
+		function run() {
+			var bar = document.getElementById("residentHeaderButtons");
+			if (!bar) return;
+			if (!document.getElementById(BTN_ID)) {
+				var b = document.createElement("button");
+				b.type = "button";
+				b.id = BTN_ID;
+				b.className = "rh-header-btn";
+				b.textContent = "More";
+				b.addEventListener("click", function() {
+					shown = !shown;
+					apply();
+				});
+				bar.appendChild(b);
+			}
+			var more = document.getElementById(BTN_ID);
+			if (!document.getElementById("tmSBtn")) {
+				var s = document.createElement("button");
+				s.type = "button";
+				s.id = "tmSBtn";
+				s.className = "rh-header-btn";
+				s.textContent = "S";
+				s.title = "Copy name + room (same as the S key)";
+				s.addEventListener("click", triggerS);
+				bar.insertBefore(s, more.nextSibling);
+			}
+			if (!document.getElementById("tmGBtn")) {
+				var g = document.createElement("button");
+				g.type = "button";
+				g.id = "tmGBtn";
+				g.className = "rh-header-btn";
+				g.style.background = "#dbeafe";
+				g.textContent = "G";
+				g.addEventListener("mousedown", hlAllTiles);
+				g.title = "Grab all — queue everything on screen (same as the G key)";
+				g.addEventListener("click", triggerG);
+				var sBtn = document.getElementById("tmSBtn");
+				bar.insertBefore(g, sBtn ? sBtn.nextSibling : more.nextSibling);
+			}
+			if (!document.getElementById("tmGBtnStyle")) {
+				var gst = document.createElement("style");
+				gst.id = "tmGBtnStyle";
+				gst.textContent = "#tmGBtn:active{background:#ffffff !important;}";
+				(document.head || document.documentElement).appendChild(gst);
+			}
+			var stray;
+			while (stray = document.getElementById("tmRelRow") || document.getElementById("tmBimsRow")) stray.remove();
+			apply();
+			buildCards();
+			renderReadmitChip();
+			renderHighChip();
+		}
+		var lastPing = 0;
+		document.addEventListener("click", function() {
+			var now = Date.now();
+			if (now - lastPing < 1500) return;
+			lastPing = now;
+			try {
+				localStorage.setItem("tmRowPing", String(now));
+			} catch (e) {}
+			scheduleBuild();
+		}, true);
+		window.addEventListener("storage", function(e) {
+			if (e.key === "tmGoWts" && e.newValue) {
+				var mine = findTabInDoc(document, "WTS/VITALS");
+				if (mine) activateTab(mine);
+				return;
+			}
+			if (e.key === "tmGPress") {
+				if (e.newValue) hlAllTiles();
+				else hlRestoreAll();
+				return;
+			}
+			if (e.key === "tmTileWarn") {
+				scheduleBuild();
+				return;
+			}
+			if (e.key !== "tmRowPing" || !e.newValue) return;
+			var ts = parseInt(e.newValue, 10);
+			if (!ts || Date.now() - ts > 5e3) return;
+			scheduleBuild();
+		});
+		function gKeyTyping(e) {
+			var t = e.target;
+			if (!t) return false;
+			var tag = (t.tagName || "").toUpperCase();
+			return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable === true;
+		}
+		document.addEventListener("keydown", function(e) {
+			if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+			if ((e.key || "").toLowerCase() !== "g" || gKeyTyping(e)) return;
+			try {
+				localStorage.setItem("tmGPress", String(Date.now()));
+			} catch (err) {}
+			hlAllTiles();
+		});
+		document.addEventListener("keyup", function(e) {
+			if ((e.key || "").toLowerCase() !== "g") return;
+			try {
+				localStorage.setItem("tmGPress", "");
+			} catch (err) {}
+			hlRestoreAll();
+		});
+		window.__tmCore.ladder(run, [
+			300,
+			900,
+			1800,
+			3e3,
+			5e3,
+			8e3,
+			12e3,
+			2e4
+		]);
+	})();
+	(function() {
+		"use strict";
+		var FONT = "-apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif";
+		var ALL_TABS = [
+			"DASH",
+			"PROFILE",
+			"CENSUS",
+			"MED DIAG",
+			"PROBLEMS",
+			"ALLERGIES",
+			"IMMUN",
+			"ORDERS",
+			"WTS/VITALS",
+			"RESULTS",
+			"MDS",
+			"FORMS",
+			"ASSMNTS",
+			"THERAPY",
+			"PROG NOTES",
+			"CARE PLAN",
+			"TASKS",
+			"MISC"
+		];
+		function norm(s) {
+			return (s || "").replace(/\s+/g, " ").trim().toUpperCase();
+		}
+		function findBar() {
+			var els = document.querySelectorAll("a,button,[role=\"tab\"],td,li,span,div");
+			var cands = [];
+			for (var i = 0; i < els.length; i++) {
+				var el = els[i];
+				if (el.children.length > 2) continue;
+				var t = norm(el.textContent);
+				if (ALL_TABS.indexOf(t) !== -1) cands.push(el);
+			}
+			var byNode = new Map(), recs = [];
+			cands.forEach(function(el) {
+				var node = el.parentElement;
+				for (var up = 0; up < 8 && node; up++) {
+					var rec = byNode.get(node);
+					if (!rec) {
+						rec = {
+							node,
+							names: {}
+						};
+						byNode.set(node, rec);
+						recs.push(rec);
+					}
+					rec.names[norm(el.textContent)] = 1;
+					node = node.parentElement;
+				}
+			});
+			var best = null;
+			recs.forEach(function(rec) {
+				var n = Object.keys(rec.names).length;
+				if (n < 5) return;
+				if (!best || n > best.n || n === best.n && rec.node.querySelectorAll("*").length < best.size) best = {
+					node: rec.node,
+					n,
+					size: rec.node.querySelectorAll("*").length
+				};
+			});
+			return best ? best.node : null;
+		}
+		var open = false;
+		var words = "";
+		function styleTile(tile, isOpen) {
+			tile.style.cssText = "display:inline-flex;align-items:center;cursor:pointer;white-space:nowrap;box-sizing:border-box;line-height:1.15;border-radius:12px;padding:10px 14px;font:700 16px " + FONT + ";box-shadow:0 1px 2px rgba(16,24,40,.05);" + (isOpen ? "background:#be185d;color:#ffffff;border:1px solid #be185d;" : "background:#ffffff;color:#131c2b;border:1px solid #e2e8f0;");
+			var dot = tile.querySelector(".tmTabDot");
+			if (dot) dot.style.cssText = "display:inline-block;border-radius:50%;margin-right:8px;vertical-align:middle;" + (isOpen ? "width:8px;height:8px;background:transparent;border:2.5px solid #ffffff;" : "width:11px;height:11px;background:#be185d;border:2.5px solid transparent;");
+		}
+		function miniTile(label, key) {
+			return "<div style=\"flex:1 1 104px;min-width:96px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:7px 9px;\"><div style=\"font:700 10.5px " + FONT + ";letter-spacing:.04em;color:#64748b;text-transform:uppercase;\">" + label + "</div><div data-val-for=\"" + (key || "") + "\" style=\"font:600 14px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#0f172a;margin-top:2px;white-space:pre-wrap;\">—</div></div>";
+		}
+		function buttonTile(id, label, key) {
+			return "<div id=\"" + id + "\" role=\"button\" style=\"flex:1 1 104px;min-width:96px;background:#ffffff;border:1.5px solid #cbd5e1;border-radius:10px;padding:7px 9px;cursor:pointer;\"><div style=\"font:700 10.5px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;letter-spacing:.04em;color:#64748b;text-transform:uppercase;\">" + label + " <span style=\"color:#94a3b8;\">▾</span></div><div data-val-for=\"" + (key || "") + "\" style=\"font:600 14px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#0f172a;margin-top:2px;white-space:pre-wrap;\">—</div></div>";
+		}
+		function sectionTile(title, key) {
+			return "<div style=\"flex:1 1 260px;min-width:230px;background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;min-height:74px;\"><div style=\"font:700 13px " + FONT + ";color:#0f172a;\">" + title + "</div><div data-section-for=\"" + (key || "") + "\" style=\"font:400 12.5px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#94a3b8;margin-top:4px;white-space:pre-wrap;\">Arrives with the Gatherer.</div></div>";
+		}
+		var bimsWin = "all";
+		function bimsBand(score) {
+			if (score === null || score === void 0 || isNaN(score)) return null;
+			if (score >= 13) return {
+				name: "none",
+				tile: "",
+				band: "rgba(255,255,255,0)"
+			};
+			if (score >= 10) return {
+				name: "mild",
+				tile: "#fff5f6",
+				band: "rgba(254,205,211,.45)"
+			};
+			if (score >= 8) return {
+				name: "moderate",
+				tile: "#ffeef0",
+				band: "rgba(253,164,175,.45)"
+			};
+			return {
+				name: "severe",
+				tile: "#ffe4e6",
+				band: "rgba(251,113,133,.35)"
+			};
+		}
+		function bimsPoints(win) {
+			var pkt = readPacket();
+			var pts = (pkt && pkt.stops && pkt.stops.bims && pkt.stops.bims.series || []).map(function(x) {
+				return {
+					d: new Date(x.date),
+					score: x.score,
+					label: x.date
+				};
+			}).filter(function(x) {
+				return !isNaN(x.d.getTime());
+			}).sort(function(a, b) {
+				return a.d - b.d;
+			});
+			if (!pts.length) return pts;
+			if (win !== "all") {
+				var months = win === "6m" ? 6 : 12;
+				var cut = new Date(pts[pts.length - 1].d);
+				cut.setMonth(cut.getMonth() - months);
+				pts = pts.filter(function(x) {
+					return x.d >= cut;
+				});
+			}
+			var last = pts[pts.length - 1].d, out = [], seenMonth = {};
+			pts.forEach(function(x) {
+				if (last - x.d <= 2592e6) {
+					out.push(x);
+					return;
+				}
+				var k = x.d.getFullYear() + "-" + x.d.getMonth();
+				if (!seenMonth[k]) {
+					seenMonth[k] = 1;
+					out.push(x);
+				}
+			});
+			return out;
+		}
+		function spanText(a, b) {
+			var days = Math.round((b - a) / 864e5);
+			if (days < 45) return "over " + days + " days";
+			var months = Math.round(days / 30.44);
+			if (months < 24) return "over " + months + (months === 1 ? " month" : " months");
+			return "over " + (days / 365.25).toFixed(1).replace(/\.0$/, "") + " years";
+		}
+		function bimsAnalysis(pts) {
+			if (!pts.length) return "";
+			var first = pts[0], lastP = pts[pts.length - 1];
+			if (pts.length === 1) return "One scored BIMS on file: " + first.score + " on " + first.label + " (" + bimsBand(first.score).name + "). No trend yet.";
+			var delta = lastP.score - first.score;
+			var dir = delta === 0 ? "level overall" : delta > 0 ? "up " + delta + " overall" : "down " + Math.abs(delta) + " overall";
+			var s = pts.length + " scored BIMS " + spanText(first.d, lastP.d) + ": " + first.score + " → " + lastP.score + ", " + dir + ".";
+			var step = 0, stepTxt = "";
+			for (var i = 1; i < pts.length; i++) {
+				var d = pts[i].score - pts[i - 1].score;
+				if (Math.abs(d) > Math.abs(step)) {
+					step = d;
+					stepTxt = pts[i - 1].label + " → " + pts[i].label;
+				}
+			}
+			if (step !== 0) s += " Biggest single step: " + (step > 0 ? "+" : "") + step + " (" + stepTxt + ").";
+			var bands = pts.map(function(x) {
+				return bimsBand(x.score).name;
+			});
+			if (bands.every(function(b) {
+				return b === bands[0];
+			})) s += " Every score sits in the " + bands[0] + " band.";
+			else {
+				var path = [bands[0]];
+				bands.forEach(function(b) {
+					if (b !== path[path.length - 1]) path.push(b);
+				});
+				s += " Band path: " + path.join(" → ") + ".";
+			}
+			if (pts.length >= 2 && pts[pts.length - 1].score === pts[pts.length - 2].score) s += " The last two scores are level at " + lastP.score + ".";
+			return s;
+		}
+		function renderBimsPop(p) {
+			var pop = p.querySelector("#tmPsychBimsPop");
+			if (!pop) return;
+			var pts = bimsPoints(bimsWin);
+			var seg = [
+				["all", "Since admission"],
+				["1y", "1 year"],
+				["6m", "6 months"]
+			].map(function(w) {
+				var on = bimsWin === w[0];
+				return "<button type=\"button\" data-bims-win=\"" + w[0] + "\" style=\"border:1px solid " + (on ? "#0f172a" : "#cbd5e1") + ";background:" + (on ? "#0f172a" : "#ffffff") + ";color:" + (on ? "#ffffff" : "#334155") + ";border-radius:999px;padding:3px 10px;font:600 11.5px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;cursor:pointer;\">" + w[1] + "</button>";
+			}).join(" ");
+			if (!pts.length) {
+				pop.innerHTML = "<div style=\"border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;max-width:520px;font:400 12.5px " + FONT + ";color:#94a3b8;\">No scored BIMS in this window.</div>";
+				wireBimsPop(p);
+				return;
+			}
+			var W = 560, H = 168, PL = 26, PR = 10, PT = 10, PB = 30;
+			var t0 = pts[0].d.getTime(), t1 = pts[pts.length - 1].d.getTime();
+			if (t1 === t0) {
+				t0 -= 1296e6;
+				t1 += 1296e6;
+			}
+			function X(d) {
+				return PL + (d.getTime() - t0) / (t1 - t0) * (W - PL - PR);
+			}
+			function Y(s) {
+				return PT + (15 - s) / 15 * (H - PT - PB);
+			}
+			var bandsSvg = [
+				[
+					13,
+					15,
+					bimsBand(14).band,
+					"none"
+				],
+				[
+					10,
+					12,
+					bimsBand(11).band,
+					"mild"
+				],
+				[
+					8,
+					9,
+					bimsBand(9).band,
+					"moderate"
+				],
+				[
+					0,
+					7,
+					bimsBand(5).band,
+					"severe"
+				]
+			].map(function(b) {
+				return "<rect x=\"" + PL + "\" y=\"" + Y(b[1]) + "\" width=\"" + (W - PL - PR) + "\" height=\"" + (Y(b[0]) - Y(b[1])) + "\" fill=\"" + b[2] + "\"/><text x=\"2\" y=\"" + (Y(b[1]) + 10) + "\" font-size=\"8\" fill=\"#94a3b8\">" + b[3] + "</text>";
+			}).join("");
+			var line = pts.map(function(x) {
+				return X(x.d).toFixed(1) + "," + Y(x.score).toFixed(1);
+			}).join(" ");
+			var dots = pts.map(function(x) {
+				return "<circle cx=\"" + X(x.d).toFixed(1) + "\" cy=\"" + Y(x.score).toFixed(1) + "\" r=\"3.5\" fill=\"#0f172a\"/><text x=\"" + X(x.d).toFixed(1) + "\" y=\"" + (Y(x.score) - 8).toFixed(1) + "\" font-size=\"10\" font-weight=\"700\" fill=\"#0f172a\" text-anchor=\"middle\">" + x.score + "</text><text x=\"" + X(x.d).toFixed(1) + "\" y=\"" + (H - 8) + "\" font-size=\"8.5\" fill=\"#64748b\" text-anchor=\"middle\">" + x.label.replace(/\/\d{4}$/, "") + "</text>";
+			}).join("");
+			var rows = pts.slice().reverse().map(function(x) {
+				var b = bimsBand(x.score);
+				return "<tr><td style=\"padding:4px 8px;border-top:1px solid #f1f5f9;\">" + x.label + "</td><td style=\"padding:4px 8px;border-top:1px solid #f1f5f9;font-weight:700;\">" + x.score + "</td><td style=\"padding:4px 8px;border-top:1px solid #f1f5f9;color:#64748b;\">" + b.name + "</td></tr>";
+			}).join("");
+			var first = pts[0], lastP = pts[pts.length - 1];
+			pop.innerHTML = "<div style=\"background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;max-width:520px;\"><div style=\"display:flex;align-items:center;gap:8px;flex-wrap:wrap;\"><span style=\"font:700 13px " + FONT + ";color:#0f172a;\">BIMS trend</span>" + "<span style=\"font:400 12px " + FONT + ";color:#64748b;\">" + first.score + " → " + lastP.score + " · " + spanText(first.d, lastP.d) + "</span><span style=\"margin-left:auto;display:flex;gap:4px;\">" + seg + "</span></div><svg viewBox=\"0 0 " + W + " " + H + "\" style=\"width:100%;height:auto;display:block;margin-top:6px;\">" + bandsSvg + "<polyline points=\"" + line + "\" fill=\"none\" stroke=\"#0f172a\" stroke-width=\"1.6\"/>" + dots + "</svg><table style=\"border-collapse:collapse;font:400 12.5px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#0f172a;margin-top:4px;\"><tr><td style=\"padding:2px 8px;font-weight:700;color:#64748b;\">Date</td><td style=\"padding:2px 8px;font-weight:700;color:#64748b;\">Score</td><td style=\"padding:2px 8px;font-weight:700;color:#64748b;\">Level</td></tr>" + rows + "</table><div style=\"font:400 12.5px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#334155;margin-top:8px;\">" + bimsAnalysis(pts) + "</div></div>";
+			wireBimsPop(p);
+		}
+		function wireBimsPop(p) {
+			p.querySelectorAll("[data-bims-win]").forEach(function(b) {
+				b.addEventListener("click", function() {
+					bimsWin = b.getAttribute("data-bims-win");
+					renderBimsPop(p);
+				});
+			});
+		}
+		function buildPanel() {
+			var p = document.createElement("div");
+			p.id = "tmPsychPage";
+			p.style.cssText = "background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;margin:10px 8px;padding:14px;box-shadow:0 4px 16px rgba(16,24,40,.07);";
+			p.innerHTML = "<div style=\"display:flex;align-items:baseline;gap:10px;margin-bottom:10px;\"><span style=\"font:800 19px " + FONT + ";color:#0f172a;\">Psychiatry</span>" + "<span style=\"font:400 12px " + FONT + ";color:#94a3b8;\">the one page — everything psychiatrically connected, in one place</span>" + "</div>" + "<div style=\"display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;\">" + buttonTile("tmPsychBimsTile", "BIMS", "bims") + miniTile("Facesheet", "facesheet") + miniTile("Admission facts", "admissionFacts") + "</div><div id=\"tmPsychBimsPop\" style=\"display:none;margin-bottom:8px;\"></div><div id=\"tmPsychStamp\" style=\"font:400 11px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#94a3b8;margin-bottom:8px;\">Gatherer: waiting…</div><div id=\"tmPsychDxSlot\" style=\"margin-bottom:8px;\"></div><div id=\"tmPsychBehSlot\" style=\"margin-bottom:8px;\"></div><div style=\"background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:10px 12px;margin-bottom:10px;\"><div style=\"font:700 13px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#9a3412;\">Your words</div><textarea id=\"tmPsychWords\" rows=\"3\" placeholder=\"Dictate or type here — verbatim, editable. Lives only on this page; nothing is saved or sent.\" style=\"width:100%;box-sizing:border-box;margin-top:6px;border:1px solid #fdba74;border-radius:8px;padding:8px;font:400 14px -apple-system, \"Segoe UI\", Roboto, Helvetica, Arial, sans-serif;color:#0f172a;background:#ffffff;resize:vertical;\"></textarea></div><div style=\"display:flex;flex-wrap:wrap;gap:8px;\">" + sectionTile("Script summary", "summary") + sectionTile("Labs & monitoring", "labs") + sectionTile("Your prior notes", "ownnotes") + "</div>";
+			fillSlots(p);
+			renderPacketInto(p);
+			var btile = p.querySelector("#tmPsychBimsTile");
+			if (btile) btile.addEventListener("click", function() {
+				var pop = p.querySelector("#tmPsychBimsPop");
+				if (!pop) return;
+				var show = pop.style.display === "none";
+				pop.style.display = show ? "" : "none";
+				if (show) renderBimsPop(p);
+			});
+			var ta = p.querySelector("#tmPsychWords");
+			ta.value = words;
+			ta.addEventListener("input", function() {
+				words = ta.value;
+			});
+			return p;
+		}
+		function readPacket() {
+			try {
+				var n = document.getElementById("tmGatherPacket");
+				return n ? JSON.parse(n.textContent || "{}") : null;
+			} catch (e) {
+				return null;
+			}
+		}
+		function renderPacketInto(p) {
+			var pkt = readPacket();
+			if (!pkt || !pkt.stops) return;
+			var s = pkt.stops;
+			function setVal(key, val) {
+				var el = p.querySelector("[data-val-for=\"" + key + "\"]");
+				if (el && val) el.textContent = val;
+			}
+			if (s.relations && s.relations.status === "landed") setVal("relations", (s.relations.summary || "").slice(0, 90));
+			if (s.bims && s.bims.status === "landed") {
+				setVal("bims", s.bims.facts && s.bims.facts.latest || s.bims.summary || "");
+				var bt = p.querySelector("#tmPsychBimsTile");
+				if (bt) {
+					var bb = bimsBand((s.bims.series || [])[0] ? (s.bims.series || [])[0].score : null);
+					if (bb) bt.style.background = bb.tile;
+				}
+				var pop = p.querySelector("#tmPsychBimsPop");
+				if (pop && pop.style.display !== "none") renderBimsPop(p);
+			}
+			var dxFb = p.querySelector("[data-dx-fallback=\"1\"]");
+			if (dxFb && s.diagnoses && s.diagnoses.status === "landed") {
+				dxFb.style.color = "#0f172a";
+				dxFb.textContent = (s.diagnoses.summary || "") + "\n— " + s.diagnoses.source + " · " + s.diagnoses.at;
+			}
+			var behFb = p.querySelector("[data-beh-fallback=\"1\"]");
+			if (behFb && s.behaviors && s.behaviors.status === "landed") {
+				behFb.style.color = "#0f172a";
+				behFb.textContent = (s.behaviors.summary || "") + "\n— " + s.behaviors.source + " · " + s.behaviors.at;
+			}
+			function setSection(key, stop) {
+				var el = p.querySelector("[data-section-for=\"" + key + "\"]");
+				if (el && stop && stop.status === "landed") {
+					el.style.color = "#0f172a";
+					el.textContent = (stop.summary || "") + "\n— " + stop.source + " · " + stop.at;
+				}
+			}
+			setSection("labs", s.labs);
+			setSection("ownnotes", s.ownnotes);
+			var stamp = p.querySelector("#tmPsychStamp");
+			if (stamp) {
+				var landed = Object.keys(s).filter(function(k) {
+					return s[k].status === "landed";
+				});
+				stamp.textContent = "Gatherer: " + landed.length + " of " + Object.keys(s).length + " stops landed" + (landed.length ? " · " + landed.join(", ") : "") + " · packet " + (pkt.startedAt || "");
+			}
+		}
+		document.addEventListener("tm-gather-update", function() {
+			var p = document.getElementById("tmPsychPage");
+			if (p && open) renderPacketInto(p);
+		});
+		var adopted = [];
+		function findInFrames(id) {
+			var n = document.getElementById(id);
+			if (n) return n;
+			var frames = document.querySelectorAll("iframe");
+			for (var i = 0; i < frames.length; i++) try {
+				var fd = frames[i].contentDocument;
+				if (fd) {
+					var fn = fd.getElementById(id);
+					if (fn) return fn;
+				}
+			} catch (e) {}
+			return null;
+		}
+		function adoptTiles(p) {
+			adopted = [];
+			[{
+				slot: "tmPsychDxSlot",
+				ids: ["pnDxBtnRow", "pnDxBox"]
+			}, {
+				slot: "tmPsychBehSlot",
+				ids: ["pnBehBox"]
+			}].forEach(function(job) {
+				var slot = p.querySelector("#" + job.slot);
+				if (!slot) return;
+				if (slot.dataset.live === "1") return;
+				slot.innerHTML = "";
+				job.ids.forEach(function(id) {
+					var node = findInFrames(id);
+					if (!node || !node.parentNode) return;
+					var marker = node.ownerDocument.createComment("tmPsychSpot-" + id);
+					node.parentNode.insertBefore(marker, node);
+					slot.appendChild(node);
+					adopted.push({
+						node,
+						marker
+					});
+				});
+				if (slot.children.length) slot.dataset.live = "1";
+			});
+			fillSlots(p);
+		}
+		function restoreTiles(p) {
+			adopted.forEach(function(a) {
+				if (a.marker.isConnected && a.marker.parentNode) {
+					a.marker.parentNode.insertBefore(a.node, a.marker);
+					a.marker.parentNode.removeChild(a.marker);
+				} else if (a.node.parentNode) a.node.parentNode.removeChild(a.node);
+			});
+			adopted = [];
+			["tmPsychDxSlot", "tmPsychBehSlot"].forEach(function(id) {
+				var slot = p.querySelector("#" + id);
+				if (slot) delete slot.dataset.live;
+			});
+			fillSlots(p);
+		}
+		function fillSlots(p) {
+			var dx = p.querySelector("#tmPsychDxSlot");
+			if (dx && !dx.children.length && dx.dataset.live !== "1") dx.innerHTML = "<div style=\"background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;\"><div style=\"font:700 13px " + FONT + ";color:#0f172a;\">Diagnoses</div>" + "<div data-dx-fallback=\"1\" style=\"font:400 12.5px " + FONT + ";color:#94a3b8;margin-top:4px;white-space:pre-wrap;\">The live tile joins here when you open this tab on the Progress Notes page.</div></div>";
+			var beh = p.querySelector("#tmPsychBehSlot");
+			if (beh && !beh.children.length && beh.dataset.live !== "1") beh.innerHTML = "<div style=\"background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;\"><div style=\"font:700 13px " + FONT + ";color:#0f172a;\">Behaviors</div>" + "<div data-beh-fallback=\"1\" style=\"font:400 12.5px " + FONT + ";color:#94a3b8;margin-top:4px;white-space:pre-wrap;\">The live tile joins here when you open this tab on the Progress Notes page.</div></div>";
+		}
+		function tilesFrameWin() {
+			var frames = document.querySelectorAll("iframe");
+			for (var i = 0; i < frames.length; i++) try {
+				var fw = frames[i].contentWindow;
+				var fd = frames[i].contentDocument;
+				if (fw && fd && fw.__tmPsych && (fd.getElementById("pnBehBox") || fd.getElementById("pnDxBox"))) return fw;
+			} catch (e) {}
+			return null;
+		}
+		function openHere() {
+			var panel = document.getElementById("tmPsychPage");
+			if (panel && panel.style.display !== "none") {
+				setOpen(false);
+				return false;
+			}
+			if (!panel) {
+				panel = buildPanel();
+				var wrap = document.getElementById("pnTilesWrap");
+				if (wrap && wrap.parentNode) wrap.parentNode.insertBefore(panel, wrap);
+				else if (document.body) document.body.insertBefore(panel, document.body.firstChild);
+			} else panel.style.display = "";
+			open = true;
+			adoptTiles(panel);
+			renderPacketInto(panel);
+			return true;
+		}
+		try {
+			window.__tmPsych = { openHere };
+		} catch (e) {}
+		function setOpen(v, bar) {
+			if (!v) try {
+				var fw0 = tilesFrameWin();
+				if (fw0 && open) fw0.__tmPsych.openHere();
+			} catch (e) {}
+			open = v;
+			var tile = document.getElementById("tmPsychTab");
+			var panel = document.getElementById("tmPsychPage");
+			if (tile) styleTile(tile, open);
+			if (open) {
+				if (!panel && bar) {
+					panel = buildPanel();
+					bar.parentNode.insertBefore(panel, bar.nextSibling);
+				} else if (panel) panel.style.display = "";
+				if (panel) {
+					adoptTiles(panel);
+					renderPacketInto(panel);
+				}
+			} else if (panel) {
+				restoreTiles(panel);
+				panel.style.display = "none";
+			}
+		}
+		function ensureTab() {
+			try {
+				var bar = findBar();
+				if (!bar) return;
+				var tile = document.getElementById("tmPsychTab");
+				if (!tile) {
+					tile = document.createElement("div");
+					tile.id = "tmPsychTab";
+					tile.setAttribute("role", "button");
+					var dot = document.createElement("span");
+					dot.className = "tmTabDot";
+					dot.setAttribute("aria-hidden", "true");
+					tile.appendChild(dot);
+					tile.appendChild(document.createTextNode("Psychiatry"));
+					tile.addEventListener("click", function(e) {
+						e.stopPropagation();
+						var fw = tilesFrameWin();
+						if (fw) {
+							open = !!fw.__tmPsych.openHere();
+							styleTile(tile, open);
+							return;
+						}
+						setOpen(!open, findBar());
+					});
+					styleTile(tile, open);
+				}
+				if (!bar.contains(tile) || bar.firstElementChild !== tile) bar.insertBefore(tile, bar.firstChild);
+				if (open && !document.getElementById("tmPsychPage")) bar.parentNode.insertBefore(buildPanel(), bar.nextSibling);
+			} catch (e) {}
+		}
+		document.addEventListener("click", function(e) {
+			if (!open) return;
+			var bar = findBar();
+			if (bar && bar.contains(e.target) && !document.getElementById("tmPsychTab").contains(e.target)) setOpen(false, bar);
+		}, true);
+		document.addEventListener("keydown", function(e) {
+			if (!open || e.key !== "0") return;
+			var t = e.target;
+			if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
+			if (e.metaKey || e.ctrlKey || e.altKey) return;
+			setOpen(false, findBar());
+		}, true);
+		window.__tmCore.ladder(ensureTab, [
+			0,
+			350,
+			900,
+			2e3
+		]);
+	})();
+	(function() {
+		"use strict";
+		function allergySet(s) {
+			return s.split(",").map(function(x) {
+				return x.trim().toLowerCase();
+			}).filter(Boolean).sort().join("|");
+		}
+		var MED_PAIRS = [
+			["Risperdal", "risperidone"],
+			["Seroquel", "quetiapine"],
+			["Zyprexa", "olanzapine"],
+			["Abilify", "aripiprazole"],
+			["Invega", "paliperidone"],
+			["Latuda", "lurasidone"],
+			["Geodon", "ziprasidone"],
+			["Haldol", "haloperidol"],
+			["Prolixin", "fluphenazine"],
+			["Thorazine", "chlorpromazine"],
+			["Clozaril", "clozapine"],
+			["Zoloft", "sertraline"],
+			["Prozac", "fluoxetine"],
+			["Paxil", "paroxetine"],
+			["Celexa", "citalopram"],
+			["Lexapro", "escitalopram"],
+			["Effexor", "venlafaxine"],
+			["Cymbalta", "duloxetine"],
+			["Wellbutrin", "bupropion"],
+			["Remeron", "mirtazapine"],
+			["Trintellix", "vortioxetine"],
+			["Viibryd", "vilazodone"],
+			["Lamictal", "lamotrigine"],
+			["Depakote", "divalproex"],
+			["Depakote", "valproic acid"],
+			["Depakote", "valproate"],
+			["Tegretol", "carbamazepine"],
+			["Trileptal", "oxcarbazepine"],
+			["Topamax", "topiramate"],
+			["Neurontin", "gabapentin"],
+			["Lyrica", "pregabalin"],
+			["Ativan", "lorazepam"],
+			["Klonopin", "clonazepam"],
+			["Xanax", "alprazolam"],
+			["Valium", "diazepam"],
+			["Restoril", "temazepam"],
+			["Ambien", "zolpidem"],
+			["Lunesta", "eszopiclone"],
+			["Buspar", "buspirone"],
+			["Vistaril", "hydroxyzine"],
+			["Intuniv", "guanfacine"],
+			["Strattera", "atomoxetine"],
+			["Concerta", "methylphenidate"],
+			["Vyvanse", "lisdexamfetamine"],
+			["Adderall", "amphetamine"],
+			["Cogentin", "benztropine"],
+			["Aricept", "donepezil"],
+			["Namenda", "memantine"],
+			["Exelon", "rivastigmine"],
+			["Razadyne", "galantamine"]
+		];
+		var MED_CANON = {};
+		MED_PAIRS.forEach(function(p) {
+			MED_CANON[p[0].toLowerCase()] = p[1];
+			MED_CANON[p[1]] = p[1];
+		});
+		function canonMed(name) {
+			var n = (name || "").toLowerCase().replace(/\b(hcl|hydrochloride|sodium|sulfate|fumarate|mesylate|succinate|phosphate)\b/g, "").replace(/\b(er|xr|sr|cr|odt|ir|la)\b/g, "").replace(/\s+/g, " ").trim();
+			return MED_CANON[n] || n;
+		}
+		function parseMedLine(line) {
+			var m = line.match(/^-\s+(.+?)\s+(\d[\s\S]*)$/);
+			if (!m) return null;
+			var name = m[1].trim(), rest = m[2].trim();
+			if (name.indexOf(",") !== -1) return null;
+			var spec = rest, ind = "";
+			var fi = rest.lastIndexOf(" for ");
+			if (fi !== -1) {
+				spec = rest.slice(0, fi).trim();
+				ind = rest.slice(fi + 5).trim();
+			}
+			if (!/\d\s*(mg|mcg|g|ml)\b/i.test(spec) && !/\b(QD|BID|TID|QID|QHS|QAM|QPM|PRN|daily|nightly|every)\b/i.test(spec)) return null;
+			return {
+				name,
+				spec,
+				ind,
+				canon: canonMed(name)
+			};
+		}
+		function normSpec(s) {
+			return (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+		}
+		function medSectionLines(txt) {
+			var lines = txt.split("\n"), hi = -1, ei = -1, i = 0;
+			for (; i < lines.length; i++) if (/^\s*Psych meds\s*$/.test(lines[i])) {
+				hi = i;
+				break;
+			}
+			if (hi === -1) return null;
+			for (i = hi + 1; i < lines.length; i++) if (/^\s*PLAN\b/.test(lines[i])) {
+				ei = i;
+				break;
+			}
+			if (ei === -1) ei = lines.length;
+			return lines.slice(hi + 1, ei);
+		}
+		function tileVerdicts(txt, medsTxt, chart) {
+			var v = {
+				age: false,
+				allergies: false,
+				meds: false,
+				rel: false
+			};
+			if (chart.ageSex) {
+				var hm = txt.match(/^[ \t]*HPI[ \t]+(\d{1,3})[MF]\b/m);
+				var qa = String(chart.ageSex).match(/\d{1,3}/);
+				v.age = !hm || !qa || hm[1] !== qa[0];
+			}
+			if (chart.allergies) {
+				var am = txt.match(/^[ \t]*Allergies[ \t]*:?[ \t]*(.*)$/m);
+				if (!am || !am[1].trim()) v.allergies = true;
+				else {
+					var nka = /^(NKA|NKDA|No[ \t]+known)/i;
+					v.allergies = (nka.test(am[1].trim()) ? "" : allergySet(am[1].trim())) !== (nka.test(String(chart.allergies).trim()) ? "" : allergySet(String(chart.allergies)));
+				}
+			}
+			if (chart.meds) {
+				var secLines = null;
+				if (medsTxt !== null && medsTxt !== void 0) secLines = String(medsTxt).split("\n");
+				else secLines = medSectionLines(txt);
+				var chartNone = /^\s*-\s*none\s*$/i.test(String(chart.meds).trim());
+				if (!secLines) v.meds = true;
+				else {
+					var content = secLines.filter(function(l) {
+						return l.trim() !== "";
+					});
+					var noteNone = content.length === 1 && /^\s*-\s*none\s*$/i.test(content[0].trim());
+					if (!content.length) v.meds = true;
+					else if (noteNone || chartNone) v.meds = noteNone !== chartNone;
+					else {
+						var noteMap = {}, chartMap = {}, diff = false, k;
+						var noteSeq = [], chartSeq = [];
+						content.forEach(function(l) {
+							var p = parseMedLine(l);
+							if (p) {
+								noteMap[p.canon] = normSpec(p.spec);
+								noteSeq.push(p.canon);
+							}
+						});
+						String(chart.meds).split("\n").forEach(function(l) {
+							var p = parseMedLine(l);
+							if (p) {
+								chartMap[p.canon] = normSpec(p.spec);
+								chartSeq.push(p.canon);
+							}
+						});
+						for (k in chartMap) if (noteMap[k] !== chartMap[k]) {
+							diff = true;
+							break;
+						}
+						if (!diff) {
+							for (k in noteMap) if (!(k in chartMap)) {
+								diff = true;
+								break;
+							}
+						}
+						if (!diff && noteSeq.join("|") !== chartSeq.join("|")) diff = true;
+						v.meds = diff;
+					}
+				}
+			}
+			if (chart.rel) {
+				var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/im);
+				if (!cm || !cm[1].trim() || /^xx\b/i.test(cm[1].trim())) v.rel = true;
+				else {
+					var relSet = function(s) {
+						var out = {};
+						String(s).split(/[,;]|\s+and\s+/i).forEach(function(p) {
+							var q = p.replace(/^[\s\-]+|[\s\-]+$/g, "").toLowerCase().replace(/\s+/g, " ");
+							if (q) out[q] = 1;
+						});
+						return out;
+					};
+					var nSet = relSet(cm[1]), cSet = relSet(chart.rel), rDiff = false, rk;
+					for (rk in cSet) if (!nSet[rk]) {
+						rDiff = true;
+						break;
+					}
+					if (!rDiff) {
+						for (rk in nSet) if (!cSet[rk]) {
+							rDiff = true;
+							break;
+						}
+					}
+					v.rel = rDiff;
+				}
+			}
+			return v;
+		}
+		var tileWarnPublished = false, tileWarnLast = "", tileWarnTs = 0, weHoldOpen = false, openChain = false;
+		function clearTileWarn() {
+			if (weHoldOpen) {
+				try {
+					localStorage.removeItem("tmNoteOpen");
+				} catch (e) {}
+				weHoldOpen = false;
+			}
+			if (!tileWarnPublished) return;
+			tileWarnPublished = false;
+			tileWarnLast = "";
+			try {
+				localStorage.removeItem("tmTileWarn");
+			} catch (e) {}
+		}
+		function publishTileWarn() {
+			var chart = null;
+			try {
+				chart = JSON.parse(localStorage.getItem("tmTileChart") || "null");
+			} catch (e) {}
+			if (chart && chart.ts && Date.now() - chart.ts > 9e4) chart = null;
+			var field = findNoteField();
+			if (!chart || !field) {
+				clearTileWarn();
+				return;
+			}
+			var txt = field.value || "";
+			if (!looksLikeHisNote(txt)) {
+				clearTileWarn();
+				return;
+			}
+			var mf = findMedsField(field);
+			var v = tileVerdicts(txt, mf ? mf.value || "" : null, chart);
+			var s = JSON.stringify(v);
+			if (s !== tileWarnLast || Date.now() - tileWarnTs > 2e4) {
+				tileWarnLast = s;
+				tileWarnTs = Date.now();
+				try {
+					localStorage.setItem("tmTileWarn", JSON.stringify({
+						age: v.age,
+						allergies: v.allergies,
+						meds: v.meds,
+						rel: v.rel,
+						key: chart && chart.key || null,
+						ts: tileWarnTs
+					}));
+				} catch (e) {}
+			}
+			tileWarnPublished = true;
+			try {
+				localStorage.setItem("tmNoteOpen", JSON.stringify({ ts: Date.now() }));
+			} catch (e) {}
+			weHoldOpen = true;
+			if (!openChain) {
+				openChain = true;
+				setTimeout(function() {
+					openChain = false;
+					try {
+						publishTileWarn();
+					} catch (e) {}
+				}, 15e3);
+			}
+		}
+		var tileInputLast = 0;
+		document.addEventListener("input", function(e) {
+			if (!e.isTrusted) return;
+			var now = Date.now();
+			if (now - tileInputLast < 700) return;
+			tileInputLast = now;
+			setTimeout(publishTileWarn, 50);
+		}, true);
+		function findNoteField() {
+			var labels = document.querySelectorAll("td, th, div, span, label, b");
+			for (var i = 0; i < labels.length; i++) {
+				var t = (labels[i].textContent || "").replace(/\s+/g, " ").trim();
+				if (/^1\.\s*Psychiatry\s+Consult:?$/i.test(t) || /^Psychiatry\s+Consult:?$/i.test(t) || /^\d\.\s*HPI\s*\//i.test(t) || /^HPI\s*\//i.test(t)) {
+					var all = document.querySelectorAll("textarea");
+					for (var j = 0; j < all.length; j++) if (labels[i].compareDocumentPosition(all[j]) & Node.DOCUMENT_POSITION_FOLLOWING) return all[j];
+				}
+			}
+			var tas = document.querySelectorAll("textarea"), best = null, bestArea = 0;
+			for (var k = 0; k < tas.length; k++) {
+				var r = tas[k].getBoundingClientRect();
+				var area = r.width * r.height;
+				if (area > bestArea && r.width > 100 && r.height > 50) {
+					bestArea = area;
+					best = tas[k];
+				}
+			}
+			return best;
+		}
+		function looksLikeHisNote(txt) {
+			var anchors = 0;
+			if (/\bHPI\b/.test(txt)) anchors++;
+			if (/Medical Hx/.test(txt)) anchors++;
+			if (/Psych meds/.test(txt)) anchors++;
+			if (/Allergies/.test(txt)) anchors++;
+			if (/Primary contact/.test(txt)) anchors++;
+			if (/\bBIMS\b/.test(txt)) anchors++;
+			return anchors >= 2;
+		}
+		function findMedsField(mainField) {
+			var tas = document.querySelectorAll("textarea");
+			for (var i = 0; i < tas.length; i++) {
+				if (tas[i] === mainField) continue;
+				var v = tas[i].value || "";
+				if (/^\s*Psych meds\s*$/m.test(v) && (/^\s*PLAN\b/m.test(v) || /^\s*DX\b/m.test(v))) return tas[i];
+			}
+			return null;
+		}
+		var lastClickPub = 0;
+		document.addEventListener("click", function(e) {
+			if (!e.isTrusted) return;
+			var now = Date.now();
+			if (now - lastClickPub < 1e3) return;
+			lastClickPub = now;
+			setTimeout(publishTileWarn, 400);
+		}, true);
+		if (window.__tmCore && window.__tmCore.ladder) window.__tmCore.ladder(function() {
+			publishTileWarn();
+		}, [
+			800,
+			2e3,
+			4e3,
+			8e3,
+			15e3
+		]);
+		else [
+			800,
+			2e3,
+			4e3,
+			8e3,
+			15e3
+		].forEach(function(ms) {
+			setTimeout(publishTileWarn, ms);
+		});
+	})();
+})();
