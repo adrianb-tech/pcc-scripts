@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.6
+// @version 1.7
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -130,6 +130,22 @@
     if (box.lastChild) box.lastChild.textContent = small;
   }
 
+  function chartId(){
+    var m = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+    return m ? m[1] : '';
+  }
+  function publishVerdict(verdict, reStr, lastFormStr){
+    // One verdict record, keyed to this resident + this
+    // re-entry date, read on every tab (v1.7, his ask):
+    // the tag everywhere must be the verdict the Forms
+    // page computed from the real last psych form date.
+    try {
+      localStorage.setItem('tmReadmitVerdict', JSON.stringify({ id: chartId(), reentry: reStr, verdict: verdict, lastForm: lastFormStr || '', ts: Date.now() }));
+    } catch (e) {}
+  }
+  function dropNote(){
+    try { localStorage.removeItem('tmReadmitNote'); } catch (e) {}
+  }
   function update(){
     var re = reentryDate();
     var lf = lastPsychForm();
@@ -137,11 +153,18 @@
     var rd = parseDate(re.str);
     if (!rd){ clear(); return; }
     if (!lf.d){
+      // No psych forms at all = a NEW admission, never a
+      // readmission (his rule, 2026-10-19). v1.6 cleared
+      // the box but left a stale tmReadmitNote behind, so
+      // the warning kept showing on every other tab.
+      dropNote();
+      publishVerdict('new', re.str, '');
       if (SHOW_OK) render(re.node, 'ok', '', 'readmission check: no psych form in this list');
       else clear();
       return;
     }
     if (rd >= lf.d) {
+      publishVerdict('readmit', re.str, lf.s);
       render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
       // Publish the verdict so the tile-row script can show the same
       // warning beside the G button in the header bar (his ask,
@@ -151,6 +174,7 @@
         localStorage.setItem('tmReadmitNote', JSON.stringify({ id: idm ? idm[1] : '', date: re.str, ts: Date.now() }));
       } catch (e) {}
     } else {
+      publishVerdict('ok', re.str, lf.s);
       try {
         var cur = JSON.parse(localStorage.getItem('tmReadmitNote') || 'null');
         if (cur && cur.date === re.str) localStorage.removeItem('tmReadmitNote');
