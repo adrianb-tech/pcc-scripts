@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.20
+// @version      3.21
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -596,8 +596,15 @@
       }
     }
     bar.parentNode.insertBefore(row, bar.nextSibling);
-    fitAllergies(row);
-    fitRow(row);
+    // Fit AFTER the frame paints (v3.21): measuring in
+    // the same breath as insertion read a still-settling
+    // split-view width, shrank the values wrongly, and a
+    // later rebuild snapped them back - the visible lag
+    // he reported. One deferred fit, measured on the
+    // settled layout, lands at the final size directly.
+    var fitIt = function () { fitAllergies(row); };
+    if (window.requestAnimationFrame) requestAnimationFrame(function () { requestAnimationFrame(fitIt); });
+    else setTimeout(fitIt, 60);
     addFaceSheetButton(bar, row);
   }
 
@@ -651,24 +658,6 @@
     }).catch(function () {});
   }
 
-  // Single-row fit (v3.17): if the row is wider than its
-  // container (split view), step the tile values' fonts
-  // down until it fits - the row never wraps, never clips.
-  function fitRow(row) {
-    try {
-      var guard = 0;
-      while (guard < 12 && row.scrollWidth > row.clientWidth + 2) {
-        var vals = row.querySelectorAll('[data-fit="1"]');
-        var shrank = false;
-        for (var i = 0; i < vals.length; i++) {
-          var cur = parseFloat(vals[i].style.fontSize) || 21;
-          if (cur > 11) { vals[i].style.fontSize = (cur - 1) + 'px'; shrank = true; }
-        }
-        if (!shrank) break;
-        guard++;
-      }
-    } catch (e) {}
-  }
 
   // The Allergies box is always the same size; a long allergy list
   // shrinks its text until it fits the box (his spec, 2026-10-14).
