@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.36
+// @version      3.37
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -919,6 +919,24 @@
     return scopedFeed('tmRelFor:');
   }
 
+  // The resident's chart number as a one-element match
+  // array, from the header name element only (see the
+  // flag script's chartId for why first-paren-anywhere
+  // is poison: it found '929' on the assessments list).
+  function chartNumMatch() {
+    try {
+      var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx.length > 70 || tx.length < 5) continue;
+        if (/^clinical\s/i.test(tx)) continue;
+        var em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}(\d{3,})\s*\)/);
+        if (em) return em[1];
+      }
+    } catch (e) {}
+    return '';
+  }
+
   // READMISSION chip beside the G button (his ask, 2026-10-14: he
   // loves the warning — move it next to G). The flag script keeps
   // its own box (the consult defaults read that box), and publishes
@@ -938,20 +956,20 @@
     var verdict = null;
     try { verdict = JSON.parse(localStorage.getItem('tmReadmitVerdict') || 'null'); } catch (e) {}
     if (verdict && verdict.id && g) {
-      var idm0 = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+      var idm0 = chartNumMatch();
       var adm0 = selfData().admission || '';
       var cur0 = adm0.replace(/\s*\((re-entry|initial)\)/i, '');
-      if (idm0 && idm0[1] === verdict.id && cur0 === verdict.reentry) {
+      if (idm0 && idm0 === verdict.id && cur0 === verdict.reentry) {
         show = verdict.verdict === 'readmit' || verdict.verdict === 'new';
         chipMode = verdict.verdict;
         note = null; // decided - do not fall through to the note
       }
     }
     if (note && note.id && g) {
-      var idm = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+      var idm = chartNumMatch();
       var adm = selfData().admission || '';
       var curDate = adm.replace(/\s*\((re-entry|initial)\)/i, '');
-      show = !!idm && idm[1] === note.id && curDate === note.date;
+      show = !!idm && idm === note.id && curDate === note.date;
     }
     if (!show) { if (old) old.remove(); return; }
     if (old && old.getAttribute('data-mode') === chipMode) return;
