@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.0
+// @version      1.0.1
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
+// @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
+// @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
 // @run-at       document-idle
