@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.7.0
+// @version      2.8.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5698,6 +5698,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		labelSpan() {
 			return this.querySelector("[data-tm-label]");
 		}
+		onAnchorClick(e) {
+			e.stopPropagation();
+			e.preventDefault();
+			this.hooks().cycleSummaryAnchor?.(this);
+		}
 		onMouseDown() {
 			const o = this.opts || {};
 			if (o.click || o.delegate || o.nav || o.action) this.hooks().hlTile?.(this.card(), false);
@@ -5759,7 +5764,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			return b`<div data-tm-card style=${cardCss} title=${clickable ? "Click to copy" : ""} @mousedown=${this.onMouseDown} @click=${this.onClick}>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;">
         <span data-tm-label style=${labelCss}>${this.label}</span>
-        ${this.chip ? b`<span style=${chipCss}>${this.chip}</span>` : ""}
+        ${this.chip ? o.anchorCycle ? b`<span style=${chipCss} title="Switch summary window" @click=${this.onAnchorClick}>${this.chip}</span>` : b`<span style=${chipCss}>${this.chip}</span>` : ""}
       </div>
       ${valuePart}
       ${this.stamp ? b`<div style="font-size:10px;font-weight:500;color:#9aa1ab;margin-top:4px;">${this.stamp}</div>` : ""}
@@ -8377,6 +8382,357 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 	})();
 	(function() {
 		"use strict";
+		var SIGNALS = [
+			{
+				label: "Refusals",
+				words: [
+					"refused",
+					"refuses",
+					"refusing",
+					"refusal"
+				]
+			},
+			{
+				label: "Agitation",
+				words: [
+					"agitated",
+					"agitation",
+					"agitating",
+					"restless",
+					"restlessness"
+				]
+			},
+			{
+				label: "Sundowning",
+				words: ["sundowning", "sundowner"]
+			},
+			{
+				label: "Poor sleep",
+				phrases: [
+					"poor sleep",
+					"did not sleep",
+					"didn't sleep",
+					"slept poorly",
+					"unable to sleep",
+					"up all night",
+					"awake all night",
+					"sleepless"
+				],
+				words: ["insomnia"]
+			},
+			{
+				label: "Falls",
+				words: [
+					"fell",
+					"fall",
+					"falls"
+				],
+				phrases: [
+					"found on the floor",
+					"found on floor",
+					"slid out of bed",
+					"slid out of the chair",
+					"slipped out of bed"
+				]
+			},
+			{
+				label: "Yelling / calling out",
+				words: [
+					"yelling",
+					"screaming",
+					"shouting"
+				],
+				phrases: [
+					"calling out",
+					"vocalizing",
+					"vocalization"
+				]
+			},
+			{
+				label: "Wandering",
+				words: ["wandering", "wandered"],
+				phrases: [
+					"exit seeking",
+					"exit-seeking",
+					"trying to leave",
+					"attempted to leave",
+					"attempting to leave"
+				]
+			},
+			{
+				label: "Aggression",
+				words: [
+					"hitting",
+					"struck",
+					"kicked",
+					"kicking",
+					"biting",
+					"scratching",
+					"combative",
+					"aggressive",
+					"assaultive"
+				],
+				phrases: [
+					"spit at",
+					"spitting at",
+					"threw at",
+					"throwing objects"
+				]
+			},
+			{
+				label: "Tearfulness",
+				words: [
+					"tearful",
+					"tearfulness",
+					"crying",
+					"weeping"
+				],
+				phrases: ["crying spells", "crying episodes"]
+			},
+			{
+				label: "Anxiety",
+				words: [
+					"anxious",
+					"anxiety",
+					"panicky",
+					"worried"
+				],
+				phrases: ["panic attack"]
+			},
+			{
+				label: "Poor appetite",
+				phrases: [
+					"poor appetite",
+					"appetite poor",
+					"decreased appetite",
+					"appetite decreased",
+					"no appetite",
+					"not eating",
+					"refusing meals",
+					"refused meals",
+					"refusing food",
+					"refused food",
+					"poor intake"
+				]
+			},
+			{
+				label: "Withdrawn",
+				words: ["withdrawn"],
+				phrases: [
+					"isolating",
+					"isolates",
+					"stays in room",
+					"stayed in room",
+					"remains in room",
+					"in room all day",
+					"refuses activities",
+					"refused activities",
+					"not participating"
+				]
+			},
+			{
+				label: "Non-compliance",
+				phrases: [
+					"non-compliant",
+					"noncompliant",
+					"non-compliance",
+					"noncompliance",
+					"not compliant",
+					"poorly compliant"
+				]
+			}
+		];
+		var NEG = /\b(no|not|denies|denied|deny|without|none|never|absent|free of)\b/i;
+		var FALL_GUARDS = [
+			/falls?\s+risk/i,
+			/risk\s+of\s+falls?/i,
+			/risk\s+for\s+falls?/i,
+			/fall\s+precaution/i,
+			/fall\s+prevention/i
+		];
+		var FALL_HIST = /\b(?:s\/p|status\s+post|h\/o|hx|history\s+of)\s+falls?\b/i;
+		var FALL_ADMIT = /\bpresent(?:ed|s|ing)?\s+(?:after|with)\s+a?\s*falls?\b/i;
+		var WITH_DX_OF = /\bwith\s+(?:a\s+)?dx\s+of\b/i;
+		var SPEC = /\b(?:improved\s+from|resolved|no\s+longer)\b/i;
+		var MONITOR_FOR = /\b(?:monitor|watch|assess)\s+for\b/i;
+		var DIFF = /\br\/t\b|\bdifferential\b|\brule\s*out\b|\bmay also be\b/i;
+		var CC = /\bchief complaint\b|\breason for (visit|encounter|referral)\b/i;
+		var MED_CTX = /medication|\bmeds?\b|dose|pill|drug|\btx\b/i;
+		function inLabelZone(full, absIdx) {
+			var pre = full.slice(Math.max(0, absIdx - 70), absIdx);
+			var li = pre.search(/behavior\(s\)\s+observed\s*:/i);
+			if (li === -1) return false;
+			return !/[.!?]\s+[A-Z]/.test(pre.slice(li));
+		}
+		function uncheckedBox(full, absIdx) {
+			var cb = full.slice(0, absIdx);
+			var lastBox = Math.max(cb.lastIndexOf("[ ]"), cb.lastIndexOf("[]"), cb.lastIndexOf("[x]"), cb.lastIndexOf("[ x]"), cb.lastIndexOf("[X]"));
+			if (lastBox === -1) return false;
+			return /^\[\s*\]$/.test(cb.slice(lastBox, lastBox + 3).trim());
+		}
+		function escRe(s) {
+			return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		}
+		function sentenceAround(text, idx) {
+			var start = Math.max(text.lastIndexOf(".", idx - 1), text.lastIndexOf("\n", idx - 1), text.lastIndexOf("!", idx - 1), text.lastIndexOf("?", idx - 1)) + 1;
+			if (idx - start > 90) {
+				start = idx - 90;
+				var sp = text.indexOf(" ", start);
+				if (sp !== -1 && sp < idx) start = sp + 1;
+			}
+			var ends = [
+				text.indexOf(".", idx),
+				text.indexOf("\n", idx),
+				text.indexOf("!", idx),
+				text.indexOf("?", idx)
+			].filter(function(x) {
+				return x !== -1;
+			});
+			var end = ends.length ? Math.min.apply(null, ends) + 1 : text.length;
+			var s = text.slice(start, end).replace(/\s+/g, " ").trim();
+			s = s.replace(/\*+\s*document\s+e-signed\s+by\s+[^*]+/gi, "").replace(/\*+/g, "").trim();
+			return s;
+		}
+		var ORDER_RE = /\b(give|apply|instill|inhale|inject)\b[^.!?]*\b(by mouth|topically|orally)\b/i;
+		var ACTIVE_RE = /\bACTIVE\s*,/;
+		var GOAL_RE = /by (review|target) date/i;
+		var COMP_TX = /\b(complicated by|sedation|hypotension)\b/i;
+		var COMP_DRUGS = /\b(lorazepam|haloperidol|olanzapine|quetiapine|risperidone|ativan|seroquel|zyprexa|versed|midazolam)\b/i;
+		function matchOk(text, m, label) {
+			var start = m.index, end = start + m[0].length;
+			var isFall = label === "Falls";
+			if (isFall) {
+				var around = text.slice(Math.max(0, start - 14), end + 14);
+				var g, bad = false;
+				for (g = 0; g < FALL_GUARDS.length; g++) if (FALL_GUARDS[g].test(around)) {
+					bad = true;
+					break;
+				}
+				if (bad) return false;
+				if (/\b(?:s\/p|status\s+post|h\/o|hx|history\s+of)\s+falls?\b/i.test(around)) return false;
+				if (WITH_DX_OF.test(around)) return false;
+				if (FALL_HIST.test(around)) return false;
+				if (FALL_ADMIT.test(around)) return false;
+			}
+			var cut = Math.max(text.lastIndexOf(".", start - 1), text.lastIndexOf("!", start - 1), text.lastIndexOf("?", start - 1), text.lastIndexOf("\n", start - 1), text.lastIndexOf(";", start - 1));
+			var before = text.slice(cut + 1, start);
+			if (before.length > 48) before = before.slice(before.length - 48);
+			if (NEG.test(before)) return false;
+			var sent = sentenceAround(text, start);
+			if (ORDER_RE.test(sent) || ACTIVE_RE.test(sent) || GOAL_RE.test(sent)) return false;
+			if (/\?/.test(sent)) return false;
+			if (/\b(30[\s-]?day|event summary)\b/i.test(sent)) return false;
+			if (SPEC.test(sent)) return false;
+			if (MONITOR_FOR.test(sent)) return false;
+			if (COMP_TX.test(sent) && COMP_DRUGS.test(sent)) return false;
+			if (DIFF.test(sent)) return false;
+			if (CC.test(sent)) return false;
+			if (/\([A-Z]\d{2}[\d.]*\)?/.test(sent)) return false;
+			var ccBefore = text.slice(Math.max(0, start - 120), start);
+			if (/\bchief complaint\s*:/i.test(ccBefore)) {
+				var ccPos = ccBefore.search(/\bchief complaint\s*:/i);
+				if (!/[.!?]\s+[A-Z]/.test(ccBefore.slice(ccPos))) return false;
+			}
+			if (uncheckedBox(text, start)) return false;
+			var cleanSent = sent.replace(/\*+/g, "").trim();
+			if (/^\d{1,3}\s*:\s*[A-Za-z][\w ,.'()-]*$/.test(cleanSent)) return false;
+			if (/^\d{1,3}\s+[^a-z\n]{4,}\s+[A-Z]\d{2}(?:\.\w+)?\.?\s*$/.test(cleanSent)) return false;
+			if (inLabelZone(text, start)) return false;
+			if (WITH_DX_OF.test(sent)) return false;
+			if (/\bwith\s+a\s+history\s+of\b[^.\n]*,/i.test(sent)) return false;
+			if (isFall && (/\bprimary\s+dx\s*:/i.test(sent) || /\bdx\s*:/i.test(sent) || /^[A-Z]\d{2}(?:\.\w+)?:/i.test(cleanSent))) return false;
+			if (isFall && !/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(sent)) return false;
+			return true;
+		}
+		function proseSignals(prose) {
+			var found = {};
+			if (!prose) return found;
+			for (var i = 0; i < SIGNALS.length; i++) {
+				var sig = SIGNALS[i];
+				var pats = [];
+				(sig.words || []).forEach(function(w) {
+					pats.push(new RegExp("\\b" + escRe(w) + "\\b", "gi"));
+				});
+				(sig.phrases || []).forEach(function(p) {
+					pats.push(new RegExp(escRe(p).replace(/\s+/g, "\\s+"), "gi"));
+				});
+				var count = 0;
+				for (var pi = 0; pi < pats.length; pi++) {
+					var re = pats[pi];
+					re.lastIndex = 0;
+					var m;
+					while ((m = re.exec(prose)) !== null) {
+						if (matchOk(prose, m, sig.label)) count++;
+						if (m[0].length === 0) re.lastIndex++;
+					}
+				}
+				if (count > 0) found[sig.label] = count;
+			}
+			return found;
+		}
+		function medRefusal(prose) {
+			var s = (prose || "").toLowerCase();
+			return /\brefus(?:ed|es|ing|al)\b/.test(s) && MED_CTX.test(s);
+		}
+		function norm(s) {
+			return (s || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+		}
+		function proseOf(row) {
+			var cells = Array.prototype.slice.call(row.querySelectorAll("td"));
+			var dateCell = -1;
+			for (var c = 0; c < cells.length - 1; c++) if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(cells[c].textContent || "")) {
+				dateCell = c;
+				break;
+			}
+			var clone = (dateCell !== -1 && cells[dateCell + 2] ? cells[dateCell + 2] : row).cloneNode(true);
+			var bs = clone.querySelectorAll("b, strong");
+			for (var i = 0; i < bs.length; i++) if (/:\s*$/.test(norm(bs[i].textContent))) bs[i].remove();
+			var ui = clone.querySelectorAll(".pnBehTopBtn, .pnBehFbBar, #pnTilesWrap");
+			for (var q = 0; q < ui.length; q++) ui[q].remove();
+			return norm(clone.textContent);
+		}
+		function extract(doc) {
+			var out = [];
+			if (!doc || !doc.querySelectorAll) return out;
+			var links = Array.prototype.slice.call(doc.querySelectorAll("a")).filter(function(a) {
+				return norm(a.textContent).toLowerCase() === "view";
+			});
+			if (!links.length) return out;
+			var table = links[0].closest ? links[0].closest("table") : null;
+			if (!table) return out;
+			var rows = table.querySelectorAll("tr");
+			for (var r = 0; r < rows.length; r++) {
+				var row = rows[r];
+				if (!row.querySelector("a")) continue;
+				if (!Array.prototype.slice.call(row.querySelectorAll("a")).some(function(a) {
+					return norm(a.textContent).toLowerCase() === "view";
+				})) continue;
+				var text = norm(row.textContent);
+				var m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(text);
+				if (!m) continue;
+				var prose = proseOf(row);
+				if (!prose || prose.length < 10) continue;
+				var counts = proseSignals(prose);
+				var sigs = Object.keys(counts);
+				var y = +m[3], mo = +m[1], dd = +m[2];
+				out.push({
+					date: y + "-" + (mo < 10 ? "0" : "") + mo + "-" + (dd < 10 ? "0" : "") + dd,
+					signals: sigs,
+					counts,
+					medRefusal: medRefusal(prose),
+					text: prose.slice(0, 2e3)
+				});
+			}
+			return out;
+		}
+		window.__tmBehEvents = {
+			extract,
+			proseSignals,
+			sentenceAround
+		};
+	})();
+	(function() {
+		"use strict";
 		var stopped = false;
 		var NODE_ID = "tmGatherPacket";
 		function nowT() {
@@ -8742,10 +9098,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var b = readTile(/^Behaviors?\b/i, 700);
 			var behBox = document.getElementById("pnBehBox");
 			if (behBox) b = norm(behBox.textContent).slice(0, 700);
-			if (b) land("behaviors", {
+			var bev = [];
+			try {
+				bev = window.__tmBehEvents ? window.__tmBehEvents.extract(document) : [];
+			} catch (e) {}
+			if (b || bev.length) land("behaviors", {
 				source: "Progress Notes",
 				at: nowT(),
-				summary: b
+				summary: b || "",
+				events: bev.slice(0, 400)
 			});
 			var dx = readTile(/^Diagnoses\b/i, 700);
 			var dxBox = document.getElementById("pnDxBox");
@@ -9007,14 +9368,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				});
 			}
 			var behBox = doc.getElementById("pnBehBox");
-			if (behBox) {
-				var b = norm(behBox.textContent).slice(0, 700);
-				if (b) land("behaviors", {
-					source: "Progress Notes",
-					at: nowT(),
-					summary: b
-				});
-			}
+			var b2 = behBox ? norm(behBox.textContent).slice(0, 700) : "";
+			var bev2 = [];
+			try {
+				bev2 = window.__tmBehEvents ? window.__tmBehEvents.extract(doc) : [];
+			} catch (e) {}
+			if (b2 || bev2.length) land("behaviors", {
+				source: "Progress Notes",
+				at: nowT(),
+				summary: b2,
+				events: bev2.slice(0, 400)
+			});
 		}
 		function notesUrl(urls) {
 			if (urls.notes) {
@@ -10125,6 +10489,32 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}, 1e3);
 		}
 		window.addEventListener("mouseup", hlRestoreAll);
+		var SUM_ANCHORS = [
+			"last",
+			"14d",
+			"admission",
+			"total"
+		];
+		if (!window.__tmSumAnchor) window.__tmSumAnchor = "last";
+		function sumAnchorLabel() {
+			return window.__tmSummary && window.__tmSummary.anchors && window.__tmSummary.anchors[window.__tmSumAnchor] || "Since last visit";
+		}
+		function cycleSummaryAnchor(tileEl) {
+			var i = SUM_ANCHORS.indexOf(window.__tmSumAnchor);
+			window.__tmSumAnchor = SUM_ANCHORS[(i + 1) % SUM_ANCHORS.length];
+			try {
+				var t = window.__tmSummary && lastStops ? window.__tmSummary.text(lastStops, window.__tmSumAnchor) : "";
+				if (tileEl) {
+					tileEl.value = t;
+					tileEl.chip = sumAnchorLabel();
+					if (tileEl.opts) {
+						if (tileEl.opts.click) tileEl.opts.click.value = t;
+						if (tileEl.opts.fill) tileEl.opts.fill.value = t;
+					}
+					tileEl.setAttribute("data-fill-value", t);
+				}
+			} catch (e) {}
+		}
 		try {
 			if (window.__tmCore) window.__tmCore.hooks = {
 				queueCopy,
@@ -10133,6 +10523,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				medsPanel,
 				fireClick,
 				flashLabel,
+				cycleSummaryAnchor,
 				action: function(name) {
 					if (name === "yourwords" && window.__tmYourWordsApi) window.__tmYourWordsApi.open();
 				}
@@ -10316,7 +10707,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				d.dx = feedDx;
 				d.beh = feedBeh;
 				d.words = window.__tmYourWordsApi ? window.__tmYourWordsApi.get() : "";
-				d.summary = window.__tmSummary && lastStops ? window.__tmSummary.text(lastStops) : "";
+				d.summary = window.__tmSummary && lastStops ? window.__tmSummary.text(lastStops, window.__tmSumAnchor) : "";
 				d.stampRel = feedStampRel;
 				d.stampBims = feedStampBims;
 				d.stampMeds = feedStampMeds;
@@ -10571,6 +10962,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				multi: true,
 				size: 13,
 				weight: 600,
+				anchorCycle: true,
 				click: {
 					label: "Summary",
 					value: d.summary || ""
@@ -10579,7 +10971,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Summary",
 					value: d.summary || ""
 				}
-			}));
+			}, sumAnchorLabel()));
 			row2.appendChild(mkTile("Your words", d.words || "", {
 				full: true,
 				multi: true,
@@ -11600,52 +11992,454 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var s = stops && stops[k];
 			return s && s.status === "landed" ? s : null;
 		}
+		function dayMs(d) {
+			var t = new Date(d);
+			t.setHours(0, 0, 0, 0);
+			return t.getTime();
+		}
 		function days(a, b) {
-			return Math.round((new Date(a) - new Date(b)) / 864e5);
+			return Math.round((dayMs(a) - dayMs(b)) / 864e5);
 		}
-		function hisThread(stops) {
-			var h = landed(stops, "hisnotes");
-			if (!h || !h.list || !h.list.length) return "";
-			var latest = h.list[0], oldest = h.list[h.list.length - 1];
-			var out = "Your last note " + latest.date + (latest.evalType ? " (" + latest.evalType + ")" : "");
-			if (h.list.length > 1) out += " · " + h.list.length + " notes since " + oldest.date;
-			var ago = days(new Date(), new Date(latest.date));
-			if (ago > 45) out += " · " + ago + " days ago";
-			if (latest.full && latest.text) {
-				var fu = /\bf\/(?:o|up)\s+([0-9][^\n.]{0,24})/i.exec(latest.text);
-				if (fu) out += " · plan: f/o " + fu[1].trim();
-			}
-			return out + ".";
+		function fmtD(d) {
+			var t = new Date(d);
+			return t.getMonth() + 1 + "/" + t.getDate() + "/" + t.getFullYear();
 		}
-		function notesPicture(stops) {
+		function addDays(d, n) {
+			return new Date(dayMs(d) + n * 864e5);
+		}
+		function events(stops) {
 			var b = landed(stops, "behaviors");
-			if (!b || !b.summary) return "";
-			var t = String(b.summary).replace(/\s+/g, " ").trim();
-			if (!t) return "";
-			if (/\bno (behaviors|incidents|events)\b|\bnone (reported|observed)\b/i.test(t)) return "Progress notes: no behaviors flagged.";
-			var first = t.split(/(?<=[.!])\s/)[0].slice(0, 130);
-			return "Progress notes: " + first + (/[.!]$/.test(first) ? "" : ".");
+			if (!b || !b.events || !b.events.length) return [];
+			return b.events.filter(function(e) {
+				return e && /^\d{4}-\d{2}-\d{2}$/.test(e.date);
+			});
 		}
-		function weightTrend(stops) {
-			var w = landed(stops, "weights");
-			if (!w || !w.series || !w.series.length) return "";
-			var s = w.series, cur = s[0];
-			if (s.length < 2) return "Weight " + cur.weight + " lbs (single reading).";
-			var prev = s[1];
-			var d = Math.round((parseFloat(cur.weight) - parseFloat(prev.weight)) * 10) / 10;
-			var pct = Math.abs(d) / (parseFloat(prev.weight) || 1) * 100;
-			if (Math.abs(d) >= 5 || pct >= 3) return "Weight " + prev.weight + " -> " + cur.weight + " lbs (" + (d > 0 ? "+" : "") + d + ") since " + prev.date + ".";
-			return "Weight stable (" + cur.weight + " lbs).";
+		function anchors(stops) {
+			var ev = events(stops);
+			var h = landed(stops, "hisnotes");
+			var lastNote = h && h.list && h.list[0] && h.list[0].date ? new Date(h.list[0].date) : null;
+			if (lastNote && isNaN(lastNote)) lastNote = null;
+			var adm = landed(stops, "header");
+			var admDate = null;
+			if (adm && adm.admission) {
+				var ad = new Date(adm.admission);
+				if (!isNaN(ad)) admDate = ad;
+			}
+			var earliest = null;
+			ev.forEach(function(e) {
+				if (!earliest || e.date < earliest) earliest = e.date;
+			});
+			var today = new Date();
+			today.setHours(0, 0, 0, 0);
+			return {
+				last: function() {
+					if (!lastNote) return this["14d"]();
+					var span = Math.max(1, days(today, lastNote));
+					return {
+						kind: "trend",
+						anchorDate: lastNote,
+						anchorLabel: "your last visit (" + fmtD(lastNote) + ")",
+						span,
+						curStart: lastNote,
+						curEnd: addDays(today, 1),
+						prevStart: addDays(lastNote, -span),
+						prevEnd: lastNote
+					};
+				},
+				"14d": function() {
+					var s = addDays(today, -14);
+					return {
+						kind: "trend",
+						anchorDate: s,
+						anchorLabel: "the past 14 days",
+						span: 14,
+						curStart: s,
+						curEnd: addDays(today, 1),
+						prevStart: addDays(s, -14),
+						prevEnd: s
+					};
+				},
+				admission: function() {
+					if (admDate) return {
+						kind: "course",
+						anchorDate: admDate,
+						anchorLabel: "admission (" + fmtD(admDate) + ")",
+						curStart: admDate,
+						curEnd: addDays(today, 1),
+						earliestFellBack: false
+					};
+					if (earliest) {
+						var ed = new Date(earliest + "T00:00:00");
+						return {
+							kind: "course",
+							anchorDate: ed,
+							anchorLabel: "the earliest notes on file (" + fmtD(ed) + ")",
+							curStart: ed,
+							curEnd: addDays(today, 1),
+							earliestFellBack: true
+						};
+					}
+					return null;
+				},
+				total: function() {
+					var a = this.admission();
+					if (a) {
+						a.kind = "total";
+						return a;
+					}
+					return null;
+				}
+			};
 		}
-		function bimsTrend(stops) {
+		function resolveAnchor(stops, anchor) {
+			return (anchors(stops)[anchor] || anchors(stops).last).call(anchors(stops));
+		}
+		function dayHas(ev, sigs, start, end) {
+			var seen = {}, s0 = dayMs(start), s1 = dayMs(end);
+			ev.forEach(function(e) {
+				var t = dayMs(new Date(e.date + "T00:00:00"));
+				if (t < s0 || t >= s1) return;
+				if ((e.signals || []).some(function(s) {
+					return sigs.indexOf(s) >= 0;
+				})) seen[e.date] = 1;
+			});
+			return Object.keys(seen).length;
+		}
+		function medRefusalDays(ev, start, end) {
+			var seen = {}, s0 = dayMs(start), s1 = dayMs(end);
+			ev.forEach(function(e) {
+				var t = dayMs(new Date(e.date + "T00:00:00"));
+				if (t < s0 || t >= s1 || !e.medRefusal) return;
+				seen[e.date] = 1;
+			});
+			return Object.keys(seen).length;
+		}
+		function windowEntries(ev, start, end) {
+			var s0 = dayMs(start), s1 = dayMs(end), out = [];
+			ev.forEach(function(e) {
+				var t = dayMs(new Date(e.date + "T00:00:00"));
+				if (t >= s0 && t < s1) out.push(e);
+			});
+			return out;
+		}
+		var SHORT = {
+			"Refusals": "refusals",
+			"Agitation": "agitation",
+			"Sundowning": "sundowning",
+			"Poor sleep": "poor sleep",
+			"Falls": "falls",
+			"Yelling / calling out": "yelling / calling out",
+			"Wandering": "wandering",
+			"Aggression": "aggression",
+			"Tearfulness": "tearfulness",
+			"Anxiety": "anxiety",
+			"Poor appetite": "poor appetite",
+			"Withdrawn": "withdrawal",
+			"Non-compliance": "non-compliance"
+		};
+		var VERB = {
+			"Refusals": "Refusals",
+			"Agitation": "Agitation",
+			"Sundowning": "Sundowning",
+			"Poor sleep": "Poor sleep",
+			"Falls": "Falls",
+			"Yelling / calling out": "Yelling / calling out",
+			"Wandering": "Wandering",
+			"Aggression": "Aggression",
+			"Tearfulness": "Tearfulness",
+			"Anxiety": "Anxiety",
+			"Poor appetite": "Poor appetite",
+			"Withdrawn": "Withdrawal",
+			"Non-compliance": "Non-compliance"
+		};
+		function freqQ(cur, span) {
+			if (cur >= Math.max(5, span * .7)) return "near-daily";
+			if (cur >= span * .4) return "several times a week";
+			if (cur >= 2) return "occasionally";
+			return "once";
+		}
+		function trendClause(sig, cur, prev, span, anchorLabel, prevHasData) {
+			var v = VERB[sig] || sig, s = SHORT[sig] || sig.toLowerCase();
+			if (!prevHasData) return v + ": " + cur + " day" + (cur === 1 ? "" : "s") + " in the window.";
+			if (cur === 0 && prev > 0) return "No " + s + " since " + anchorLabel + " (previously " + prev + ")";
+			if (cur > 0 && prev === 0) return v + " newly noted since " + anchorLabel + " (" + cur + " day" + (cur === 1 ? "" : "s") + ")";
+			if (cur > prev && cur >= 2) return v + " more frequently since " + anchorLabel + " (" + freqQ(cur, span) + "; " + cur + " vs " + prev + " before)";
+			if (cur < prev) return v + " less often since " + anchorLabel + " (" + cur + " vs " + prev + " before)";
+			if (cur === prev && cur > 0) return v + " unchanged, still occurring (" + cur + " day" + (cur === 1 ? "" : "s") + ")";
+			return "";
+		}
+		function medTrendClause(cur, prev, span, anchorLabel, prevHasData) {
+			if (!prevHasData) return "Medication refusals: " + cur + " days in the window.";
+			if (cur === 0 && prev > 0) return "No medication refusals since " + anchorLabel + " (previously " + prev + ")";
+			if (cur > 0 && prev === 0) return "Refusing medication newly noted since " + anchorLabel + " (" + cur + " day" + (cur === 1 ? "" : "s") + ")";
+			if (cur > prev && cur >= 2) return "Refusing medication more frequently over the past " + span + " days, " + freqQ(cur, span) + " (" + cur + " vs " + prev + " before)";
+			if (cur < prev) return "Refusing medication less often since " + anchorLabel + " (" + cur + " vs " + prev + " before)";
+			if (cur === prev && cur > 0) return "Medication refusals unchanged, still occurring (" + cur + " day" + (cur === 1 ? "" : "s") + ")";
+			return "";
+		}
+		var DRUGS = [
+			{
+				re: /risperidone|risperdal|olanzapine|zyprexa|quetiapine|seroquel|aripiprazole|abilify|paliperidone|invega|haloperidol|haldol|lurasidone|latuda|cariprazine|vraylar|ziprasidone|geodon|fluphenazine|chlorpromazine|loxapine|asenapine|brexpiprazole|rexulti/i,
+				cls: "antipsychotic"
+			},
+			{
+				re: /sertraline|zoloft|fluoxetine|prozac|escitalopram|lexapro|citalopram|celexa|paroxetine|paxil|venlafaxine|effexor|duloxetine|cymbalta|desvenlafaxine|pristiq|mirtazapine|remeron|bupropion|wellbutrin|vortioxetine|trintellix/i,
+				cls: "antidepressant"
+			},
+			{
+				re: /zolpidem|ambien|eszopiclone|lunesta|temazepam|restoril|trazodone|desyrel|melatonin/i,
+				cls: "hypnotic"
+			},
+			{
+				re: /lithium|valproate|divalproex|depakote|carbamazepine|tegretol|lamotrigine|lamictal|oxcarbazepine|trileptal/i,
+				cls: "mood stabilizer"
+			},
+			{
+				re: /donepezil|aricept|rivastigmine|exelon|memantine|namenda|galantamine/i,
+				cls: "dementia"
+			}
+		];
+		var TARGETS = {
+			antipsychotic: [
+				"Agitation",
+				"Aggression",
+				"Yelling / calling out"
+			],
+			antidepressant: [
+				"Anxiety",
+				"Tearfulness",
+				"Poor appetite",
+				"Poor sleep"
+			],
+			hypnotic: ["Poor sleep", "Agitation"],
+			"mood stabilizer": ["Agitation", "Aggression"],
+			dementia: []
+		};
+		var ACT_RE = /\b(start(?:ed|ing)?|initiat(?:ed|ing)?|increase(?:d|s)?|rais(?:ed|e)|decrease(?:d|s)?|lower(?:ed|s)?|discontinu(?:ed|e|ing)|stop(?:ped|ping|s)?|switch(?:ed|ing)?|taper(?:ed|ing)?)\b/i;
+		function actKind(w) {
+			w = w.toLowerCase();
+			if (/^start|^initiat/.test(w)) return "started";
+			if (/^increase|^rais/.test(w)) return "increased";
+			if (/^decrease|^lower/.test(w)) return "decreased";
+			if (/^discontinu|^stop/.test(w)) return "stopped";
+			if (/^switch/.test(w)) return "switched";
+			if (/^taper/.test(w)) return "tapered";
+			return "changed";
+		}
+		function mineMedChanges(stops) {
+			var h = landed(stops, "hisnotes");
+			if (!h || !h.list || !h.list.length) return {
+				changes: [],
+				noteDate: null
+			};
+			var latest = h.list[0];
+			if (!latest.full || !latest.text) return {
+				changes: [],
+				noteDate: latest.date || null
+			};
+			var changes = [];
+			latest.text.split(/(?<=[.!])\s*|\n/).forEach(function(sent) {
+				if (changes.length >= 2) return;
+				var am = ACT_RE.exec(sent);
+				if (!am) return;
+				for (var i = 0; i < DRUGS.length; i++) {
+					var dm = DRUGS[i].re.exec(sent);
+					if (!dm) continue;
+					var doseM = /(\d+(?:\.\d+)?)\s*mg/i.exec(sent);
+					changes.push({
+						drug: dm[0].toLowerCase(),
+						cls: DRUGS[i].cls,
+						action: actKind(am[1]),
+						dose: doseM ? doseM[1] + " mg" : "",
+						when: sent.trim().slice(0, 120)
+					});
+					break;
+				}
+			});
+			return {
+				changes,
+				noteDate: latest.date || null
+			};
+		}
+		var TOL_RE = /\b(sedat\w+|dizz\w+|lightheaded|somnolen\w+|hypotension|orthostat\w+)\b/i;
+		function medChangePart(stops, _win) {
+			var mined = mineMedChanges(stops);
+			if (!mined.changes.length || !mined.noteDate) return "";
+			var changeDate = new Date(mined.noteDate);
+			if (isNaN(changeDate)) return "";
+			var ev = events(stops);
+			var today = new Date();
+			today.setHours(0, 0, 0, 0);
+			var span = Math.max(1, days(today, changeDate));
+			var postStart = addDays(changeDate, 1), postEnd = addDays(today, 1);
+			var prevStart = addDays(changeDate, -span), prevEnd = changeDate;
+			var post = windowEntries(ev, postStart, postEnd);
+			var out = [];
+			mined.changes.forEach(function(ch) {
+				var head = "Since " + ch.drug + (ch.dose ? " " + ch.dose : "") + " was " + ch.action + " " + fmtD(changeDate);
+				if (!post.length) {
+					out.push(head + ": no progress notes since the change.");
+					return;
+				}
+				var cls = [];
+				(TARGETS[ch.cls] || []).forEach(function(sig) {
+					var cur = dayHas(ev, [sig], postStart, postEnd), prev = dayHas(ev, [sig], prevStart, prevEnd);
+					var s = SHORT[sig] || sig.toLowerCase(), verdict;
+					if (cur === 0 && prev === 0) verdict = "not noted";
+					else if (prev === 0) verdict = "new since the change";
+					else if (cur === 0) verdict = "resolved since the change";
+					else if (cur > prev && cur >= 2) verdict = "worse";
+					else if (cur < prev) verdict = "improved";
+					else verdict = "unchanged";
+					cls.push(s + " " + verdict + " (" + cur + (prev || cur ? " vs " + prev + " before" : " days") + ")");
+				});
+				var tol = [];
+				var tolSeen = {};
+				post.forEach(function(e) {
+					var m = TOL_RE.exec(e.text || "");
+					if (m && !tolSeen[m[1].toLowerCase()]) {
+						tolSeen[m[1].toLowerCase()] = 1;
+						tol.push(m[1].toLowerCase());
+					}
+				});
+				var falls = [];
+				post.forEach(function(e) {
+					if ((e.signals || []).indexOf("Falls") >= 0) falls.push(e.date);
+				});
+				var tail = cls.length ? cls.join(", ") : "no target-symptom notes";
+				if (tol.length) tail += "; tolerability: " + tol.join(", ") + " noted";
+				else tail += "; no side effects documented";
+				if (falls.length) tail += "; fall" + (falls.length > 1 ? "s" : "") + " " + falls.slice(0, 2).map(function(d) {
+					return "on " + d.slice(5).replace("-", "/");
+				}).join(", ");
+				out.push(head + ": " + tail + ".");
+			});
+			return out.join(" ");
+		}
+		var TREND_SIGNALS = [
+			"Refusals",
+			"Agitation",
+			"Sundowning",
+			"Poor sleep",
+			"Falls",
+			"Yelling / calling out",
+			"Wandering",
+			"Aggression",
+			"Tearfulness",
+			"Anxiety",
+			"Poor appetite",
+			"Withdrawn",
+			"Non-compliance"
+		];
+		function trendPart(stops, win, _medDays) {
+			var ev = events(stops);
+			if (!ev.length) return "";
+			var rows = [];
+			TREND_SIGNALS.forEach(function(sig) {
+				var cur = dayHas(ev, [sig], win.curStart, win.curEnd);
+				var prev = win.kind === "trend" ? dayHas(ev, [sig], win.prevStart, win.prevEnd) : 0;
+				if (!cur && !prev) return;
+				rows.push({
+					sig,
+					cur,
+					prev,
+					delta: Math.abs(cur - prev)
+				});
+			});
+			var mcur = medRefusalDays(ev, win.curStart, win.curEnd);
+			var mprev = win.kind === "trend" ? medRefusalDays(ev, win.prevStart, win.prevEnd) : 0;
+			var hasPrevData = win.kind === "trend" && windowEntries(ev, win.prevStart, win.prevEnd).length > 0;
+			if (!rows.length && !mcur && !mprev) return "";
+			rows.sort(function(a, b) {
+				return b.delta - a.delta || b.cur - a.cur;
+			});
+			var lead = rows[0];
+			var leadClause = mcur + mprev > 0 && (!lead || (mcur - mprev) * (mcur - mprev) >= lead.delta * lead.delta) ? medTrendClause(mcur, mprev, win.span, win.anchorLabel, hasPrevData) : trendClause(lead.sig, lead.cur, lead.prev, win.span, win.anchorLabel, hasPrevData);
+			var rest = [];
+			rows.forEach(function(r) {
+				if (r === lead) return;
+				if (!r.cur && !r.prev) return;
+				if (r.delta === 0 && r.cur === 0) return;
+				var c = trendClause(r.sig, r.cur, r.prev, win.span, win.anchorLabel, hasPrevData);
+				if (c) rest.push(c.charAt(0).toLowerCase() + c.slice(1));
+			});
+			var out = leadClause;
+			if (rest.length) out += ", with " + rest.slice(0, 2).join(" and ") + ".";
+			else if (!/[.!]$/.test(out)) out += ".";
+			if (!hasPrevData) out = "Since " + win.anchorLabel + ": " + out.charAt(0).toLowerCase() + out.slice(1);
+			return out;
+		}
+		var FAMILIES = [
+			{
+				name: "Dementia",
+				dx: /dementia|alzheimer|neurocognitive/i,
+				sigs: [
+					"Sundowning",
+					"Wandering",
+					"Withdrawn",
+					"Agitation"
+				]
+			},
+			{
+				name: "Depression",
+				dx: /depress|dysthymia/i,
+				sigs: [
+					"Anxiety",
+					"Tearfulness",
+					"Poor appetite",
+					"Poor sleep"
+				]
+			},
+			{
+				name: "Psychosis",
+				dx: /psychosis|psychotic|schizophrenia|bipolar/i,
+				sigs: [
+					"Aggression",
+					"Yelling / calling out",
+					"Agitation"
+				]
+			}
+		];
+		function bimsLine(stops) {
 			var b = landed(stops, "bims");
 			if (!b || !b.series || !b.series.length) return "";
 			var s = b.series, cur = s[0];
-			if (s.length < 2) return "BIMS " + cur.score + " (only reading).";
-			var prev = s[1];
-			var d = cur.score - prev.score;
-			if (Math.abs(d) >= 2) return "BIMS " + prev.score + " -> " + cur.score + " since " + prev.date + ".";
-			return "BIMS stable (" + cur.score + ").";
+			var t = "BIMS " + cur.score + " on " + (cur.date || "");
+			if (s.length >= 2) {
+				var d = cur.score - s[1].score;
+				t += Math.abs(d) >= 2 ? d > 0 ? ", up from " + s[1].score : ", down from " + s[1].score + " on " + (s[1].date || "") : ", stable";
+			}
+			return t;
+		}
+		function problemPart(stops, win) {
+			var ev = events(stops);
+			var dx = landed(stops, "diagnoses");
+			var dxText = dx && dx.summary ? dx.summary : "";
+			var out = [];
+			FAMILIES.forEach(function(f) {
+				var changed = [];
+				f.sigs.forEach(function(sig) {
+					var cur = dayHas(ev, [sig], win.curStart, win.curEnd);
+					var prev = win.kind === "trend" ? dayHas(ev, [sig], win.prevStart, win.prevEnd) : 0;
+					if (cur !== prev || cur > 0) changed.push({
+						sig,
+						cur,
+						prev
+					});
+				});
+				var bims = f.name === "Dementia" ? bimsLine(stops) : "";
+				if (!(changed.length > 0 || bims && /up from|down from/.test(bims))) return;
+				var bits = [];
+				if (bims) bits.push(bims);
+				changed.slice(0, 3).forEach(function(c) {
+					var s = SHORT[c.sig] || c.sig.toLowerCase();
+					bits.push(c.cur > c.prev ? s + " up (" + c.cur + " vs " + c.prev + ")" : c.cur < c.prev ? s + " down (" + c.cur + " vs " + c.prev + ")" : s + " ongoing (" + c.cur + ")");
+				});
+				var name = f.name;
+				if (!f.dx.test(dxText)) {}
+				out.push(name + ": " + bits.join("; ") + ".");
+			});
+			return out.join(" ");
 		}
 		var MONITOR = [
 			{
@@ -11722,7 +12516,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}]
 			}
 		];
-		var AP_RE = /risperidone|risperdal|olanzapine|zyprexa|quetiapine|seroquel|aripiprazole|abilify|paliperidone|invega|haloperidol|haldol|lurasidone|latuda|cariprazine|vraylar|ziprasidone|geodon|fluphenazine|chlorpromazine|loxapine|asenapine|brexpiprazole|rexulti/i;
 		function shortName(n) {
 			var s = String(n || "");
 			var i = s.indexOf(":");
@@ -11744,19 +12537,23 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var medNames = o && o.psych ? o.psych.map(function(p) {
 				return p.name || "";
 			}).join(" ") : "";
+			var today = new Date();
 			MONITOR.forEach(function(m) {
 				if (!m.med.test(medNames)) return;
 				m.checks.forEach(function(c) {
 					var hit = l.analytes.find(function(a) {
 						return c.re.test(a.name);
 					});
-					if (hit && c.level) parts.push(c.name + " " + hit.value + (hit.date ? " (" + hit.date + ")" : "") + ".");
-					else if (!hit && c.level) parts.push("No " + c.name.toLowerCase() + " level among the labs read (" + m.label + ").");
+					if (hit && c.level) {
+						var stale = hit.date && days(today, new Date(hit.date)) > 365;
+						parts.push(c.name + " level " + hit.value + (hit.date ? " (" + hit.date + ")" : "") + (stale ? " - over a year old" : "") + ".");
+					} else if (!hit && c.level) parts.push("No " + c.name.toLowerCase() + " level among the labs read (" + m.label + ").");
 				});
 			});
 			if (!parts.length) return "Labs: nothing abnormal flagged.";
 			return "Labs: " + parts.join(" ");
 		}
+		var AP_RE = /risperidone|risperdal|olanzapine|zyprexa|quetiapine|seroquel|aripiprazole|abilify|paliperidone|invega|haloperidol|haldol|lurasidone|latuda|cariprazine|vraylar|ziprasidone|geodon|fluphenazine|chlorpromazine|loxapine|asenapine|brexpiprazole|rexulti/i;
 		function gdrPart(stops) {
 			var o = landed(stops, "orders");
 			if (!o || !o.psych) return "";
@@ -11782,19 +12579,52 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return "GDR: " + name + " since " + ap.start + " (" + months + " mo), " + (taper || "no taper mentioned in your notes") + ".";
 		}
-		function text(stops) {
-			if (!stops) return "";
-			return [
-				hisThread(stops),
-				notesPicture(stops),
-				labsPart(stops),
-				weightTrend(stops),
-				bimsTrend(stops),
-				gdrPart(stops)
-			].filter(function(s) {
-				return !!s;
-			}).join(" ").slice(0, 900);
+		function safetyPart(stops, win) {
+			var ev = events(stops);
+			if (!windowEntries(ev, win.curStart, win.curEnd).length) return "";
+			var out = [];
+			if (!dayHas(ev, ["Falls"], win.curStart, win.curEnd)) out.push("no falls");
+			if (!dayHas(ev, ["Aggression"], win.curStart, win.curEnd)) out.push("no aggression");
+			return out.length ? out.join(", ").charAt(0).toUpperCase() + out.join(", ").slice(1) + "." : "";
 		}
-		window.__tmSummary = { text };
+		function planPart(stops) {
+			var h = landed(stops, "hisnotes");
+			if (!h || !h.list || !h.list.length) return "";
+			var latest = h.list[0];
+			if (!latest.full || !latest.text) return "";
+			var fu = /\bf\/(?:o|up)\s+([0-9][^\n.]{0,24})/i.exec(latest.text);
+			return fu ? "Plan from your last note: f/o " + fu[1].trim() + "." : "";
+		}
+		var ANCHOR_LABELS = {
+			last: "Since last visit",
+			"14d": "Last 14 days",
+			admission: "Since admission",
+			total: "Total summary"
+		};
+		function text(stops, anchor) {
+			if (!stops) return "";
+			var win = resolveAnchor(stops, anchor || "last");
+			if (!win) return "";
+			var parts = [];
+			if (win.kind === "total") {
+				var h = landed(stops, "hisnotes");
+				if (h && h.list && h.list.length) parts.push("Your notes: " + h.list.length + " since " + h.list[h.list.length - 1].date + ".");
+			}
+			parts.push(medChangePart(stops, win));
+			parts.push(trendPart(stops, win));
+			parts.push(problemPart(stops, win));
+			parts.push(labsPart(stops));
+			parts.push(gdrPart(stops));
+			parts.push(safetyPart(stops, win));
+			parts.push(planPart(stops));
+			var cap = win.kind === "total" ? 1500 : 900;
+			return parts.filter(function(s) {
+				return !!s;
+			}).join(" ").slice(0, cap);
+		}
+		window.__tmSummary = {
+			text,
+			anchors: ANCHOR_LABELS
+		};
 	})();
 })();
