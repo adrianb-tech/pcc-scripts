@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.34
+// @version      3.35
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -930,6 +930,21 @@
     var note = null;
     try { note = JSON.parse(localStorage.getItem('tmReadmitNote') || 'null'); } catch (e) {}
     var show = false;
+    // The flag script's verdict record (v1.7) outranks
+    // the legacy note: an 'ok' or 'new' verdict for THIS
+    // resident + re-entry date suppresses the chip even
+    // if an old note survives somewhere.
+    var verdict = null;
+    try { verdict = JSON.parse(localStorage.getItem('tmReadmitVerdict') || 'null'); } catch (e) {}
+    if (verdict && verdict.id && g) {
+      var idm0 = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+      var adm0 = selfData().admission || '';
+      var cur0 = adm0.replace(/\s*\((re-entry|initial)\)/i, '');
+      if (idm0 && idm0[1] === verdict.id && cur0 === verdict.reentry) {
+        show = verdict.verdict === 'readmit';
+        note = null; // decided - do not fall through to the note
+      }
+    }
     if (note && note.id && g) {
       var idm = (document.body.textContent || '').match(/\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
       var adm = selfData().admission || '';
