@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.8
+// @version      2.9
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -346,6 +346,22 @@
     return map;
   }
   var controllers = [];
+  // Every fetch leaves a line in the packet (v2.9): what
+  // was asked, what came back. A gap is never silent.
+  var fetchLog = [];
+  function noteFetch(key, url, doc, err) {
+    var line = { key: key, at: nowT(), url: (url || '').split('?')[0].split('/').pop() };
+    if (err) line.error = String(err).slice(0, 60);
+    if (doc) {
+      line.title = (doc.title || '').slice(0, 40);
+      line.tables = doc.querySelectorAll ? doc.querySelectorAll('table').length : 0;
+      line.bytes = doc.documentElement ? (doc.documentElement.outerHTML || '').length : 0;
+    }
+    fetchLog.push(line);
+    if (fetchLog.length > 14) fetchLog.shift();
+    packet.fetchLog = fetchLog;
+    publish();
+  }
   function fetchDoc(url) {
     var ctl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
     if (ctl) { controllers.push(ctl); setTimeout(function () { try { ctl.abort(); } catch (e) {} }, 12000); }
@@ -564,20 +580,28 @@
     if (wp) land('weights', { source: 'Wts/Vitals', at: nowT(), series: wp, summary: wp.length + ' dated weights; latest ' + wp[0].weight + ' lbs on ' + wp[0].date });
   }
 
+  var lastFetchAt = 0;
   function gatherFetches() {
-    if (fetched || stopped) return;
+    if (stopped) return;
+    var now = Date.now();
+    if (now - lastFetchAt < 4000) return;
     var urls = discoverUrls();
     var jobs = [];
-    function add(key, url, fn) {
+    function add(key, url, fn, stops) {
       if (!url) return;
-      jobs.push(fetchDoc(url).then(function (doc) { if (!stopped) fn(doc); }).catch(function () {}));
+      var unlanded = stops.some(function (s) { return packet.stops[s].status !== 'landed'; });
+      if (!unlanded) return;
+      jobs.push(fetchDoc(url).then(function (doc) {
+        noteFetch(key, url, doc);
+        if (!stopped) fn(doc);
+      }).catch(function (e) { noteFetch(key, url, null, e); }));
     }
-    add('assess', urls.assess, parseAssessments);
-    add('profile', urls.profile, parseProfile);
-    add('results', urls.results, parseResults);
-    add('orders', urls.orders, parseOrders);
-    add('weights', urls.weights, parseWeights);
-    if (jobs.length) { fetched = true; Promise.allSettled(jobs); }
+    add('assess', urls.assess, parseAssessments, ['bims', 'ownnotes']);
+    add('profile', urls.profile, parseProfile, ['relations']);
+    add('results', urls.results, parseResults, ['labs']);
+    add('orders', urls.orders, parseOrders, ['orders']);
+    add('weights', urls.weights, parseWeights, ['weights']);
+    if (jobs.length) { lastFetchAt = now; Promise.allSettled(jobs); }
   }
 
   // '0' is the kill-switch: stop everything, abort fetches.
@@ -596,5 +620,5 @@
 
   // Harness hook (inert in the browser): lets the offline
   // suite drive the readers against captured pages.
-  try { window.__tmGather = { packet: packet, parseAssessments: parseAssessments, parseProfile: parseProfile, parseResults: parseResults, parseOrders: parseOrders, land: land }; } catch (e) {}
+  try { window.__tmGather = { packet: packet, parseAssessments: parseAssessments, parseProfile: parseProfile, parseResults: parseResults, parseOrders: parseOrders, land: land, gatherFetches: gatherFetches }; } catch (e) {}
 })();
