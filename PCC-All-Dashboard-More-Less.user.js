@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.31
+// @version      3.32
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -553,6 +553,23 @@
       d.bims = bimsValue();
       d.rel = relValue();
     }
+    // His order rule (2026-10-19): in the Psych meds box,
+    // medications FOR seizure or Parkinson's go LAST -
+    // the stated indication decides ('for seizure
+    // control', "for parkinson's"); everything else
+    // keeps its order, and the moved lines keep theirs.
+    // Display and fill value are reordered together, so
+    // the note receives the same order he sees.
+    var medsLast = function (txt) {
+      if (!txt || txt.indexOf('\n') === -1) return txt;
+      var keep = [], last = [];
+      txt.split('\n').forEach(function (ln) {
+        if (/seizure|epilep|parkinson/i.test(ln)) last.push(ln); else keep.push(ln);
+      });
+      return keep.concat(last).join('\n');
+    };
+    if (d.meds) d.meds = medsLast(d.meds);
+    if (d.medsFill) d.medsFill = medsLast(d.medsFill);
     var row = document.getElementById(ROW_ID);
     if (!d) { if (row) row.remove(); return; }
     // Publish the chart values the note is compared against
