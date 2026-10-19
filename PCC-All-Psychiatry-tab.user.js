@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.8
+// @version      1.9
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -111,6 +111,121 @@
       '<div data-section-for="' + (key || '') + '" style="font:400 12.5px ' + FONT + ';color:#94a3b8;margin-top:4px;white-space:pre-wrap;">Arrives with the Gatherer.</div></div>';
   }
 
+  // ---- BIMS trend pop-out (the weekend design, his
+  // specs 2026-10-17 + the analysis line, 2026-10-19) ----
+  // Press the BIMS tile: the trend pops out in place -
+  // a true-time line over shaded severity bands, every
+  // point dated, the dated scores as a table under it,
+  // and a plain analysis of the scores over time.
+  var bimsWin = 'all'; // 'all' = since admission
+  function bimsBand(score) {
+    if (score === null || score === undefined || isNaN(score)) return null;
+    if (score >= 13) return { name: 'none', tile: '', band: 'rgba(255,255,255,0)' };
+    if (score >= 10) return { name: 'mild', tile: '#fff5f6', band: 'rgba(254,205,211,.45)' };
+    if (score >= 8) return { name: 'moderate', tile: '#ffeef0', band: 'rgba(253,164,175,.45)' };
+    return { name: 'severe', tile: '#ffe4e6', band: 'rgba(251,113,133,.35)' };
+  }
+  function bimsPoints(win) {
+    var pkt = readPacket();
+    var ser = (pkt && pkt.stops && pkt.stops.bims && pkt.stops.bims.series) || [];
+    var pts = ser.map(function (x) { return { d: new Date(x.date), score: x.score, label: x.date }; })
+      .filter(function (x) { return !isNaN(x.d.getTime()); })
+      .sort(function (a, b) { return a.d - b.d; });
+    if (!pts.length) return pts;
+    if (win !== 'all') {
+      var months = win === '6m' ? 6 : 12;
+      var cut = new Date(pts[pts.length - 1].d); cut.setMonth(cut.getMonth() - months);
+      pts = pts.filter(function (x) { return x.d >= cut; });
+    }
+    // Thin older history to one point per month; keep
+    // everything from the last 30 days (his rule).
+    var last = pts[pts.length - 1].d, out = [], seenMonth = {};
+    pts.forEach(function (x) {
+      if (last - x.d <= 30 * 864e5) { out.push(x); return; }
+      var k = x.d.getFullYear() + '-' + x.d.getMonth();
+      if (!seenMonth[k]) { seenMonth[k] = 1; out.push(x); }
+    });
+    return out;
+  }
+  function spanText(a, b) {
+    var days = Math.round((b - a) / 864e5);
+    if (days < 45) return 'over ' + days + ' days';
+    var months = Math.round(days / 30.44);
+    if (months < 24) return 'over ' + months + (months === 1 ? ' month' : ' months');
+    var yrs = (days / 365.25).toFixed(1).replace(/\.0$/, '');
+    return 'over ' + yrs + ' years';
+  }
+  function bimsAnalysis(pts) {
+    if (!pts.length) return '';
+    var first = pts[0], lastP = pts[pts.length - 1];
+    if (pts.length === 1) return 'One scored BIMS on file: ' + first.score + ' on ' + first.label + ' (' + bimsBand(first.score).name + '). No trend yet.';
+    var delta = lastP.score - first.score;
+    var dir = delta === 0 ? 'level overall' : (delta > 0 ? 'up ' + delta + ' overall' : 'down ' + Math.abs(delta) + ' overall');
+    var s = pts.length + ' scored BIMS ' + spanText(first.d, lastP.d) + ': ' + first.score + ' \u2192 ' + lastP.score + ', ' + dir + '.';
+    var step = 0, stepTxt = '';
+    for (var i = 1; i < pts.length; i++) {
+      var d = pts[i].score - pts[i - 1].score;
+      if (Math.abs(d) > Math.abs(step)) { step = d; stepTxt = pts[i - 1].label + ' \u2192 ' + pts[i].label; }
+    }
+    if (step !== 0) s += ' Biggest single step: ' + (step > 0 ? '+' : '') + step + ' (' + stepTxt + ').';
+    var bands = pts.map(function (x) { return bimsBand(x.score).name; });
+    var same = bands.every(function (b) { return b === bands[0]; });
+    if (same) s += ' Every score sits in the ' + bands[0] + ' band.';
+    else {
+      var path = [bands[0]];
+      bands.forEach(function (b) { if (b !== path[path.length - 1]) path.push(b); });
+      s += ' Band path: ' + path.join(' \u2192 ') + '.';
+    }
+    if (pts.length >= 2 && pts[pts.length - 1].score === pts[pts.length - 2].score) s += ' The last two scores are level at ' + lastP.score + '.';
+    return s;
+  }
+  function renderBimsPop(p) {
+    var pop = p.querySelector('#tmPsychBimsPop');
+    if (!pop) return;
+    var pts = bimsPoints(bimsWin);
+    var seg = [['all', 'Since admission'], ['1y', '1 year'], ['6m', '6 months']].map(function (w) {
+      var on = bimsWin === w[0];
+      return '<button type="button" data-bims-win="' + w[0] + '" style="border:1px solid ' + (on ? '#0f172a' : '#cbd5e1') + ';background:' + (on ? '#0f172a' : '#ffffff') + ';color:' + (on ? '#ffffff' : '#334155') + ';border-radius:999px;padding:3px 10px;font:600 11.5px ' + FONT + ';cursor:pointer;">' + w[1] + '</button>';
+    }).join(' ');
+    if (!pts.length) { pop.innerHTML = '<div style="border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;font:400 12.5px ' + FONT + ';color:#94a3b8;">No scored BIMS in this window.</div>'; wireBimsPop(p); return; }
+    var W = 560, H = 168, PL = 26, PR = 10, PT = 10, PB = 30;
+    var t0 = pts[0].d.getTime(), t1 = pts[pts.length - 1].d.getTime();
+    if (t1 === t0) { t0 -= 15 * 864e5; t1 += 15 * 864e5; }
+    function X(d) { return PL + (d.getTime() - t0) / (t1 - t0) * (W - PL - PR); }
+    function Y(s) { return PT + (15 - s) / 15 * (H - PT - PB); }
+    var bandsSvg = [[13, 15, bimsBand(14).band, 'none'], [10, 12, bimsBand(11).band, 'mild'], [8, 9, bimsBand(9).band, 'moderate'], [0, 7, bimsBand(5).band, 'severe']].map(function (b) {
+      return '<rect x="' + PL + '" y="' + Y(b[1]) + '" width="' + (W - PL - PR) + '" height="' + (Y(b[0]) - Y(b[1])) + '" fill="' + b[2] + '"/>' +
+        '<text x="2" y="' + (Y(b[1]) + 10) + '" font-size="8" fill="#94a3b8">' + b[3] + '</text>';
+    }).join('');
+    var line = pts.map(function (x) { return X(x.d).toFixed(1) + ',' + Y(x.score).toFixed(1); }).join(' ');
+    var dots = pts.map(function (x) {
+      return '<circle cx="' + X(x.d).toFixed(1) + '" cy="' + Y(x.score).toFixed(1) + '" r="3.5" fill="#0f172a"/>' +
+        '<text x="' + X(x.d).toFixed(1) + '" y="' + (Y(x.score) - 8).toFixed(1) + '" font-size="10" font-weight="700" fill="#0f172a" text-anchor="middle">' + x.score + '</text>' +
+        '<text x="' + X(x.d).toFixed(1) + '" y="' + (H - 8) + '" font-size="8.5" fill="#64748b" text-anchor="middle">' + x.label.replace(/\/\d{4}$/, '') + '</text>';
+    }).join('');
+    var rows = pts.slice().reverse().map(function (x) {
+      var b = bimsBand(x.score);
+      return '<tr><td style="padding:4px 8px;border-top:1px solid #f1f5f9;">' + x.label + '</td>' +
+        '<td style="padding:4px 8px;border-top:1px solid #f1f5f9;font-weight:700;">' + x.score + '</td>' +
+        '<td style="padding:4px 8px;border-top:1px solid #f1f5f9;color:#64748b;">' + b.name + '</td></tr>';
+    }).join('');
+    var first = pts[0], lastP = pts[pts.length - 1];
+    pop.innerHTML = '<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:10px 12px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font:700 13px ' + FONT + ';color:#0f172a;">BIMS trend</span>' +
+      '<span style="font:400 12px ' + FONT + ';color:#64748b;">' + first.score + ' \u2192 ' + lastP.score + ' \u00b7 ' + spanText(first.d, lastP.d) + '</span>' +
+      '<span style="margin-left:auto;display:flex;gap:4px;">' + seg + '</span></div>' +
+      '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block;margin-top:6px;">' + bandsSvg +
+      '<polyline points="' + line + '" fill="none" stroke="#0f172a" stroke-width="1.6"/>' + dots + '</svg>' +
+      '<table style="border-collapse:collapse;font:400 12.5px ' + FONT + ';color:#0f172a;margin-top:4px;"><tr><td style="padding:2px 8px;font-weight:700;color:#64748b;">Date</td><td style="padding:2px 8px;font-weight:700;color:#64748b;">Score</td><td style="padding:2px 8px;font-weight:700;color:#64748b;">Level</td></tr>' + rows + '</table>' +
+      '<div style="font:400 12.5px ' + FONT + ';color:#334155;margin-top:8px;">' + bimsAnalysis(pts) + '</div></div>';
+    wireBimsPop(p);
+  }
+  function wireBimsPop(p) {
+    p.querySelectorAll('[data-bims-win]').forEach(function (b) {
+      b.addEventListener('click', function () { bimsWin = b.getAttribute('data-bims-win'); renderBimsPop(p); });
+    });
+  }
+
   function buildPanel() {
     var p = document.createElement('div');
     p.id = 'tmPsychPage';
@@ -122,8 +237,9 @@
         '<span style="font:400 12px ' + FONT + ';color:#94a3b8;">the one page — everything psychiatrically connected, in one place</span>' +
       '</div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px;">' +
-        miniTile('Relationships', 'relations') + miniTile('BIMS', 'bims') + miniTile('Facesheet', 'facesheet') + miniTile('Admission facts', 'admissionFacts') +
+        miniTile('Relationships', 'relations') + buttonTile('tmPsychBimsTile', 'BIMS', 'bims') + miniTile('Facesheet', 'facesheet') + miniTile('Admission facts', 'admissionFacts') +
       '</div>' +
+      '<div id="tmPsychBimsPop" style="display:none;margin-bottom:8px;"></div>' +
       '<div id="tmPsychStamp" style="font:400 11px ' + FONT + ';color:#94a3b8;margin-bottom:8px;">Gatherer: waiting…</div>' +
       '<div id="tmPsychDxSlot" style="margin-bottom:8px;"></div>' +
       '<div id="tmPsychBehSlot" style="margin-bottom:8px;"></div>' +
@@ -138,6 +254,14 @@
       '</div>';
     fillSlots(p);
     renderPacketInto(p);
+    var btile = p.querySelector('#tmPsychBimsTile');
+    if (btile) btile.addEventListener('click', function () {
+      var pop = p.querySelector('#tmPsychBimsPop');
+      if (!pop) return;
+      var show = pop.style.display === 'none';
+      pop.style.display = show ? '' : 'none';
+      if (show) renderBimsPop(p);
+    });
     var ta = p.querySelector('#tmPsychWords');
     ta.value = words;
     ta.addEventListener('input', function () { words = ta.value; });
@@ -163,10 +287,14 @@
     }
     if (s.relations && s.relations.status === 'landed') setVal('relations', (s.relations.summary || '').slice(0, 90));
     if (s.bims && s.bims.status === 'landed') {
-      var bl = (s.bims.facts && s.bims.facts.latest) || s.bims.summary || '';
-      var ser = (s.bims.series || []).slice(1).map(function (x) { return x.score; });
-      if (ser.length) bl += '\nprior: ' + ser.join(' · ');
-      setVal('bims', bl);
+      // His format: just the score and the date - no prior
+      // list on the tile (2026-10-19). The series lives in
+      // the pop-out behind the press.
+      setVal('bims', (s.bims.facts && s.bims.facts.latest) || s.bims.summary || '');
+      var bt = p.querySelector('#tmPsychBimsTile');
+      if (bt) { var bb = bimsBand((s.bims.series || [])[0] ? (s.bims.series || [])[0].score : null); if (bb) bt.style.background = bb.tile; }
+      var pop = p.querySelector('#tmPsychBimsPop');
+      if (pop && pop.style.display !== 'none') renderBimsPop(p);
     }
     var dxFb = p.querySelector('[data-dx-fallback="1"]');
     if (dxFb && s.diagnoses && s.diagnoses.status === 'landed') {
