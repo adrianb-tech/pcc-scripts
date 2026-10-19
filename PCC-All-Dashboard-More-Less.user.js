@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.39
+// @version      3.40
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -595,9 +595,18 @@
     // from the chart paints its tile warning-red.
     try {
       var chartVals = [d.ageSex || '', d.allergies || '', (d.medsFill !== null && d.medsFill !== undefined) ? d.medsFill : (d.meds || ''), d.rel || ''].join('|');
-      if (window.__tmChartLast !== chartVals) {
+      // Republish on change AND every ~20s while the row
+      // lives (v3.40): the verdict engine only trusts a
+      // FRESH chart record, so a tile can never be painted
+      // red off a previous resident's leftovers - red
+      // requires this resident's own information, present
+      // now. The record carries the resident's chart key
+      // so verdicts are tied to this resident (see the
+      // matching gate where verdicts are read below).
+      if (window.__tmChartLast !== chartVals || Date.now() - (window.__tmChartTs || 0) > 20000) {
         window.__tmChartLast = chartVals;
-        localStorage.setItem('tmTileChart', JSON.stringify({ ageSex: d.ageSex || null, allergies: d.allergies || null, meds: (d.medsFill !== null && d.medsFill !== undefined) ? d.medsFill : (d.meds || null), rel: d.rel || null, ts: Date.now() }));
+        window.__tmChartTs = Date.now();
+        localStorage.setItem('tmTileChart', JSON.stringify({ ageSex: d.ageSex || null, allergies: d.allergies || null, meds: (d.medsFill !== null && d.medsFill !== undefined) ? d.medsFill : (d.meds || null), rel: d.rel || null, key: chartNumMatch() || null, ts: window.__tmChartTs }));
       }
     } catch (e) {}
     var tw = null;
@@ -616,6 +625,15 @@
         noteOpen = !!(no && no.ts && (Date.now() - no.ts) < 30000);
       } catch (e) {}
       if (!noteOpen) tw = null;
+    }
+    // Verdicts are only ever painted on the resident
+    // they were computed for (v3.40): the engine stamps
+    // the chart key it read into its verdicts, and this
+    // row ignores any verdict record keyed to another
+    // resident.
+    if (tw && tw.key) {
+      var myKey = chartNumMatch();
+      if (myKey && tw.key !== myKey) tw = null;
     }
     var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.weightRed ? 'R' : '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || '', tw ? (tw.age ? '1' : '0') + (tw.allergies ? '1' : '0') + (tw.meds ? '1' : '0') + (tw.rel ? '1' : '0') : '----'].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
@@ -873,6 +891,27 @@
   // survived because its fetch lands seconds later. The
   // packet node in the page is the shared truth; read
   // it directly at start and on every gather update.
+  // One render per burst (v3.40): during a gather, the
+  // feeds land stop by stop and every landing used to
+  // rebuild the whole row on its own timer - tiles
+  // popping in one by one, the row re-laying-out under
+  // his eyes ('loading sloppily'). Triggers now feed a
+  // single trailing render: a burst collapses into one
+  // build once it settles (300ms), and a burst that
+  // runs long still renders at least every ~1.2s. The
+  // row appears once, together.
+  var buildTimer = null, burstAt = 0;
+  function scheduleBuild() {
+    var now = Date.now();
+    if (!burstAt) burstAt = now;
+    if (buildTimer) clearTimeout(buildTimer);
+    var wait = (now - burstAt > 1200) ? 0 : 300;
+    buildTimer = setTimeout(function () {
+      buildTimer = null; burstAt = 0;
+      buildCards(); renderReadmitChip(); renderHighChip();
+    }, wait);
+  }
+
   function pullFromPacket() {
     try {
       var n = document.getElementById('tmGatherPacket');
@@ -901,7 +940,7 @@
       if (!(hd && hd.medsList) && dm && dm.status === 'landed' && dm.lines) {
         if (dm.lines !== feedMeds) { feedMeds = dm.lines; changed = true; }
       }
-      if (changed) setTimeout(function () { buildCards(); }, 350);
+      if (changed) scheduleBuild();
     } catch (e) {}
   }
   document.addEventListener('tm-gather-update', pullFromPacket);
@@ -923,7 +962,7 @@
     if (d.rel && d.rel !== feedRel) { feedRel = d.rel; changed = true; }
     if (d.bims && d.bims !== feedBims) { feedBims = d.bims; changed = true; }
     if (d.meds && d.meds !== feedMeds) { feedMeds = d.meds; changed = true; }
-    if (changed) setTimeout(function () { buildCards(); }, 350);
+    if (changed) scheduleBuild();
   });
   function relValue() {
     var v = crossValue(function (doc) {
@@ -1110,7 +1149,7 @@
     if (now - lastPing < 1500) return;
     lastPing = now;
     try { localStorage.setItem('tmRowPing', String(now)); } catch (e) {}
-    setTimeout(function () { buildCards(); renderReadmitChip(); renderHighChip(); }, 700);
+    scheduleBuild();
   }, true);
   window.addEventListener('storage', function (e) {
     if (e.key === 'tmGoWts' && e.newValue) {
@@ -1119,11 +1158,11 @@
       return;
     }
     if (e.key === 'tmGPress') { if (e.newValue) hlAllTiles(); else hlRestoreAll(); return; }
-    if (e.key === 'tmTileWarn') { setTimeout(function () { buildCards(); renderReadmitChip(); renderHighChip(); }, 350); return; }
+    if (e.key === 'tmTileWarn') { scheduleBuild(); return; }
     if (e.key !== 'tmRowPing' || !e.newValue) return;
     var ts = parseInt(e.newValue, 10);
     if (!ts || Date.now() - ts > 5000) return;
-    setTimeout(function () { buildCards(); renderReadmitChip(); renderHighChip(); }, 700);
+    scheduleBuild();
   });
 
   // The G KEY gets the same press feedback as the G button (his ask,
