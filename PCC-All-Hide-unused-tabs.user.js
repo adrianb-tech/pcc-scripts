@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.12
+// @version 1.13
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -312,12 +312,23 @@
     if (--burstLeft <= 0) return;
     setTimeout(burst, 50);
   })();
-  [2500, 4500, 7000].forEach(function (ms) { setTimeout(run, ms); });
-  var lastRun = 0;
-  document.addEventListener('click', function (e) {
-    var now = Date.now();
-    if (now - lastRun < 1000) return;
-    lastRun = now;
-    setTimeout(run, 300);
-  }, true);
+  // FROZEN BAR (v1.13, his report 2026-10-19): the late
+  // passes (2.5s/4.5s/7s) and the re-run 300ms after
+  // every click are GONE. PCC re-renders the bar with
+  // all tabs restored, so each re-run re-hid them a beat
+  // after he clicked - the tabs slid left in steps while
+  // he was aiming at the next one, and clicks landed on
+  // a moving target or a gap ('sometimes I hit it and it
+  // doesn't register'). His priority: a click must
+  // register the first time, every time. So this script
+  // now styles the bar ONCE, during the document-start
+  // burst (plus a single 2.5s pass for PCC's slowest
+  // first render), and never touches it again for the
+  // life of the page. (The 2.5s pass was dropped too:
+  // the document-start burst already retries every
+  // 50ms for up to ~2s, so the bar is styled the moment
+  // PCC renders it - a later pass only re-opens the
+  // moving window.) Trade-off, accepted: if PCC
+  // re-renders the bar mid-session, hidden tabs stay
+  // visible until the next chart opens.
 })();
