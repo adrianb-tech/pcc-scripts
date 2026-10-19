@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.0.6
+// @version      2.0.7
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9162,6 +9162,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 		}
 		var lastFetchAt = 0;
+		function allTypesUrl(u) {
+			if (!u) return u;
+			function setParam(url, name, val) {
+				var re = new RegExp("([?&])" + name + "=[^&]*");
+				if (re.test(url)) return url.replace(re, "$1" + name + "=" + val);
+				return url + (url.indexOf("?") === -1 ? "?" : "&") + name + "=" + val;
+			}
+			return setParam(setParam(u, "ESOLstdassessid", "-1"), "ESOLstatusFilter", "");
+		}
 		function gatherFetches() {
 			refreshKey();
 			if (stopped) return;
@@ -9181,7 +9190,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					noteFetch(key, url, null, e);
 				}));
 			}
-			add("assess", urls.assess, parseAssessments, ["bims", "ownnotes"]);
+			add("assess", allTypesUrl(urls.assess), parseAssessments, ["bims", "ownnotes"]);
 			add("profile", urls.profile, parseProfile, ["relations"]);
 			add("results", urls.results, parseResults, ["labs"]);
 			add("orders", urls.orders, parseOrders, ["orders"]);
@@ -9831,7 +9840,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var noteOpen = false;
 				try {
 					var no = window.__tmCore && window.__tmCore.noteOpen ? window.__tmCore.noteOpen() : JSON.parse(localStorage.getItem("tmNoteOpen") || "null");
-					noteOpen = !!(no && no.ts && Date.now() - no.ts < 3e4);
+					noteOpen = !!(no && no.ts && Date.now() - no.ts < 75e3);
 				} catch (e) {}
 				if (!noteOpen) tw = null;
 			}
@@ -11146,7 +11155,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			try {
 				chart = JSON.parse(localStorage.getItem("tmTileChart") || "null");
 			} catch (e) {}
-			if (chart && chart.ts && Date.now() - chart.ts > 45e3) chart = null;
+			if (chart && chart.ts && Date.now() - chart.ts > 9e4) chart = null;
 			var field = findNoteField();
 			if (!chart || !field) {
 				clearTileWarn();
