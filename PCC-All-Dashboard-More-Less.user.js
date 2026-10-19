@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.13
+// @version      3.14
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -644,6 +644,7 @@
       return vv ? (vv.textContent || '').trim() : '';
     });
     if (bv) return bv;
+    if (feedBims) return feedBims;
     return scopedFeed('tmBimsFor:');
   }
   // The Gatherer's scoped feeds (tmRelFor:/tmBimsFor:),
@@ -671,12 +672,24 @@
     } catch (e) {}
     return '';
   }
+  // The Gatherer's same-document feed (v3.14): values
+  // gathered in THIS document, for THIS resident, held
+  // in memory - no storage keys to mismatch.
+  var feedRel = '', feedBims = '';
+  document.addEventListener('tm-gather-feed', function (e) {
+    var d = (e && e.detail) || {};
+    var changed = false;
+    if (d.rel && d.rel !== feedRel) { feedRel = d.rel; changed = true; }
+    if (d.bims && d.bims !== feedBims) { feedBims = d.bims; changed = true; }
+    if (changed) setTimeout(function () { buildCards(); }, 350);
+  });
   function relValue() {
     var v = crossValue(function (doc) {
       var btn = doc.getElementById('relCopyBtn');
       return btn ? (btn.getAttribute('data-fill-value') || '') : '';
     });
     if (v) return v;
+    if (feedRel) return feedRel;
     return scopedFeed('tmRelFor:');
   }
 
