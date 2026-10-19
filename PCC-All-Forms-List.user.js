@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Forms List (In Progress + psych filter)
 // @namespace    pcc-forms-list-psych
-// @version      2.4
+// @version      2.5
 // @description  Forms List: auto-switch to In Progress tab, filter to psychiatry consult form, sort by Score, highlight 1.0 rows. STANDS DOWN at CNR/Saints — their one-pass version lives in "CNR + Saints — Forms List (one pass)".
 // @match        *://*.pointclickcare.com/*
 // @grant        none
@@ -132,6 +132,77 @@
     } catch(e){}
   }
 
+  // --- STEP 2B: Last-mode memory (evergreen list) ---
+  // His rule (2026-10-19): the list must always fall
+  // onto whatever mode he LAST viewed - BIMS lands on
+  // BIMS, psych consult lands on psych consult. PCC's
+  // own memory keeps resurrecting a mode he looked at
+  // once, long ago, and this script's classic forcing
+  // never applied to the evergreen list at all. So:
+  // LEARN the Type filter from his own changes, and on
+  // load RESTORE that exact mode - never a hard-coded
+  // favorite, never PCC's stale pick. A saved mode that
+  // doesn't exist in this facility's dropdown is simply
+  // not applied.
+  var modeApplied = false, modeOverridden = false;
+  function typeSelect() {
+    var sels = document.querySelectorAll('select'), best = null, bestScore = -1;
+    for (var i = 0; i < sels.length; i++) {
+      var s = sels[i], score = 0, opts = s.options || [];
+      for (var j = 0; j < opts.length; j++) {
+        if (/consult|bims|psychiatry/i.test(opts[j].textContent || '')) score += 2;
+      }
+      if (opts.length > 3) score += 1;
+      var host = s;
+      for (var d = 0; d < 4 && host; d++) {
+        host = host.parentElement;
+        if (host && /^\s*Type\b/i.test(norm(host.textContent).slice(0, 12))) { score += 4; break; }
+      }
+      if (score > bestScore) { bestScore = score; best = s; }
+    }
+    return (best && bestScore >= 4) ? best : null;
+  }
+  function savedMode() {
+    try { var m = JSON.parse(localStorage.getItem('tmFormsMode') || 'null'); return (m && m.type) ? m : null; } catch (e) { return null; }
+  }
+  function learnMode() {
+    var s = typeSelect();
+    if (!s || !s.options || s.selectedIndex < 0) return;
+    var txt = norm(s.options[s.selectedIndex].textContent);
+    if (!txt) return;
+    try { localStorage.setItem('tmFormsMode', JSON.stringify({ type: txt, ts: Date.now() })); } catch (e) {}
+  }
+  document.addEventListener('change', function (e) {
+    if (!e.isTrusted) return;
+    var s = typeSelect();
+    if (s && e.target === s) { modeOverridden = true; learnMode(); }
+  }, true);
+  document.addEventListener('click', function (e) {
+    if (!e.isTrusted) return;
+    if (/^Apply$/i.test(norm(e.target.textContent || '')) && typeSelect()) { modeOverridden = true; learnMode(); }
+  }, true);
+  function restoreMode() {
+    if (modeApplied || modeOverridden) return;
+    var s = typeSelect();
+    if (!s) return;                      // classic list or not ready: keep waiting
+    var saved = savedMode();
+    if (!saved) { modeApplied = true; return; }
+    var target = null;
+    for (var j = 0; j < s.options.length; j++) {
+      if (norm(s.options[j].textContent) === saved.type) { target = s.options[j]; break; }
+    }
+    if (!target) { modeApplied = true; return; }   // another facility's mode: impose nothing
+    if (s.value === target.value) { modeApplied = true; return; }
+    s.value = target.value;
+    try { s.dispatchEvent(new Event('change', { bubbles: true })); } catch (e) {}
+    try { s.dispatchEvent(new Event('input', { bubbles: true })); } catch (e) {}
+    var btns = document.querySelectorAll('button, input[type="button"], input[type="submit"]');
+    for (var m = 0; m < btns.length; m++) {
+      if (/^Apply$/i.test(norm(btns[m].textContent || btns[m].value)) && btns[m].offsetParent !== null) { fireClick(btns[m]); break; }
+    }
+    modeApplied = true;
+  }
+
   // --- STEP 3: Sort by Score ascending ---
   var sortAttempts = 0;
   function sortScoreAscending(){
@@ -205,8 +276,11 @@
   function init(){
     // Step 1: tab (immediate)
     ensureInProgressTab();
-    // Step 2: filter (after tab loads)
-    setTimeout(setPsychFormFilter, 2500);
+    // Step 2: filter (after tab loads) - classic pages
+    // only; evergreen pages get the last-mode restore.
+    setTimeout(function () { if (!typeSelect()) setPsychFormFilter(); }, 2500);
+    // Step 2B: restore his last-viewed mode (evergreen)
+    [0, 900, 2000, 3500].forEach(function (ms) { setTimeout(restoreMode, ms); });
     // Step 3: sort by Score ascending (single attempt + one retry max)
     setTimeout(function(){
       sortScoreAscending();
