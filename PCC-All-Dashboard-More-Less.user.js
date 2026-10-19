@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.26
+// @version      3.27
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -623,41 +623,38 @@
   var faceUrlCache = '';
   function addFaceSheetButton(bar, row) {
     try {
-      if (document.getElementById('tmFaceBtn')) return;
       if (location.pathname.indexOf('cp_residentdashboard') === -1) return; // the Dash only
-      var line = document.createElement('div');
-      line.id = 'tmFaceLine';
-      line.style.cssText = 'display:flex;justify-content:flex-end;margin:10px 0 0;';
-      var btn = document.createElement('button');
-      btn.type = 'button';
-      btn.id = 'tmFaceBtn';
-      btn.setAttribute('data-tooltip', 'Face Sheet Report');
-      btn.style.cssText = 'background:linear-gradient(135deg,#fef9c3,#fde68a);border:2px solid #eab308;border-radius:6px;padding:4px 8px;box-shadow:0 2px 8px rgba(234,179,8,.4);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:15px;font-weight:600;color:#1c2430;cursor:pointer;display:inline-flex;align-items:center;gap:2px;';
-      btn.innerHTML = '<svg aria-hidden="true" style="width:18px;height:18px;flex-shrink:0;margin-right:4px;" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.833 1.83301L18.333 7.33301V18.333C18.333 19.3413 17.5083 20.167 16.5 20.167H5.49121C4.48288 20.167 3.66699 19.3413 3.66699 18.333L3.67578 3.66699C3.67578 2.65866 4.49167 1.83301 5.5 1.83301H12.833ZM7.33301 14.667V16.5H14.667V14.667H7.33301ZM7.33301 11V12.833H14.667V11H7.33301ZM11.917 8.25H16.958L11.917 3.20801V8.25Z" fill="currentColor"></path></svg>Face Sheet';
-      var badge = document.createElement('button');
-      badge.type = 'button';
-      badge.title = 'Open Admission Record (same as F key)';
-      badge.textContent = 'F';
-      badge.style.cssText = 'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:11px;font-weight:700;color:#fff;background:linear-gradient(135deg,#ef4444,#dc2626);border:none;border-radius:999px;width:20px;height:20px;margin-left:8px;align-self:center;cursor:pointer;padding:0;';
-      var open = function () { openFaceSheet(); };
-      btn.addEventListener('click', open);
-      badge.addEventListener('click', open);
-      line.appendChild(btn);
-      line.appendChild(badge);
-      // His placement (2026-10-19): above the tab bar,
-      // over the DASH tab - not down by the tile row.
-      line.style.cssText = 'display:flex;margin:0 0 6px;';
-      var bar = findTabStrip(document);
-      var host = bar && bar.parentNode ? bar.parentNode : row.parentNode;
-      var anchor = bar && bar.parentNode ? bar : row;
-      host.insertBefore(line, anchor);
-      try {
-        var dashTab = bar ? findTabInDoc(document, 'DASH') : null;
-        if (dashTab) {
-          var lr = line.getBoundingClientRect(), tr = dashTab.getBoundingClientRect();
-          line.style.paddingLeft = Math.max(0, Math.round(tr.left - lr.left)) + 'px';
-        }
-      } catch (e2) {}
+      var strip = findTabStrip(document);
+      if (!strip || !strip.parentNode) return;
+      var host = strip.parentNode;
+      var btn = document.getElementById('tmFaceBtn');
+      if (!btn) {
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.id = 'tmFaceBtn';
+        btn.setAttribute('data-tooltip', 'Face Sheet Report');
+        btn.style.cssText = 'position:absolute;z-index:6;background:linear-gradient(135deg,#fef9c3,#fde68a);border:2px solid #eab308;border-radius:6px;padding:4px 8px;box-shadow:0 2px 8px rgba(234,179,8,.4);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;font-size:15px;font-weight:600;color:#1c2430;cursor:pointer;display:inline-flex;align-items:center;gap:2px;';
+        btn.innerHTML = '<svg aria-hidden="true" style="width:18px;height:18px;flex-shrink:0;margin-right:4px;" viewBox="0 0 22 22" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12.833 1.83301L18.333 7.33301V18.333C18.333 19.3413 17.5083 20.167 16.5 20.167H5.49121C4.48288 20.167 3.66699 19.3413 3.66699 18.333L3.67578 3.66699C3.67578 2.65866 4.49167 1.83301 5.5 1.83301H12.833ZM7.33301 14.667V16.5H14.667V14.667H7.33301ZM7.33301 11V12.833H14.667V11H7.33301ZM11.917 8.25H16.958L11.917 3.20801V8.25Z" fill="currentColor"></path></svg>Face Sheet';
+        btn.addEventListener('click', function () { openFaceSheet(); });
+        host.appendChild(btn);
+        // No F badge of our own (v3.27): the Keys scripts
+        // plant theirs next to any 'Face Sheet' button -
+        // his screenshot had two Fs, one of them mine.
+      }
+      // Float at the right end of the tab bar's own row:
+      // no row of its own, nothing below moves. Re-anchored
+      // on every build pass, just right of the MORE tab.
+      if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
+      var hr = host.getBoundingClientRect();
+      var sr = strip.getBoundingClientRect();
+      var moreEl = null;
+      var kids = strip.querySelectorAll('*');
+      for (var i = 0; i < kids.length; i++) {
+        if (kids[i].children.length <= 2 && tabNorm(kids[i].textContent).indexOf('MORE') === 0) { moreEl = kids[i]; break; }
+      }
+      var anchorRight = moreEl ? moreEl.getBoundingClientRect().right : sr.right;
+      btn.style.left = Math.round(anchorRight - hr.left + host.scrollLeft + 10) + 'px';
+      btn.style.top = Math.round(sr.top - hr.top + host.scrollTop + (sr.height - 34) / 2) + 'px';
     } catch (e) {}
   }
   function openFaceSheet() {
