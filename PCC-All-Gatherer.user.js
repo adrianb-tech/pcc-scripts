@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.14
+// @version      2.15
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -160,7 +160,8 @@
       node.id = NODE_ID;
       node.style.display = 'none';
       (document.body || document.documentElement).appendChild(node);
-    }
+       feedFromPacket();
+  }
     node.textContent = JSON.stringify(packet);
     try { document.dispatchEvent(new CustomEvent('tm-gather-update')); } catch (e) {}
   }
@@ -477,8 +478,37 @@
   // so it also hands the values straight to the row in
   // this document with an event. The row keeps them in
   // memory; storage remains the cross-page path.
+  var fedSent = {};
   function feedEvent(detail) {
+    var keys = Object.keys(detail);
+    for (var i = 0; i < keys.length; i++) {
+      if (fedSent[keys[i]] === detail[keys[i]]) return;
+      fedSent[keys[i]] = detail[keys[i]];
+    }
     try { document.dispatchEvent(new CustomEvent('tm-gather-feed', { detail: detail })); } catch (e) {}
+  }
+  function bimsLine(stop) {
+    if (!stop || !stop.series || !stop.series[0]) return '';
+    var s0 = stop.series[0];
+    var d = new Date(s0.date);
+    if (isNaN(d.getTime())) return '';
+    return s0.score + ' on ' + (d.getMonth() + 1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2);
+  }
+  function medsLines(stop) {
+    if (!stop || !stop.psych || !stop.psych.length) return '';
+    return stop.psych.map(function (p) { return '- ' + p.name; }).join('\n');
+  }
+  // The publish funnel (v2.15): EVERY path that changes
+  // the packet ends in publish() - direct landings,
+  // stored merges, fetches - so the row feeds live here
+  // and no path can be missed. (Relations was arriving
+  // by stored merge, which fed nothing; BIMS landed
+  // directly, which is why BIMS alone worked.)
+  function feedFromPacket() {
+    var s = packet.stops;
+    if (s.relations.status === 'landed' && s.relations.summary) feedEvent({ rel: s.relations.summary });
+    if (s.bims.status === 'landed') { var bl = bimsLine(s.bims); if (bl) feedEvent({ bims: bl }); }
+    if (s.orders.status === 'landed') { var ml = medsLines(s.orders); if (ml) feedEvent({ meds: ml }); }
   }
   function feedRowTile(summary) {
     feedEvent({ rel: summary });
