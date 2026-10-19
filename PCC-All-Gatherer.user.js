@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.6
+// @version      2.7
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -407,6 +407,30 @@
         summary: (visits.length ? 'Your consults: ' + visits.slice(0, 12).join(', ') : '') + (mdAck ? ' · latest MD acknowledgement ' + mdAck : '') });
     }
   }
+  // Late truth replaces early guesses (v2.7): his
+  // 04:46 Profile landed relations as 'self' - the word
+  // scan ran before the Contacts table rendered and
+  // first-wins froze it, while both carriers on the page
+  // held the true '5 daughters, son'. Rules: a carrier
+  // or heading value is STRONG and always replaces; the
+  // word scan is WEAK, lands only when nothing landed,
+  // and never lands at all while a carrier element
+  // exists (its value is still on its way).
+  var relationsWeak = false;
+  function landRelations(summary) {
+    var cur = packet.stops.relations;
+    summary = norm(summary).slice(0, 300);
+    if (cur.status !== 'landed') {
+      land('relations', { source: 'Profile', at: nowT(), summary: summary });
+      return;
+    }
+    if (cur.summary !== summary) {
+      packet.stops.relations = { status: 'landed', source: 'Profile', at: nowT(), summary: summary };
+      relationsWeak = false;
+      publish(); saveStored();
+      try { document.dispatchEvent(new CustomEvent('tm-gather-update')); } catch (e) {}
+    }
+  }
   function parseProfile(doc) {
     var el = doc.querySelector('[data-fill-label="Relationships"]');
     var val = el ? (el.getAttribute('data-fill-value') || txt(el)) : '';
@@ -419,6 +443,11 @@
         }
       }
     }
+    if (val && !/^[—–-]+$/.test(norm(val)) && !/^N\/?A$/i.test(norm(val))) {
+      landRelations(val);
+      return;
+    }
+    if (el) return; // carrier exists, value still coming
     if (!val && /Resident Profile/i.test(doc.title || '')) {
       // Fetched Profile pages carry PCC's native contacts,
       // not the tile box: collect the relation words.
@@ -432,7 +461,10 @@
     // real value (land is first-wins). His live Dash test
     // landed relations as '-' - never again.
     if (val && !/^[—–-]+$/.test(norm(val)) && !/^N\/?A$/i.test(norm(val))) {
-      land('relations', { source: 'Profile', at: nowT(), summary: norm(val).slice(0, 300) });
+      if (packet.stops.relations.status !== 'landed') {
+        relationsWeak = true;
+        land('relations', { source: 'Profile', at: nowT(), summary: norm(val).slice(0, 300) });
+      }
     }
   }
   function parseResults(doc) {
