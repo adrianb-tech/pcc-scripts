@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide profile sections
-// @version      1.0
+// @version      1.1
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-profile-sections.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-profile-sections.user.js
 // @match        https://*.pointclickcare.com/*
@@ -52,7 +52,9 @@
     for (var up = 0; up < 8 && node; up++) {
       node = node.parentElement;
       if (!node) break;
-      if (!node.querySelector('table')) continue;
+      var tbl = node.querySelector('table');
+      if (!tbl) continue;
+      if (tbl.querySelectorAll('tr').length > 12) continue;
       if (node.querySelectorAll('*').length > 1500) continue;
       var clean = true;
       for (var g = 0; g < GUARDS.length; g++) {
@@ -64,7 +66,24 @@
     return null;
   }
 
+  // v1.1 (2026-10-19, the invisible-notes incident): the
+  // heading hunt ran on EVERY page. On the Progress
+  // Notes view-all page a stray 'External Facilities'
+  // text let the card climb land on the notes table's
+  // own wrapper (no guarded headings exist there) and
+  // display:none hid EVERY note. Two hard gates now:
+  // (1) this script only ever runs on a page that
+  // carries Profile furniture (an 'Admission Record' or
+  // 'Resident Profile' heading); (2) a card whose table
+  // has more than 12 rows is a page list, never a
+  // profile section, and is never hidden.
+  function isProfilePage() {
+    return containsHeading(document.body, 'Admission Record') ||
+      containsHeading(document.body, 'Resident Profile');
+  }
+
   function run() {
+    if (!isProfilePage()) return;
     TARGETS.forEach(function (text) {
       headingEls(text).forEach(function (h) {
         var card = sectionCard(h, text);
