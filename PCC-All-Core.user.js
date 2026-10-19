@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.3.0
+// @version      2.6.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5700,7 +5700,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		onMouseDown() {
 			const o = this.opts || {};
-			if (o.click || o.delegate || o.nav) this.hooks().hlTile?.(this.card(), false);
+			if (o.click || o.delegate || o.nav || o.action) this.hooks().hlTile?.(this.card(), false);
 		}
 		onClick() {
 			const o = this.opts || {};
@@ -5730,6 +5730,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 				return;
 			}
+			if (o.action) {
+				h.action?.(o.action);
+				return;
+			}
 			if (o.click) {
 				h.queueCopy?.(o.click.label, o.click.value);
 				h.flashLabel?.(this.labelSpan(), this.card());
@@ -5737,8 +5741,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		render() {
 			const o = this.opts || {};
-			const clickable = !!(o.click || o.delegate || o.nav);
-			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.full ? "flex:1 1 100%;min-width:0;" : o.wide ? "flex:1 1 520px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const clickable = !!(o.click || o.delegate || o.nav || o.action);
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.full ? "flex:none;width:100%;min-width:0;" : o.wide ? "flex:1 1 520px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
 			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
 			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
 			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
@@ -8397,7 +8401,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			"ownnotes",
 			"orders",
 			"weights",
-			"dashmeds"
+			"dashmeds",
+			"hisnotes"
 		];
 		function emptyPacket() {
 			var stops = {};
@@ -8761,6 +8766,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				parseAssessments(document);
 			} catch (e) {}
 			try {
+				parseOpenedConsult(document);
+			} catch (e) {}
+			try {
+				parseLabReport(document);
+			} catch (e) {}
+			try {
 				parseProfile(document);
 			} catch (e) {}
 			try {
@@ -8795,7 +8806,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (!doc || doc !== document) return "copy";
 			var h = location.href;
 			if (reader === "profile") return /careclientprofile/i.test(h) ? "native" : "copy";
-			if (reader === "assess") return /cp_assessment|assessments/i.test(h) ? "native" : "copy";
+			if (reader === "assess") return /cp_assessment|assessments|mdssection/i.test(h) ? "native" : "copy";
 			if (reader === "results") return /resultsportal|labresults/i.test(h) ? "native" : "copy";
 			if (reader === "orders") return /orders/i.test(h) ? "native" : "copy";
 			return "copy";
@@ -8805,6 +8816,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (r && r.parseAssessments) {
 				curStrength = strengthFor("assess", doc);
 				return r.parseAssessments(doc, gatherCtx());
+			}
+		}
+		function parseOpenedConsult(doc) {
+			var r = window.__tmReaders;
+			if (r && r.parseOpenedConsult) {
+				curStrength = strengthFor("assess", doc);
+				return r.parseOpenedConsult(doc, gatherCtx());
+			}
+		}
+		function parseLabReport(doc) {
+			var r = window.__tmReaders;
+			if (r && r.parseLabReport) {
+				curStrength = strengthFor("results", doc);
+				return r.parseLabReport(doc, gatherCtx());
 			}
 		}
 		function parseProfile(doc) {
@@ -9160,6 +9185,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		try {
 			window.__tmGather = {
 				packet,
+				key: residentKey,
 				parseAssessments,
 				parseProfile,
 				parseResults,
@@ -9250,6 +9276,86 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				at: G.nowT(),
 				summary: (visits.length ? "Your consults: " + visits.slice(0, 12).join(", ") : "") + (mdAck ? " · latest MD acknowledgement " + mdAck : "")
 			});
+			if (visits.length) landHisNotes(visits.map(function(d) {
+				return {
+					date: d,
+					text: null,
+					full: false
+				};
+			}), G);
+		}
+		function landHisNotes(entries, G) {
+			var cur = G.packet.stops.hisnotes;
+			var byDate = {};
+			if (cur.status === "landed" && cur.list) cur.list.forEach(function(e) {
+				byDate[e.date] = e;
+			});
+			entries.forEach(function(e) {
+				var old = byDate[e.date];
+				if (!old) {
+					byDate[e.date] = e;
+					return;
+				}
+				if (e.full && !old.full) byDate[e.date] = e;
+				else if (e.full && old.full && (e.text || "").length > (old.text || "").length) byDate[e.date] = e;
+			});
+			var list = Object.keys(byDate).map(function(k) {
+				return byDate[k];
+			}).sort(function(a, b) {
+				return new Date(b.date) - new Date(a.date);
+			}).slice(0, 24);
+			var fullN = list.filter(function(e) {
+				return e.full;
+			}).length;
+			var rec = {
+				source: "Assessments",
+				at: G.nowT(),
+				list,
+				summary: "Your notes: " + list.length + " consults · " + fullN + " full text · latest " + (list[0] ? list[0].date : "-")
+			};
+			if (cur.status !== "landed") {
+				G.land("hisnotes", rec);
+				return;
+			}
+			var inc = G.strength || "copy";
+			var RANK = {
+				weak: 0,
+				copy: 1,
+				native: 2
+			};
+			if ((RANK[inc] || 0) < (RANK[cur.strength || "copy"] || 0)) return;
+			rec.strength = inc;
+			rec.status = "landed";
+			G.packet.stops.hisnotes = rec;
+			G.publish();
+			G.saveStored();
+		}
+		function parseOpenedConsult(doc, G) {
+			var tas = doc.querySelectorAll("textarea[name^=\"Cust_\"]");
+			if (!tas.length) return;
+			var parts = [];
+			for (var i = 0; i < tas.length; i++) {
+				var v = (tas[i].value || "").trim();
+				if (v) parts.push(v);
+			}
+			if (!parts.length) return;
+			var ed = doc.querySelector("input[name=\"ESOLediteddate\"]");
+			var dm = ed && /^(\d{4})-(\d{2})-(\d{2})/.exec(ed.value || "");
+			if (!dm) return;
+			var date = parseInt(dm[2], 10) + "/" + parseInt(dm[3], 10) + "/" + dm[1];
+			var radio = doc.querySelector("input[name=\"Cust_A_A\"]:checked");
+			var evalNames = {
+				"1": "New",
+				"2": "Follow Up",
+				"3": "Other"
+			};
+			var entry = {
+				date,
+				text: parts.join("\n").slice(0, 1500),
+				full: true
+			};
+			if (radio && evalNames[radio.value]) entry.evalType = evalNames[radio.value];
+			landHisNotes([entry], G);
 		}
 		function landRelations(summary, G) {
 			var cur = G.packet.stops.relations;
@@ -9604,6 +9710,67 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				summary: reports.length + " reports · latest " + (reports[0].name || "") + " " + (reports[0].date || "")
 			});
 		}
+		function parseLabReport(doc, G) {
+			var tables = doc.querySelectorAll("table");
+			var tbl = null;
+			for (var i = 0; i < tables.length; i++) {
+				var h = tables[i].querySelector("tr");
+				if (h && /Ref\. Range/i.test(h.textContent || "") && /Flag/i.test(h.textContent || "")) {
+					tbl = tables[i];
+					break;
+				}
+			}
+			if (!tbl) return;
+			var date = "";
+			var allText = doc.body && doc.body.textContent || "";
+			var dm = /(?:Collected|Result Date|Report Date|Ordered)[^0-9]{0,20}(\d{1,2}\/\d{1,2}\/\d{4})/i.exec(allText);
+			if (dm) date = dm[1];
+			if (!date) {
+				var any = /(\d{1,2}\/\d{1,2}\/\d{4})/.exec(allText);
+				if (any) date = any[1];
+			}
+			var analytes = [];
+			var rows = tbl.querySelectorAll("tr");
+			for (var r2 = 1; r2 < rows.length; r2++) {
+				var cells = rows[r2].cells ? Array.prototype.map.call(rows[r2].cells, ctxt) : [];
+				if (cells.length < 6) continue;
+				var name = cells[1] || "";
+				var value = cells[2] || "";
+				if (!name || !value || !/^[\d.<>]+/.test(value)) continue;
+				analytes.push({
+					name: name.slice(0, 60),
+					value,
+					units: cells[3] || "",
+					flag: (cells[5] || "").trim().slice(0, 3),
+					date
+				});
+			}
+			if (!analytes.length) return;
+			var cur = G.packet.stops.labs;
+			var rec = {
+				source: "Results",
+				at: G.nowT(),
+				reports: cur.status === "landed" && cur.reports || [],
+				analytes,
+				summary: (cur.status === "landed" && cur.reports ? cur.reports.length + " reports · " : "") + analytes.length + " analytes from report " + date
+			};
+			if (cur.status !== "landed") {
+				G.land("labs", rec);
+				return;
+			}
+			var inc = G.strength || "copy";
+			var RANK = {
+				weak: 0,
+				copy: 1,
+				native: 2
+			};
+			if ((RANK[inc] || 0) < (RANK[cur.strength || "copy"] || 0)) return;
+			rec.strength = inc;
+			rec.status = "landed";
+			G.packet.stops.labs = rec;
+			G.publish();
+			G.saveStored();
+		}
 		var PSYCH_MED_RE = /alprazolam|xanax|citalopram|celexa|escitalopram|lexapro|sertraline|zoloft|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|duloxetine|cymbalta|desvenlafaxine|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|vortioxetine|clozapine|clozaril|olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|lurasidone|latuda|cariprazine|brexpiprazole|haloperidol|haldol|fluphenazine|chlorpromazine|perphenazine|loxapine|asenapine|iloperidone|divalproex|depakote|valproate|lamotrigine|lamictal|carbamazepine|tegretol|oxcarbazepine|lithium|gabapentin|neurontin|pregabalin|lyrica|topiramate|hydroxyzine|vistaril|buspirone|clonazepam|klonopin|lorazepam|ativan|diazepam|valium|temazepam|zolpidem|ambien|eszopiclone|zaleplon|ramelteon|suvorexant|doxepin|amitriptyline|nortriptyline|imipramine|clomipramine|methylphenidate|amphetamine|adderall|lisdexamfetamine|vyvanse|atomoxetine|guanfacine|clonidine|prazosin|propranolol|benztropine|donepezil|memantine|rivastigmine|galantamine|naltrexone|acamprosate|disulfiram|methadone|buprenorphine/i;
 		function parseOrders(doc, G) {
 			var active = [], psych = [];
@@ -9647,6 +9814,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		window.__tmReaders = {
 			parseAssessments,
+			parseOpenedConsult,
+			parseLabReport,
 			parseProfile,
 			parseResults,
 			parseOrders
@@ -9870,13 +10039,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 		}
 		function hlAllTiles() {
-			var row = document.getElementById("tmCardsRow");
-			if (!row) return;
-			var tiles = row.querySelectorAll(".pcc-fill-copy, [data-tm-copy=\"1\"]");
+			if (!document.getElementById("tmCardsRow")) return;
+			var tiles = document.querySelectorAll("#tmCardsRow .pcc-fill-copy, #tmCardsRow [data-tm-copy=\"1\"], #tmCardsRow2 .pcc-fill-copy, #tmCardsRow2 [data-tm-copy=\"1\"]");
 			for (var i = 0; i < tiles.length; i++) hlTile(tiles[i], true);
 		}
 		function hlRestoreAll() {
-			var lit = document.querySelectorAll("#tmCardsRow [data-tm-hl=\"1\"]");
+			var lit = document.querySelectorAll("#tmCardsRow [data-tm-hl=\"1\"], #tmCardsRow2 [data-tm-hl=\"1\"]");
 			for (var i = 0; i < lit.length; i++) {
 				var tl = lit[i];
 				tl.removeAttribute("data-tm-hl");
@@ -9911,7 +10079,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				goWtsVitals,
 				medsPanel,
 				fireClick,
-				flashLabel
+				flashLabel,
+				action: function(name) {
+					if (name === "yourwords" && window.__tmYourWordsApi) window.__tmYourWordsApi.open();
+				}
 			};
 		} catch (e) {}
 		function fireClick(el) {
@@ -10091,6 +10262,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				d.rel = relValue();
 				d.dx = feedDx;
 				d.beh = feedBeh;
+				d.words = window.__tmYourWordsApi ? window.__tmYourWordsApi.get() : "";
+				d.summary = window.__tmSummary && lastStops ? window.__tmSummary.text(lastStops) : "";
 				d.stampRel = feedStampRel;
 				d.stampBims = feedStampBims;
 				d.stampMeds = feedStampMeds;
@@ -10136,6 +10309,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var row = document.getElementById(ROW_ID);
 			if (!d) {
 				if (row) row.remove();
+				var or2 = document.getElementById("tmCardsRow2");
+				if (or2) or2.remove();
 				return;
 			}
 			try {
@@ -10153,6 +10328,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						allergies: d.allergies || null,
 						meds: d.medsFill !== null && d.medsFill !== void 0 ? d.medsFill : d.meds || null,
 						rel: d.rel || null,
+						bims: d.bims || null,
+						dx: d.dx || null,
 						key: chartNumMatch() || null,
 						ts: window.__tmChartTs
 					}));
@@ -10188,6 +10365,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				d.rel || "",
 				d.dx || "",
 				d.beh || "",
+				d.words || "",
+				d.summary || "",
 				d.stampRel || "",
 				d.stampBims || "",
 				d.stampMeds || "",
@@ -10195,12 +10374,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				d.stampBeh || "",
 				tw ? (tw.age ? "1" : "0") + (tw.allergies ? "1" : "0") + (tw.meds ? "1" : "0") + (tw.rel ? "1" : "0") : "----"
 			].join("|");
-			if (row && row.getAttribute("data-sig") === sig) return;
+			if (row && row.getAttribute("data-sig") === sig && document.getElementById("tmCardsRow2")) return;
 			if (row) row.remove();
+			var oldRow2 = document.getElementById("tmCardsRow2");
+			if (oldRow2) oldRow2.remove();
 			row = document.createElement("div");
 			row.id = ROW_ID;
+			var row2 = document.createElement("div");
+			row2.id = "tmCardsRow2";
+			row2.style.cssText = "display:flex;flex-direction:column;gap:10px;margin:0 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
 			row.setAttribute("data-sig", sig);
-			row.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+			row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
 			function mkTile(label, value, opts, chip, stamp) {
 				var el = document.createElement("tm-tile");
 				el.label = label;
@@ -10258,6 +10442,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				natW: true,
 				nowrap: true,
 				fit: true,
+				warn: !!(tw && tw.bims),
 				click: {
 					label: "BIMS",
 					value: d.bims || ""
@@ -10310,9 +10495,31 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				warn: !!(tw && tw.meds),
 				delegate: "meds"
 			}, medsChip, d.stampMeds));
-			row.appendChild(mkTile("Diagnoses", d.dx || "", {
+			row2.appendChild(mkTile("Summary", d.summary || "", {
 				full: true,
 				multi: true,
+				size: 13,
+				weight: 600,
+				click: {
+					label: "Summary",
+					value: d.summary || ""
+				},
+				fill: {
+					label: "Summary",
+					value: d.summary || ""
+				}
+			}));
+			row2.appendChild(mkTile("Your words", d.words || "", {
+				full: true,
+				multi: true,
+				size: 13,
+				weight: 600,
+				action: "yourwords"
+			}));
+			row2.appendChild(mkTile("Diagnoses", d.dx || "", {
+				full: true,
+				multi: true,
+				warn: !!(tw && tw.dx),
 				size: 13,
 				weight: 600,
 				click: {
@@ -10324,13 +10531,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					value: d.dx || ""
 				}
 			}, null, d.stampDx));
-			row.appendChild(mkTile("Behaviors", d.beh || "", {
+			row2.appendChild(mkTile("Behaviors", d.beh || "", {
 				full: true,
 				multi: true,
 				size: 13,
 				weight: 600
 			}, null, d.stampBeh));
 			bar.parentNode.insertBefore(row, bar.nextSibling);
+			bar.parentNode.insertBefore(row2, row.nextSibling);
 			var fitIt = function() {
 				fitAllergies(row);
 				fitMeds(row);
@@ -10521,10 +10729,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				renderHighChip();
 			}, wait);
 		}
+		var lastStops = null;
 		function pullFromPacket(fromSettleEvent) {
 			try {
 				if (!fromSettleEvent && window.__tmCore && window.__tmCore.settled && window.__tmCore.settled() && document.getElementById("tmCardsRow")) return;
 				var n = document.getElementById("tmGatherPacket");
+				try {
+					var pk = JSON.parse(n && n.textContent || "{}");
+					if (pk && pk.stops) lastStops = pk.stops;
+				} catch (e) {}
 				if (!n) return;
 				var pkt = JSON.parse(n.textContent || "{}");
 				if (!pkt.stops) return;
@@ -10584,6 +10797,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		setTimeout(pullFromPacket, 300);
 		setTimeout(pullFromPacket, 900);
 		setTimeout(pullFromPacket, 3500);
+		document.addEventListener("tm-yourwords", function() {
+			scheduleBuild();
+		});
 		document.addEventListener("tm-gather-feed", function(e) {
 			var d = e && e.detail || {};
 			var changed = false;
@@ -10931,7 +11147,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				age: false,
 				allergies: false,
 				meds: false,
-				rel: false
+				rel: false,
+				bims: false,
+				dx: false
 			};
 			if (chart.ageSex) {
 				var hm = txt.match(/^[ \t]*HPI[ \t]+(\d{1,3})[MF]\b/m);
@@ -10991,6 +11209,65 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						v.meds = diff;
 					}
 				}
+			}
+			if (chart.bims) {
+				var cm2 = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+				if (cm2) {
+					var parseD = function(ds) {
+						var p = ds.split("/");
+						var y = +p[2];
+						if (y < 100) y += 2e3;
+						return new Date(y, +p[0] - 1, +p[1]);
+					};
+					var chartDate = parseD(cm2[1]);
+					var threshold = new Date(chartDate);
+					threshold.setMonth(threshold.getMonth() - 6);
+					var noteLatest = null;
+					var blines = txt.split("\n");
+					for (var bi = 0; bi < blines.length; bi++) {
+						if (!/BIMS/i.test(blines[bi])) continue;
+						var scan = blines[bi] + "\n" + (blines[bi + 1] || "");
+						var re2 = /(\d{1,2})\s+on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/g, mm;
+						while (mm = re2.exec(scan)) {
+							var dt = parseD(mm[2]);
+							if (!noteLatest || dt > noteLatest) noteLatest = dt;
+						}
+					}
+					v.bims = !noteLatest || noteLatest < threshold;
+				}
+			}
+			if (chart.dx) {
+				var dsec = null;
+				var dlines = txt.split("\n"), dhi = -1, dei = -1, di2 = 0;
+				for (; di2 < dlines.length; di2++) if (/^\s*DX\s*$/.test(dlines[di2])) {
+					dhi = di2;
+					break;
+				}
+				if (dhi !== -1) {
+					for (di2 = dhi + 1; di2 < dlines.length; di2++) if (/^\s*Psych meds\s*$/.test(dlines[di2])) {
+						dei = di2;
+						break;
+					}
+					if (dei === -1) dei = dlines.length;
+					dsec = dlines.slice(dhi + 1, dei).join("\n");
+				}
+				var norm = function(x) {
+					return String(x).toLowerCase().replace(/[^a-z0-9.]+/g, " ").replace(/\s+/g, " ").trim();
+				};
+				var noteDxNorm = dsec ? norm(dsec) : "";
+				var missing = false;
+				String(chart.dx).split("\n").forEach(function(ln) {
+					var t = ln.trim();
+					if (t.length < 4) return;
+					var code = t.match(/\b[A-Z]\d{2}(?:\.\d{1,2})?\b/i);
+					var namePart = norm(t.replace(/\b[A-Z]\d{2}(?:\.\d{1,2})?\b/i, ""));
+					var carried = false;
+					if (code && noteDxNorm.indexOf(code[0].toLowerCase()) !== -1) carried = true;
+					if (!carried && namePart.length >= 10 && noteDxNorm.indexOf(namePart) !== -1) carried = true;
+					if (!carried && norm(t).length >= 10 && noteDxNorm.indexOf(norm(t)) !== -1) carried = true;
+					if (!carried) missing = true;
+				});
+				v.dx = missing;
 			}
 			if (chart.rel) {
 				var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/im);
@@ -11053,6 +11330,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			var mf = findMedsField(field);
 			var v = tileVerdicts(txt, mf ? mf.value || "" : null, chart);
+			var evalEl = document.querySelector("input[name=\"Cust_A_A\"]:checked");
+			if (!!!(evalEl && String(evalEl.value) === "1")) {
+				v.rel = false;
+				v.allergies = false;
+				v.dx = false;
+			}
 			var s = JSON.stringify(v);
 			if (s !== tileWarnLast || Date.now() - tileWarnTs > 2e4) {
 				tileWarnLast = s;
@@ -11063,6 +11346,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						allergies: v.allergies,
 						meds: v.meds,
 						rel: v.rel,
+						bims: v.bims,
+						dx: v.dx,
 						key: chart && chart.key || null,
 						ts: tileWarnTs
 					}));
@@ -11083,6 +11368,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}, 15e3);
 			}
 		}
+		window.addEventListener("pagehide", function() {
+			try {
+				clearTileWarn();
+			} catch (e) {}
+		});
+		window.addEventListener("beforeunload", function() {
+			try {
+				clearTileWarn();
+			} catch (e) {}
+		});
 		var tileInputLast = 0;
 		document.addEventListener("input", function(e) {
 			if (!e.isTrusted) return;
@@ -11156,5 +11451,275 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		].forEach(function(ms) {
 			setTimeout(publishTileWarn, ms);
 		});
+	})();
+	(function() {
+		"use strict";
+		function store() {
+			var w = window;
+			try {
+				if (window.top && window.top !== window) w = window.top;
+			} catch (e) {}
+			if (!w.__tmYourWords) w.__tmYourWords = {};
+			return w.__tmYourWords;
+		}
+		function key() {
+			try {
+				var k = window.__tmCore && window.__tmCore.key() || "";
+				if (!k && window.__tmGather && window.__tmGather.key) k = window.__tmGather.key() || "";
+				return k;
+			} catch (e) {
+				return "";
+			}
+		}
+		function get() {
+			var k = key();
+			return k ? store()[k] || "" : "";
+		}
+		function set(v) {
+			var k = key();
+			if (!k) return;
+			store()[k] = v;
+			document.dispatchEvent(new CustomEvent("tm-yourwords"));
+			try {
+				if (window.top && window.top !== window && window.top.document) window.top.document.dispatchEvent(new window.top.CustomEvent("tm-yourwords"));
+			} catch (e) {}
+		}
+		var PANEL_ID = "tmYourWordsPanel";
+		function close() {
+			var p = document.getElementById(PANEL_ID);
+			if (p) p.remove();
+		}
+		function open() {
+			close();
+			var p = document.createElement("div");
+			p.id = PANEL_ID;
+			p.style.cssText = "position:fixed;right:18px;bottom:18px;z-index:2147483000;width:min(520px,92vw);background:#fff7ed;border:1px solid #fed7aa;border-radius:12px;padding:12px 14px;box-shadow:0 12px 32px rgba(15,23,42,.22);font-family:-apple-system,Helvetica,Arial,sans-serif;";
+			p.innerHTML = "<div style=\"display:flex;align-items:center;justify-content:space-between;\"><div style=\"font:700 13px -apple-system,Helvetica,Arial,sans-serif;color:#9a3412;\">Your words</div><button type=\"button\" id=\"tmYourWordsDone\" style=\"font:600 12px -apple-system,Helvetica,Arial,sans-serif;color:#9a3412;background:#ffedd5;border:1px solid #fdba74;border-radius:8px;padding:4px 12px;cursor:pointer;\">Done</button></div><textarea id=\"tmYourWordsText\" rows=\"4\" placeholder=\"Dictate or type here — verbatim, editable. Lives only in this tab; nothing is saved or sent.\" style=\"width:100%;box-sizing:border-box;margin-top:8px;border:1px solid #fdba74;border-radius:8px;padding:8px;font:400 14px -apple-system,Helvetica,Arial,sans-serif;color:#0f172a;background:#ffffff;resize:vertical;\"></textarea>";
+			document.body.appendChild(p);
+			var ta = p.querySelector("#tmYourWordsText");
+			ta.value = get();
+			ta.addEventListener("input", function() {
+				set(ta.value);
+			});
+			ta.addEventListener("keydown", function(e) {
+				if (e.key === "Escape") {
+					e.stopPropagation();
+					close();
+				}
+				e.stopPropagation();
+			});
+			p.querySelector("#tmYourWordsDone").addEventListener("click", close);
+			try {
+				ta.focus();
+			} catch (e) {}
+		}
+		window.__tmYourWordsApi = {
+			get,
+			open,
+			close
+		};
+	})();
+	(function() {
+		"use strict";
+		function landed(stops, k) {
+			var s = stops && stops[k];
+			return s && s.status === "landed" ? s : null;
+		}
+		function days(a, b) {
+			return Math.round((new Date(a) - new Date(b)) / 864e5);
+		}
+		function hisThread(stops) {
+			var h = landed(stops, "hisnotes");
+			if (!h || !h.list || !h.list.length) return "";
+			var latest = h.list[0], oldest = h.list[h.list.length - 1];
+			var out = "Your last note " + latest.date + (latest.evalType ? " (" + latest.evalType + ")" : "");
+			if (h.list.length > 1) out += " · " + h.list.length + " notes since " + oldest.date;
+			var ago = days(new Date(), new Date(latest.date));
+			if (ago > 45) out += " · " + ago + " days ago";
+			if (latest.full && latest.text) {
+				var fu = /\bf\/(?:o|up)\s+([0-9][^\n.]{0,24})/i.exec(latest.text);
+				if (fu) out += " · plan: f/o " + fu[1].trim();
+			}
+			return out + ".";
+		}
+		function notesPicture(stops) {
+			var b = landed(stops, "behaviors");
+			if (!b || !b.summary) return "";
+			var t = String(b.summary).replace(/\s+/g, " ").trim();
+			if (!t) return "";
+			if (/\bno (behaviors|incidents|events)\b|\bnone (reported|observed)\b/i.test(t)) return "Progress notes: no behaviors flagged.";
+			var first = t.split(/(?<=[.!])\s/)[0].slice(0, 130);
+			return "Progress notes: " + first + (/[.!]$/.test(first) ? "" : ".");
+		}
+		function weightTrend(stops) {
+			var w = landed(stops, "weights");
+			if (!w || !w.series || !w.series.length) return "";
+			var s = w.series, cur = s[0];
+			if (s.length < 2) return "Weight " + cur.weight + " lbs (single reading).";
+			var prev = s[1];
+			var d = Math.round((parseFloat(cur.weight) - parseFloat(prev.weight)) * 10) / 10;
+			var pct = Math.abs(d) / (parseFloat(prev.weight) || 1) * 100;
+			if (Math.abs(d) >= 5 || pct >= 3) return "Weight " + prev.weight + " -> " + cur.weight + " lbs (" + (d > 0 ? "+" : "") + d + ") since " + prev.date + ".";
+			return "Weight stable (" + cur.weight + " lbs).";
+		}
+		function bimsTrend(stops) {
+			var b = landed(stops, "bims");
+			if (!b || !b.series || !b.series.length) return "";
+			var s = b.series, cur = s[0];
+			if (s.length < 2) return "BIMS " + cur.score + " (only reading).";
+			var prev = s[1];
+			var d = cur.score - prev.score;
+			if (Math.abs(d) >= 2) return "BIMS " + prev.score + " -> " + cur.score + " since " + prev.date + ".";
+			return "BIMS stable (" + cur.score + ").";
+		}
+		var MONITOR = [
+			{
+				med: /lithium/i,
+				label: "lithium",
+				checks: [
+					{
+						re: /lithium/i,
+						name: "Lithium",
+						level: true
+					},
+					{
+						re: /creatinine/i,
+						name: "creatinine"
+					},
+					{
+						re: /tsh|thyroid/i,
+						name: "TSH"
+					}
+				]
+			},
+			{
+				med: /valpro|divalproex|depakote/i,
+				label: "valproate",
+				checks: [
+					{
+						re: /valpro/i,
+						name: "Valproic acid",
+						level: true
+					},
+					{
+						re: /\balt\b|alanine/i,
+						name: "ALT"
+					},
+					{
+						re: /\bast\b|aspartate/i,
+						name: "AST"
+					},
+					{
+						re: /platelet/i,
+						name: "platelets"
+					}
+				]
+			},
+			{
+				med: /carbamazepine|tegretol/i,
+				label: "carbamazepine",
+				checks: [
+					{
+						re: /carbamazepine/i,
+						name: "Carbamazepine",
+						level: true
+					},
+					{
+						re: /leukocytes|\bwbc\b/i,
+						name: "WBC"
+					},
+					{
+						re: /sodium/i,
+						name: "sodium"
+					}
+				]
+			},
+			{
+				med: /clozapine|clozaril/i,
+				label: "clozapine",
+				checks: [{
+					re: /neutrophil|\banc\b/i,
+					name: "ANC",
+					level: true
+				}, {
+					re: /leukocytes|\bwbc\b/i,
+					name: "WBC"
+				}]
+			}
+		];
+		var AP_RE = /risperidone|risperdal|olanzapine|zyprexa|quetiapine|seroquel|aripiprazole|abilify|paliperidone|invega|haloperidol|haldol|lurasidone|latuda|cariprazine|vraylar|ziprasidone|geodon|fluphenazine|chlorpromazine|loxapine|asenapine|brexpiprazole|rexulti/i;
+		function shortName(n) {
+			var s = String(n || "");
+			var i = s.indexOf(":");
+			if (i >= 0) s = s.slice(i + 1);
+			s = s.replace(/\s+LOINC.*$/i, "").replace(/\s+Lab Test.*$/i, "");
+			return s.trim().slice(0, 26);
+		}
+		function labsPart(stops) {
+			var l = landed(stops, "labs");
+			if (!l || !l.analytes || !l.analytes.length) return "";
+			var parts = [];
+			var abn = l.analytes.filter(function(a) {
+				return /h|l|\*/i.test(a.flag || "");
+			});
+			if (abn.length) parts.push("Abnormal: " + abn.slice(0, 4).map(function(a) {
+				return shortName(a.name) + " " + a.value + " (" + a.flag + (a.date ? ", " + a.date : "") + ")";
+			}).join(", ") + ".");
+			var o = landed(stops, "orders");
+			var medNames = o && o.psych ? o.psych.map(function(p) {
+				return p.name || "";
+			}).join(" ") : "";
+			MONITOR.forEach(function(m) {
+				if (!m.med.test(medNames)) return;
+				m.checks.forEach(function(c) {
+					var hit = l.analytes.find(function(a) {
+						return c.re.test(a.name);
+					});
+					if (hit && c.level) parts.push(c.name + " " + hit.value + (hit.date ? " (" + hit.date + ")" : "") + ".");
+					else if (!hit && c.level) parts.push("No " + c.name.toLowerCase() + " level among the labs read (" + m.label + ").");
+				});
+			});
+			if (!parts.length) return "Labs: nothing abnormal flagged.";
+			return "Labs: " + parts.join(" ");
+		}
+		function gdrPart(stops) {
+			var o = landed(stops, "orders");
+			if (!o || !o.psych) return "";
+			var aps = o.psych.filter(function(p) {
+				return AP_RE.test(p.name || "") && p.start;
+			});
+			if (!aps.length) return "";
+			aps.sort(function(a, b) {
+				return new Date(a.start) - new Date(b.start);
+			});
+			var ap = aps[0];
+			var name = String(ap.name).split(/\s+/)[0];
+			var months = Math.max(0, Math.round(days(new Date(), new Date(ap.start)) / 30.4));
+			var taper = "";
+			var h = landed(stops, "hisnotes");
+			if (h && h.list) {
+				var hit = h.list.find(function(e) {
+					if (!e.full || !e.text) return false;
+					var last = e.text.replace(/\s+$/, "").split("\n").pop() || "";
+					return /gdr|taper|dose reduction|reduc\w+ (the )?dose/i.test(last) || /\bgdr\b/i.test(e.text);
+				});
+				if (hit) taper = "taper discussed " + hit.date;
+			}
+			return "GDR: " + name + " since " + ap.start + " (" + months + " mo), " + (taper || "no taper mentioned in your notes") + ".";
+		}
+		function text(stops) {
+			if (!stops) return "";
+			return [
+				hisThread(stops),
+				notesPicture(stops),
+				labsPart(stops),
+				weightTrend(stops),
+				bimsTrend(stops),
+				gdrPart(stops)
+			].filter(function(s) {
+				return !!s;
+			}).join(" ").slice(0, 900);
+		}
+		window.__tmSummary = { text };
 	})();
 })();
