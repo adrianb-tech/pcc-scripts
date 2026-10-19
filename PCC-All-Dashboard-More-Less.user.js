@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.15
+// @version      3.16
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -676,6 +676,40 @@
   // gathered in THIS document, for THIS resident, held
   // in memory - no storage keys to mismatch.
   var feedRel = '', feedBims = '', feedMeds = '';
+  // Pull, don't just listen (v3.16): the Gatherer runs
+  // BEFORE this script, so its first feed event fires
+  // before this listener exists and is lost - BIMS only
+  // survived because its fetch lands seconds later. The
+  // packet node in the page is the shared truth; read
+  // it directly at start and on every gather update.
+  function pullFromPacket() {
+    try {
+      var n = document.getElementById('tmGatherPacket');
+      if (!n) return;
+      var pkt = JSON.parse(n.textContent || '{}');
+      if (!pkt.stops) return;
+      var changed = false;
+      var rel = pkt.stops.relations;
+      if (rel && rel.status === 'landed' && rel.summary && rel.summary !== feedRel) { feedRel = rel.summary; changed = true; }
+      var b = pkt.stops.bims;
+      if (b && b.status === 'landed' && b.series && b.series[0]) {
+        var d = new Date(b.series[0].date);
+        if (!isNaN(d.getTime())) {
+          var bl = b.series[0].score + ' on ' + (d.getMonth() + 1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2);
+          if (bl !== feedBims) { feedBims = bl; changed = true; }
+        }
+      }
+      var o = pkt.stops.orders;
+      if (o && o.status === 'landed' && o.psych && o.psych.length) {
+        var ml = o.psych.map(function (p) { return '- ' + p.name; }).join('\n');
+        if (ml !== feedMeds) { feedMeds = ml; changed = true; }
+      }
+      if (changed) setTimeout(function () { buildCards(); }, 350);
+    } catch (e) {}
+  }
+  document.addEventListener('tm-gather-update', pullFromPacket);
+  setTimeout(pullFromPacket, 1200);
+  setTimeout(pullFromPacket, 3500);
   document.addEventListener('tm-gather-feed', function (e) {
     var d = (e && e.detail) || {};
     var changed = false;
