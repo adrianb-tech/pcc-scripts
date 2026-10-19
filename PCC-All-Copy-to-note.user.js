@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.12
+// @version      1.13
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -381,10 +381,17 @@
         else if (noteNone || chartNone) v.meds = noteNone !== chartNone;
         else {
           var noteMap = {}, chartMap = {}, diff = false, k;
-          content.forEach(function (l) { var p = parseMedLine(l); if (p) noteMap[p.canon] = normSpec(p.spec); });
-          String(chart.meds).split('\n').forEach(function (l) { var p = parseMedLine(l); if (p) chartMap[p.canon] = normSpec(p.spec); });
+          var noteSeq = [], chartSeq = [];
+          content.forEach(function (l) { var p = parseMedLine(l); if (p) { noteMap[p.canon] = normSpec(p.spec); noteSeq.push(p.canon); } });
+          String(chart.meds).split('\n').forEach(function (l) { var p = parseMedLine(l); if (p) { chartMap[p.canon] = normSpec(p.spec); chartSeq.push(p.canon); } });
           for (k in chartMap) { if (noteMap[k] !== chartMap[k]) { diff = true; break; } }
           if (!diff) { for (k in noteMap) { if (!(k in chartMap)) { diff = true; break; } } }
+          // ORDER COUNTS (his rule, 2026-10-19): the same
+          // meds in a different order than the chart list
+          // still shine red - his note's list must follow
+          // the tile's order (grouped by indication,
+          // seizure/Parkinson's last), not just contain it.
+          if (!diff && noteSeq.join('|') !== chartSeq.join('|')) diff = true;
           v.meds = diff;
         }
       }
