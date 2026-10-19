@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.13
+// @version      1.14
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -399,7 +399,24 @@
     if (chart.rel) {
       var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/mi);
       if (!cm || !cm[1].trim() || /^xx\b/i.test(cm[1].trim())) v.rel = true;
-      else v.rel = cm[1].trim().toLowerCase() !== String(chart.rel).trim().toLowerCase();
+      else {
+        // ORDER DOES NOT COUNT here (his rule, 2026-10-19 -
+        // the opposite of meds): the right relationships in
+        // a different order must NOT shine red. Compare the
+        // two sides as sets of names/relations.
+        var relSet = function (s) {
+          var out = {};
+          String(s).split(/[,;]|\s+and\s+/i).forEach(function (p) {
+            var q = p.replace(/^[\s\-]+|[\s\-]+$/g, '').toLowerCase().replace(/\s+/g, ' ');
+            if (q) out[q] = 1;
+          });
+          return out;
+        };
+        var nSet = relSet(cm[1]), cSet = relSet(chart.rel), rDiff = false, rk;
+        for (rk in cSet) { if (!nSet[rk]) { rDiff = true; break; } }
+        if (!rDiff) { for (rk in nSet) { if (!cSet[rk]) { rDiff = true; break; } } }
+        v.rel = rDiff;
+      }
     }
     return v;
   }
