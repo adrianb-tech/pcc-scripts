@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      1.0
+// @version      2.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -976,6 +976,7 @@
 	}
 	var anyString = /^[\s\S]{0,}$/;
 	var number$1 = /^-?\d+(?:\.\d+)?$/;
+	var boolean$1 = /^(?:true|false)$/i;
 	var lowercase = /^[^A-Z]*$/;
 	var uppercase = /^[^a-z]*$/;
 	var $ZodCheck = $constructor("$ZodCheck", (inst, def) => {
@@ -1760,6 +1761,24 @@
 	var $ZodNumberFormat = $constructor("$ZodNumberFormat", (inst, def) => {
 		$ZodCheckNumberFormat.init(inst, def);
 		$ZodNumber.init(inst, def);
+	});
+	var $ZodBoolean = $constructor("$ZodBoolean", (inst, def) => {
+		$ZodType.init(inst, def);
+		inst._zod.pattern = boolean$1;
+		inst._zod.parse = (payload, _ctx) => {
+			if (def.coerce) try {
+				payload.value = Boolean(payload.value);
+			} catch (_) {}
+			const input = payload.value;
+			if (typeof input === "boolean") return payload;
+			payload.issues.push({
+				expected: "boolean",
+				code: "invalid_type",
+				input,
+				inst
+			});
+			return payload;
+		};
 	});
 	var $ZodUnknown = $constructor("$ZodUnknown", (inst, def) => {
 		$ZodType.init(inst, def);
@@ -3174,6 +3193,12 @@
 			...normalizeParams(params)
 		});
 	}
+	function _boolean(Class, params) {
+		return new Class({
+			type: "boolean",
+			...normalizeParams(params)
+		});
+	}
 	function _unknown(Class) {
 		return new Class({ type: "unknown" });
 	}
@@ -3898,6 +3923,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (first !== void 0) json.multipleOf = first;
 			if (rest.length) json.allOf = [...json.allOf ?? [], ...rest.map((m) => ({ multipleOf: m }))];
 		}
+	};
+	var booleanProcessor = (_schema, _ctx, json, _params) => {
+		json.type = "boolean";
 	};
 	var neverProcessor = (_schema, _ctx, json, _params) => {
 		json.not = {};
@@ -4630,6 +4658,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 	function int(params) {
 		return _int(ZodNumberFormat, params);
 	}
+	var ZodBoolean = $constructor("ZodBoolean", (inst, def) => {
+		$ZodBoolean.init(inst, def);
+		ZodType.init(inst, def);
+		inst._zod.processJSONSchema = (ctx, json, params) => booleanProcessor(inst, ctx, json, params);
+	});
+	function boolean(params) {
+		return _boolean(ZodBoolean, params);
+	}
 	var ZodUnknown = $constructor("ZodUnknown", (inst, def) => {
 		$ZodUnknown.init(inst, def);
 		ZodType.init(inst, def);
@@ -4999,6 +5035,23 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 	}
 	var snapshot = null;
+	var WarnRecord = object({
+		age: boolean(),
+		allergies: boolean(),
+		meds: boolean(),
+		rel: boolean(),
+		key: string().nullable().optional(),
+		ts: number()
+	}).passthrough();
+	var NoteOpenRecord = object({ ts: number() }).passthrough();
+	function readLS(name) {
+		try {
+			const raw = localStorage.getItem(name);
+			return raw ? JSON.parse(raw) : null;
+		} catch (e) {
+			return null;
+		}
+	}
 	window.__tmCore = {
 		key() {
 			if (!cachedToken && !scanHeader()) return null;
@@ -5017,8 +5070,663 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		},
 		getSnapshot() {
 			return snapshot;
+		},
+		warn() {
+			const r = WarnRecord.safeParse(readLS("tmTileWarn"));
+			return r.success ? r.data : null;
+		},
+		noteOpen() {
+			const r = NoteOpenRecord.safeParse(readLS("tmNoteOpen"));
+			return r.success ? r.data : null;
 		}
 	};
+	var t$1 = globalThis;
+	var e$2 = t$1.ShadowRoot && (void 0 === t$1.ShadyCSS || t$1.ShadyCSS.nativeShadow) && "adoptedStyleSheets" in Document.prototype && "replace" in CSSStyleSheet.prototype;
+	var s$2 = Symbol();
+	var o$3 = new WeakMap();
+	var n$2 = class {
+		constructor(t, e, o) {
+			if (this._$cssResult$ = !0, o !== s$2) throw Error("CSSResult is not constructable. Use `unsafeCSS` or `css` instead.");
+			this.cssText = t, this.t = e;
+		}
+		get styleSheet() {
+			let t = this.o;
+			const s = this.t;
+			if (e$2 && void 0 === t) {
+				const e = void 0 !== s && 1 === s.length;
+				e && (t = o$3.get(s)), void 0 === t && ((this.o = t = new CSSStyleSheet()).replaceSync(this.cssText), e && o$3.set(s, t));
+			}
+			return t;
+		}
+		toString() {
+			return this.cssText;
+		}
+	};
+	var r$2 = (t) => new n$2("string" == typeof t ? t : t + "", void 0, s$2);
+	var S$1 = (s, o) => {
+		if (e$2) s.adoptedStyleSheets = o.map((t) => t instanceof CSSStyleSheet ? t : t.styleSheet);
+		else for (const e of o) {
+			const o = document.createElement("style"), n = t$1.litNonce;
+			void 0 !== n && o.setAttribute("nonce", n), o.textContent = e.cssText, s.appendChild(o);
+		}
+	};
+	var c$2 = e$2 ? (t) => t : (t) => t instanceof CSSStyleSheet ? ((t) => {
+		let e = "";
+		for (const s of t.cssRules) e += s.cssText;
+		return r$2(e);
+	})(t) : t;
+	var { is: i$2, defineProperty: e$1, getOwnPropertyDescriptor: h$1, getOwnPropertyNames: r$1, getOwnPropertySymbols: o$2, getPrototypeOf: n$1 } = Object, a$1 = globalThis, c$1 = a$1.trustedTypes, l$1 = c$1 ? c$1.emptyScript : "", p$1 = a$1.reactiveElementPolyfillSupport, d$1 = (t, s) => t, u$1 = {
+		toAttribute(t, s) {
+			switch (s) {
+				case Boolean:
+					t = t ? l$1 : null;
+					break;
+				case Object:
+				case Array: t = null == t ? t : JSON.stringify(t);
+			}
+			return t;
+		},
+		fromAttribute(t, s) {
+			let i = t;
+			switch (s) {
+				case Boolean:
+					i = null !== t;
+					break;
+				case Number:
+					i = null === t ? null : Number(t);
+					break;
+				case Object:
+				case Array: try {
+					i = JSON.parse(t);
+				} catch (t) {
+					i = null;
+				}
+			}
+			return i;
+		}
+	}, f$1 = (t, s) => !i$2(t, s), b$1 = {
+		attribute: !0,
+		type: String,
+		converter: u$1,
+		reflect: !1,
+		useDefault: !1,
+		hasChanged: f$1
+	};
+	Symbol.metadata ??= Symbol("metadata"), a$1.litPropertyMetadata ??= new WeakMap();
+	var y$1 = class extends HTMLElement {
+		static addInitializer(t) {
+			this._$Ei(), (this.l ??= []).push(t);
+		}
+		static get observedAttributes() {
+			return this.finalize(), this._$Eh && [...this._$Eh.keys()];
+		}
+		static createProperty(t, s = b$1) {
+			if (s.state && (s.attribute = !1), this._$Ei(), this.prototype.hasOwnProperty(t) && ((s = Object.create(s)).wrapped = !0), this.elementProperties.set(t, s), !s.noAccessor) {
+				const i = Symbol(), h = this.getPropertyDescriptor(t, i, s);
+				void 0 !== h && e$1(this.prototype, t, h);
+			}
+		}
+		static getPropertyDescriptor(t, s, i) {
+			const { get: e, set: r } = h$1(this.prototype, t) ?? {
+				get() {
+					return this[s];
+				},
+				set(t) {
+					this[s] = t;
+				}
+			};
+			return {
+				get: e,
+				set(s) {
+					const h = e?.call(this);
+					r?.call(this, s), this.requestUpdate(t, h, i);
+				},
+				configurable: !0,
+				enumerable: !0
+			};
+		}
+		static getPropertyOptions(t) {
+			return this.elementProperties.get(t) ?? b$1;
+		}
+		static _$Ei() {
+			if (this.hasOwnProperty(d$1("elementProperties"))) return;
+			const t = n$1(this);
+			t.finalize(), void 0 !== t.l && (this.l = [...t.l]), this.elementProperties = new Map(t.elementProperties);
+		}
+		static finalize() {
+			if (this.hasOwnProperty(d$1("finalized"))) return;
+			if (this.finalized = !0, this._$Ei(), this.hasOwnProperty(d$1("properties"))) {
+				const t = this.properties, s = [...r$1(t), ...o$2(t)];
+				for (const i of s) this.createProperty(i, t[i]);
+			}
+			const t = this[Symbol.metadata];
+			if (null !== t) {
+				const s = litPropertyMetadata.get(t);
+				if (void 0 !== s) for (const [t, i] of s) this.elementProperties.set(t, i);
+			}
+			this._$Eh = new Map();
+			for (const [t, s] of this.elementProperties) {
+				const i = this._$Eu(t, s);
+				void 0 !== i && this._$Eh.set(i, t);
+			}
+			this.elementStyles = this.finalizeStyles(this.styles);
+		}
+		static finalizeStyles(s) {
+			const i = [];
+			if (Array.isArray(s)) {
+				const e = new Set(s.flat(1 / 0).reverse());
+				for (const s of e) i.unshift(c$2(s));
+			} else void 0 !== s && i.push(c$2(s));
+			return i;
+		}
+		static _$Eu(t, s) {
+			const i = s.attribute;
+			return !1 === i ? void 0 : "string" == typeof i ? i : "string" == typeof t ? t.toLowerCase() : void 0;
+		}
+		constructor() {
+			super(), this._$Ep = void 0, this.isUpdatePending = !1, this.hasUpdated = !1, this._$Em = null, this._$Ev();
+		}
+		_$Ev() {
+			this._$ES = new Promise((t) => this.enableUpdating = t), this._$AL = new Map(), this._$E_(), this.requestUpdate(), this.constructor.l?.forEach((t) => t(this));
+		}
+		addController(t) {
+			(this._$EO ??= new Set()).add(t), void 0 !== this.renderRoot && this.isConnected && t.hostConnected?.();
+		}
+		removeController(t) {
+			this._$EO?.delete(t);
+		}
+		_$E_() {
+			const t = new Map(), s = this.constructor.elementProperties;
+			for (const i of s.keys()) this.hasOwnProperty(i) && (t.set(i, this[i]), delete this[i]);
+			t.size > 0 && (this._$Ep = t);
+		}
+		createRenderRoot() {
+			const t = this.shadowRoot ?? this.attachShadow(this.constructor.shadowRootOptions);
+			return S$1(t, this.constructor.elementStyles), t;
+		}
+		connectedCallback() {
+			this.renderRoot ??= this.createRenderRoot(), this.enableUpdating(!0), this._$EO?.forEach((t) => t.hostConnected?.());
+		}
+		enableUpdating(t) {}
+		disconnectedCallback() {
+			this._$EO?.forEach((t) => t.hostDisconnected?.());
+		}
+		attributeChangedCallback(t, s, i) {
+			this._$AK(t, i);
+		}
+		_$ET(t, s) {
+			const i = this.constructor.elementProperties.get(t), e = this.constructor._$Eu(t, i);
+			if (void 0 !== e && !0 === i.reflect) {
+				const h = (void 0 !== i.converter?.toAttribute ? i.converter : u$1).toAttribute(s, i.type);
+				this._$Em = t, null == h ? this.removeAttribute(e) : this.setAttribute(e, h), this._$Em = null;
+			}
+		}
+		_$AK(t, s) {
+			const i = this.constructor, e = i._$Eh.get(t);
+			if (void 0 !== e && this._$Em !== e) {
+				const t = i.getPropertyOptions(e), h = "function" == typeof t.converter ? { fromAttribute: t.converter } : void 0 !== t.converter?.fromAttribute ? t.converter : u$1;
+				this._$Em = e;
+				const r = h.fromAttribute(s, t.type);
+				this[e] = r ?? this._$Ej?.get(e) ?? r, this._$Em = null;
+			}
+		}
+		requestUpdate(t, s, i, e = !1, h) {
+			if (void 0 !== t) {
+				const r = this.constructor;
+				if (!1 === e && (h = this[t]), i ??= r.getPropertyOptions(t), !((i.hasChanged ?? f$1)(h, s) || i.useDefault && i.reflect && h === this._$Ej?.get(t) && !this.hasAttribute(r._$Eu(t, i)))) return;
+				this.C(t, s, i);
+			}
+			!1 === this.isUpdatePending && (this._$ES = this._$EP());
+		}
+		C(t, s, { useDefault: i, reflect: e, wrapped: h }, r) {
+			i && !(this._$Ej ??= new Map()).has(t) && (this._$Ej.set(t, r ?? s ?? this[t]), !0 !== h || void 0 !== r) || (this._$AL.has(t) || (this.hasUpdated || i || (s = void 0), this._$AL.set(t, s)), !0 === e && this._$Em !== t && (this._$Eq ??= new Set()).add(t));
+		}
+		async _$EP() {
+			this.isUpdatePending = !0;
+			try {
+				await this._$ES;
+			} catch (t) {
+				Promise.reject(t);
+			}
+			const t = this.scheduleUpdate();
+			return null != t && await t, !this.isUpdatePending;
+		}
+		scheduleUpdate() {
+			return this.performUpdate();
+		}
+		performUpdate() {
+			if (!this.isUpdatePending) return;
+			if (!this.hasUpdated) {
+				if (this.renderRoot ??= this.createRenderRoot(), this._$Ep) {
+					for (const [t, s] of this._$Ep) this[t] = s;
+					this._$Ep = void 0;
+				}
+				const t = this.constructor.elementProperties;
+				if (t.size > 0) for (const [s, i] of t) {
+					const { wrapped: t } = i, e = this[s];
+					!0 !== t || this._$AL.has(s) || void 0 === e || this.C(s, void 0, i, e);
+				}
+			}
+			let t = !1;
+			const s = this._$AL;
+			try {
+				t = this.shouldUpdate(s), t ? (this.willUpdate(s), this._$EO?.forEach((t) => t.hostUpdate?.()), this.update(s)) : this._$EM();
+			} catch (s) {
+				throw t = !1, this._$EM(), s;
+			}
+			t && this._$AE(s);
+		}
+		willUpdate(t) {}
+		_$AE(t) {
+			this._$EO?.forEach((t) => t.hostUpdated?.()), this.hasUpdated || (this.hasUpdated = !0, this.firstUpdated(t)), this.updated(t);
+		}
+		_$EM() {
+			this._$AL = new Map(), this.isUpdatePending = !1;
+		}
+		get updateComplete() {
+			return this.getUpdateComplete();
+		}
+		getUpdateComplete() {
+			return this._$ES;
+		}
+		shouldUpdate(t) {
+			return !0;
+		}
+		update(t) {
+			this._$Eq &&= this._$Eq.forEach((t) => this._$ET(t, this[t])), this._$EM();
+		}
+		updated(t) {}
+		firstUpdated(t) {}
+	};
+	y$1.elementStyles = [], y$1.shadowRootOptions = { mode: "open" }, y$1[d$1("elementProperties")] = new Map(), y$1[d$1("finalized")] = new Map(), p$1?.({ ReactiveElement: y$1 }), (a$1.reactiveElementVersions ??= []).push("2.1.2");
+	var t = globalThis;
+	var i$1 = (t) => t;
+	var s$1 = t.trustedTypes;
+	var e = s$1 ? s$1.createPolicy("lit-html", { createHTML: (t) => t }) : void 0;
+	var h = "$lit$";
+	var o$1 = `lit$${Math.random().toFixed(9).slice(2)}$`;
+	var n = "?" + o$1;
+	var r = `<${n}>`;
+	var l = document;
+	var c = () => l.createComment("");
+	var a = (t) => null === t || "object" != typeof t && "function" != typeof t;
+	var u = Array.isArray;
+	var d = (t) => u(t) || "function" == typeof t?.[Symbol.iterator];
+	var f = "[ 	\n\f\r]";
+	var v = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g;
+	var _ = /-->/g;
+	var m = />/g;
+	var p = RegExp(`>|${f}(?:([^\\s"'>=/]+)(${f}*=${f}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`, "g");
+	var g = /'/g;
+	var $ = /"/g;
+	var y = /^(?:script|style|textarea|title)$/i;
+	var x = (t) => (i, ...s) => ({
+		_$litType$: t,
+		strings: i,
+		values: s
+	});
+	var b = x(1);
+	var E = Symbol.for("lit-noChange");
+	var A = Symbol.for("lit-nothing");
+	var C = new WeakMap();
+	var P = l.createTreeWalker(l, 129);
+	function V(t, i) {
+		if (!u(t) || !t.hasOwnProperty("raw")) throw Error("invalid template strings array");
+		return void 0 !== e ? e.createHTML(i) : i;
+	}
+	var N = (t, i) => {
+		const s = t.length - 1, e = [];
+		let n, l = 2 === i ? "<svg>" : 3 === i ? "<math>" : "", c = v;
+		for (let i = 0; i < s; i++) {
+			const s = t[i];
+			let a, u, d = -1, f = 0;
+			for (; f < s.length && (c.lastIndex = f, u = c.exec(s), null !== u);) f = c.lastIndex, c === v ? "!--" === u[1] ? c = _ : void 0 !== u[1] ? c = m : void 0 !== u[2] ? (y.test(u[2]) && (n = RegExp("</" + u[2], "g")), c = p) : void 0 !== u[3] && (c = p) : c === p ? ">" === u[0] ? (c = n ?? v, d = -1) : void 0 === u[1] ? d = -2 : (d = c.lastIndex - u[2].length, a = u[1], c = void 0 === u[3] ? p : "\"" === u[3] ? $ : g) : c === $ || c === g ? c = p : c === _ || c === m ? c = v : (c = p, n = void 0);
+			const x = c === p && t[i + 1].startsWith("/>") ? " " : "";
+			l += c === v ? s + r : d >= 0 ? (e.push(a), s.slice(0, d) + h + s.slice(d) + o$1 + x) : s + o$1 + (-2 === d ? i : x);
+		}
+		return [V(t, l + (t[s] || "<?>") + (2 === i ? "</svg>" : 3 === i ? "</math>" : "")), e];
+	};
+	var S = class S {
+		constructor({ strings: t, _$litType$: i }, e) {
+			let r;
+			this.parts = [];
+			let l = 0, a = 0;
+			const u = t.length - 1, d = this.parts, [f, v] = N(t, i);
+			if (this.el = S.createElement(f, e), P.currentNode = this.el.content, 2 === i || 3 === i) {
+				const t = this.el.content.firstChild;
+				t.replaceWith(...t.childNodes);
+			}
+			for (; null !== (r = P.nextNode()) && d.length < u;) {
+				if (1 === r.nodeType) {
+					if (r.hasAttributes()) for (const t of r.getAttributeNames()) if (t.endsWith(h)) {
+						const i = v[a++], s = r.getAttribute(t).split(o$1), e = /([.?@])?(.*)/.exec(i);
+						d.push({
+							type: 1,
+							index: l,
+							name: e[2],
+							strings: s,
+							ctor: "." === e[1] ? I : "?" === e[1] ? L : "@" === e[1] ? z : H
+						}), r.removeAttribute(t);
+					} else t.startsWith(o$1) && (d.push({
+						type: 6,
+						index: l
+					}), r.removeAttribute(t));
+					if (y.test(r.tagName)) {
+						const t = r.textContent.split(o$1), i = t.length - 1;
+						if (i > 0) {
+							r.textContent = s$1 ? s$1.emptyScript : "";
+							for (let s = 0; s < i; s++) r.append(t[s], c()), P.nextNode(), d.push({
+								type: 2,
+								index: ++l
+							});
+							r.append(t[i], c());
+						}
+					}
+				} else if (8 === r.nodeType) if (r.data === n) d.push({
+					type: 2,
+					index: l
+				});
+				else {
+					let t = -1;
+					for (; -1 !== (t = r.data.indexOf(o$1, t + 1));) d.push({
+						type: 7,
+						index: l
+					}), t += o$1.length - 1;
+				}
+				l++;
+			}
+		}
+		static createElement(t, i) {
+			const s = l.createElement("template");
+			return s.innerHTML = t, s;
+		}
+	};
+	function M(t, i, s = t, e) {
+		if (i === E) return i;
+		let h = void 0 !== e ? s._$Co?.[e] : s._$Cl;
+		const o = a(i) ? void 0 : i._$litDirective$;
+		return h?.constructor !== o && (h?._$AO?.(!1), void 0 === o ? h = void 0 : (h = new o(t), h._$AT(t, s, e)), void 0 !== e ? (s._$Co ??= [])[e] = h : s._$Cl = h), void 0 !== h && (i = M(t, h._$AS(t, i.values), h, e)), i;
+	}
+	var R = class {
+		constructor(t, i) {
+			this._$AV = [], this._$AN = void 0, this._$AD = t, this._$AM = i;
+		}
+		get parentNode() {
+			return this._$AM.parentNode;
+		}
+		get _$AU() {
+			return this._$AM._$AU;
+		}
+		u(t) {
+			const { el: { content: i }, parts: s } = this._$AD, e = (t?.creationScope ?? l).importNode(i, !0);
+			P.currentNode = e;
+			let h = P.nextNode(), o = 0, n = 0, r = s[0];
+			for (; void 0 !== r;) {
+				if (o === r.index) {
+					let i;
+					2 === r.type ? i = new k(h, h.nextSibling, this, t) : 1 === r.type ? i = new r.ctor(h, r.name, r.strings, this, t) : 6 === r.type && (i = new Z(h, this, t)), this._$AV.push(i), r = s[++n];
+				}
+				o !== r?.index && (h = P.nextNode(), o++);
+			}
+			return P.currentNode = l, e;
+		}
+		p(t) {
+			let i = 0;
+			for (const s of this._$AV) void 0 !== s && (void 0 !== s.strings ? (s._$AI(t, s, i), i += s.strings.length - 2) : s._$AI(t[i])), i++;
+		}
+	};
+	var k = class k {
+		get _$AU() {
+			return this._$AM?._$AU ?? this._$Cv;
+		}
+		constructor(t, i, s, e) {
+			this.type = 2, this._$AH = A, this._$AN = void 0, this._$AA = t, this._$AB = i, this._$AM = s, this.options = e, this._$Cv = e?.isConnected ?? !0;
+		}
+		get parentNode() {
+			let t = this._$AA.parentNode;
+			const i = this._$AM;
+			return void 0 !== i && 11 === t?.nodeType && (t = i.parentNode), t;
+		}
+		get startNode() {
+			return this._$AA;
+		}
+		get endNode() {
+			return this._$AB;
+		}
+		_$AI(t, i = this) {
+			t = M(this, t, i), a(t) ? t === A || null == t || "" === t ? (this._$AH !== A && this._$AR(), this._$AH = A) : t !== this._$AH && t !== E && this._(t) : void 0 !== t._$litType$ ? this.$(t) : void 0 !== t.nodeType ? this.T(t) : d(t) ? this.k(t) : this._(t);
+		}
+		O(t) {
+			return this._$AA.parentNode.insertBefore(t, this._$AB);
+		}
+		T(t) {
+			this._$AH !== t && (this._$AR(), this._$AH = this.O(t));
+		}
+		_(t) {
+			this._$AH !== A && a(this._$AH) ? this._$AA.nextSibling.data = t : this.T(l.createTextNode(t)), this._$AH = t;
+		}
+		$(t) {
+			const { values: i, _$litType$: s } = t, e = "number" == typeof s ? this._$AC(t) : (void 0 === s.el && (s.el = S.createElement(V(s.h, s.h[0]), this.options)), s);
+			if (this._$AH?._$AD === e) this._$AH.p(i);
+			else {
+				const t = new R(e, this), s = t.u(this.options);
+				t.p(i), this.T(s), this._$AH = t;
+			}
+		}
+		_$AC(t) {
+			let i = C.get(t.strings);
+			return void 0 === i && C.set(t.strings, i = new S(t)), i;
+		}
+		k(t) {
+			u(this._$AH) || (this._$AH = [], this._$AR());
+			const i = this._$AH;
+			let s, e = 0;
+			for (const h of t) e === i.length ? i.push(s = new k(this.O(c()), this.O(c()), this, this.options)) : s = i[e], s._$AI(h), e++;
+			e < i.length && (this._$AR(s && s._$AB.nextSibling, e), i.length = e);
+		}
+		_$AR(t = this._$AA.nextSibling, s) {
+			for (this._$AP?.(!1, !0, s); t !== this._$AB;) {
+				const s = i$1(t).nextSibling;
+				i$1(t).remove(), t = s;
+			}
+		}
+		setConnected(t) {
+			void 0 === this._$AM && (this._$Cv = t, this._$AP?.(t));
+		}
+	};
+	var H = class {
+		get tagName() {
+			return this.element.tagName;
+		}
+		get _$AU() {
+			return this._$AM._$AU;
+		}
+		constructor(t, i, s, e, h) {
+			this.type = 1, this._$AH = A, this._$AN = void 0, this.element = t, this.name = i, this._$AM = e, this.options = h, s.length > 2 || "" !== s[0] || "" !== s[1] ? (this._$AH = Array(s.length - 1).fill(new String()), this.strings = s) : this._$AH = A;
+		}
+		_$AI(t, i = this, s, e) {
+			const h = this.strings;
+			let o = !1;
+			if (void 0 === h) t = M(this, t, i, 0), o = !a(t) || t !== this._$AH && t !== E, o && (this._$AH = t);
+			else {
+				const e = t;
+				let n, r;
+				for (t = h[0], n = 0; n < h.length - 1; n++) r = M(this, e[s + n], i, n), r === E && (r = this._$AH[n]), o ||= !a(r) || r !== this._$AH[n], r === A ? t = A : t !== A && (t += (r ?? "") + h[n + 1]), this._$AH[n] = r;
+			}
+			o && !e && this.j(t);
+		}
+		j(t) {
+			t === A ? this.element.removeAttribute(this.name) : this.element.setAttribute(this.name, t ?? "");
+		}
+	};
+	var I = class extends H {
+		constructor() {
+			super(...arguments), this.type = 3;
+		}
+		j(t) {
+			this.element[this.name] = t === A ? void 0 : t;
+		}
+	};
+	var L = class extends H {
+		constructor() {
+			super(...arguments), this.type = 4;
+		}
+		j(t) {
+			this.element.toggleAttribute(this.name, !!t && t !== A);
+		}
+	};
+	var z = class extends H {
+		constructor(t, i, s, e, h) {
+			super(t, i, s, e, h), this.type = 5;
+		}
+		_$AI(t, i = this) {
+			if ((t = M(this, t, i, 0) ?? A) === E) return;
+			const s = this._$AH, e = t === A && s !== A || t.capture !== s.capture || t.once !== s.once || t.passive !== s.passive, h = t !== A && (s === A || e);
+			e && this.element.removeEventListener(this.name, this, s), h && this.element.addEventListener(this.name, this, t), this._$AH = t;
+		}
+		handleEvent(t) {
+			"function" == typeof this._$AH ? this._$AH.call(this.options?.host ?? this.element, t) : this._$AH.handleEvent(t);
+		}
+	};
+	var Z = class {
+		constructor(t, i, s) {
+			this.element = t, this.type = 6, this._$AN = void 0, this._$AM = i, this.options = s;
+		}
+		get _$AU() {
+			return this._$AM._$AU;
+		}
+		_$AI(t) {
+			M(this, t);
+		}
+	};
+	var B = t.litHtmlPolyfillSupport;
+	B?.(S, k), (t.litHtmlVersions ??= []).push("3.3.3");
+	var D = (t, i, s) => {
+		const e = s?.renderBefore ?? i;
+		let h = e._$litPart$;
+		if (void 0 === h) {
+			const t = s?.renderBefore ?? null;
+			e._$litPart$ = h = new k(i.insertBefore(c(), t), t, void 0, s ?? {});
+		}
+		return h._$AI(t), h;
+	};
+	var s = globalThis;
+	var i = class extends y$1 {
+		constructor() {
+			super(...arguments), this.renderOptions = { host: this }, this._$Do = void 0;
+		}
+		createRenderRoot() {
+			const t = super.createRenderRoot();
+			return this.renderOptions.renderBefore ??= t.firstChild, t;
+		}
+		update(t) {
+			const r = this.render();
+			this.hasUpdated || (this.renderOptions.isConnected = this.isConnected), super.update(t), this._$Do = D(r, this.renderRoot, this.renderOptions);
+		}
+		connectedCallback() {
+			super.connectedCallback(), this._$Do?.setConnected(!0);
+		}
+		disconnectedCallback() {
+			super.disconnectedCallback(), this._$Do?.setConnected(!1);
+		}
+		render() {
+			return E;
+		}
+	};
+	i._$litElement$ = !0, i["finalized"] = !0, s.litElementHydrateSupport?.({ LitElement: i });
+	var o = s.litElementPolyfillSupport;
+	o?.({ LitElement: i });
+	(s.litElementVersions ??= []).push("4.2.2");
+	var TmTile = class extends i {
+		static properties = {
+			label: { type: String },
+			value: { type: String },
+			opts: { type: Object },
+			chip: { type: String }
+		};
+		constructor() {
+			super();
+			this.label = "";
+			this.value = "";
+			this.opts = {};
+			this.chip = "";
+		}
+		createRenderRoot() {
+			return this;
+		}
+		hooks() {
+			return window.__tmCore?.hooks || {};
+		}
+		card() {
+			return this.querySelector("[data-tm-card]");
+		}
+		labelSpan() {
+			return this.querySelector("[data-tm-label]");
+		}
+		onMouseDown() {
+			const o = this.opts || {};
+			if (o.click || o.delegate || o.nav) this.hooks().hlTile?.(this.card(), false);
+		}
+		onClick() {
+			const o = this.opts || {};
+			const h = this.hooks();
+			if (o.nav) {
+				if (!h.goWtsVitals?.()) {
+					const ls = this.labelSpan();
+					if (ls) {
+						if (!ls.getAttribute("data-tm-orig")) ls.setAttribute("data-tm-orig", ls.textContent || "");
+						ls.textContent = "Not found";
+						setTimeout(() => {
+							const orig = ls.getAttribute("data-tm-orig");
+							if (orig) {
+								ls.textContent = orig;
+								ls.removeAttribute("data-tm-orig");
+							}
+						}, 1400);
+					}
+				}
+				return;
+			}
+			if (o.delegate === "meds") {
+				const p = h.medsPanel?.();
+				if (p && p.btn) {
+					h.fireClick?.(p.btn);
+					h.flashLabel?.(this.labelSpan(), this.card());
+				}
+				return;
+			}
+			if (o.click) {
+				h.queueCopy?.(o.click.label, o.click.value);
+				h.flashLabel?.(this.labelSpan(), this.card());
+			}
+		}
+		render() {
+			const o = this.opts || {};
+			const clickable = !!(o.click || o.delegate || o.nav);
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.wide ? "flex:1 1 520px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
+			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
+			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
+			let valuePart;
+			if (!this.value) valuePart = b`<div style=${"margin-top:9px;" + fontCss + "color:#b6c2d2;"}>—</div>`;
+			else if (o.cols) {
+				const lines = String(this.value).split("\n");
+				const ncols = Math.max(1, Math.ceil(lines.length / 4));
+				const per = Math.ceil(lines.length / ncols);
+				const cols = [];
+				for (let ci = 0; ci < ncols; ci++) cols.push(lines.slice(ci * per, (ci + 1) * per));
+				valuePart = b`<div data-medsfit="1" style="margin-top:9px;display:flex;gap:26px;min-width:0;">${cols.map((slice) => b`<div style="max-width:300px;flex:1 1 0;min-width:0;">${slice.map((ln) => b`<div class="tmMedLine" style=${fontCss + "white-space:nowrap;"}>${ln}</div>`)}</div>`)}</div>`;
+			} else valuePart = b`<div ?data-fit=${!!o.fit} style=${"margin-top:9px;" + fontCss + (o.multi ? "white-space:pre-line;" : "") + (o.nowrap ? "white-space:nowrap;" : "")}>${this.value}</div>`;
+			return b`<div data-tm-card style=${cardCss} title=${clickable ? "Click to copy" : ""} @mousedown=${this.onMouseDown} @click=${this.onClick}>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;">
+        <span data-tm-label style=${labelCss}>${this.label}</span>
+        ${this.chip ? b`<span style=${chipCss}>${this.chip}</span>` : ""}
+      </div>
+      ${valuePart}
+    </div>`;
+		}
+	};
+	customElements.define("tm-tile", TmTile);
 	(function() {
 		var PSYCH = /\b(benztropine|cogentin|trihexyphenidyl|artane|procyclidine|biperiden|amantadine|valbenazine|ingrezza|deutetrabenazine|austedo|tetrabenazine|xenazine|donepezil|aricept|memantine|namenda|namzaric|galantamine|razadyne|rivastigmine|exelon|olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|aripiprazole|abilify|ziprasidone|geodon|haloperidol|haldol|clozapine|clozaril|lurasidone|latuda|paliperidone|invega|asenapine|saphris|brexpiprazole|rexulti|cariprazine|vraylar|lumateperone|caplyta|iloperidone|chlorpromazine|fluphenazine|perphenazine|thioridazine|thiothixene|loxapine|trifluoperazine|pimavanserin|nuplazid|sertraline|zoloft|escitalopram|lexapro|citalopram|celexa|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|desvenlafaxine|pristiq|duloxetine|cymbalta|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|viibryd|vortioxetine|trintellix|amitriptyline|nortriptyline|pamelor|imipramine|desipramine|doxepin|clomipramine|protriptyline|trimipramine|amoxapine|maprotiline|phenelzine|tranylcypromine|isocarboxazid|selegiline|emsam|lithium|lamotrigine|lamictal|valpro|divalproex|depakote|carbamazepine|tegretol|oxcarbazepine|trileptal|buspirone|buspar|hydroxyzine|lorazepam|ativan|alprazolam|xanax|clonazepam|klonopin|diazepam|valium|temazepam|oxazepam|chlordiazepoxide|clorazepate|zolpidem|ambien|eszopiclone|lunesta|zaleplon|ramelteon|suvorexant|lemborexant|nuedexta)/i;
 		var TIER2_COUNTED = /\b(melatonin|methylphenidate|ritalin|concerta|metadate|methylin|daytrana|quillivant|quillichew|jornay|dexmethylphenidate|focalin|dextroamphetamine|dexedrine|procentra|zenzedi|amphetamine|adderall|lisdexamfetamine|vyvanse|methamphetamine|desoxyn)/i;
@@ -8786,101 +9494,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}, 1e3);
 		}
 		window.addEventListener("mouseup", hlRestoreAll);
-		function tile(labelText, valueText, opts) {
-			opts = opts || {};
-			var d = document.createElement("div");
-			d.style.cssText = "background:" + (opts.warn ? "#ff1a1a" : opts.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (opts.warn ? "#ff8080" : opts.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (opts.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (opts.pad || "12px 16px 14px") + ";min-width:" + (opts.minW || 0) + "px;" + (opts.wide ? "flex:1 1 520px;min-width:0;" : opts.grow ? "flex:1 1 400px;min-width:0;" : opts.natW ? "flex:none;width:auto;" + (opts.maxW ? "max-width:" + opts.maxW + "px;" : "") : opts.fixedW ? "flex:0 1 " + opts.fixedW + "px;width:" + opts.fixedW + "px;" : "flex:none;");
-			var lab = document.createElement("div");
-			lab.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:14px;";
-			var ls = document.createElement("span");
-			ls.textContent = labelText;
-			ls.style.cssText = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (opts.warn ? "#ffe1e1" : opts.rose ? "#a05a52" : "#8494a7") + ";";
-			lab.appendChild(ls);
-			if (opts.btn) lab.appendChild(opts.btn);
-			var v = document.createElement("div");
-			var fontCss = "font-size:" + (opts.size || 21) + "px;font-weight:" + (opts.weight || 700) + ";line-height:" + (opts.multi ? "1.45" : "1.3") + ";color:" + (opts.warn ? "#ffffff" : opts.color || "#131c2b") + ";";
-			if (opts.cols) {
-				var lines = String(valueText).split("\n");
-				var ncols = Math.max(1, Math.ceil(lines.length / 4));
-				var per = Math.ceil(lines.length / ncols);
-				v.style.cssText = "margin-top:9px;display:flex;gap:26px;min-width:0;";
-				v.setAttribute("data-medsfit", "1");
-				for (var ci = 0; ci < ncols; ci++) {
-					var col = document.createElement("div");
-					col.style.cssText = "max-width:300px;flex:1 1 0;min-width:0;";
-					var slice = lines.slice(ci * per, (ci + 1) * per);
-					for (var li = 0; li < slice.length; li++) {
-						var ln = document.createElement("div");
-						ln.className = "tmMedLine";
-						ln.style.cssText = fontCss + "white-space:nowrap;";
-						ln.textContent = slice[li];
-						col.appendChild(ln);
-					}
-					v.appendChild(col);
-				}
-			} else {
-				v.textContent = valueText;
-				v.style.cssText = "margin-top:9px;" + fontCss + (opts.multi ? "white-space:pre-line;" : "");
-			}
-			if (opts.fit) v.setAttribute("data-fit", "1");
-			if (opts.nowrap) v.style.whiteSpace = "nowrap";
-			d.appendChild(lab);
-			d.appendChild(v);
-			if (opts.fill) {
-				d.classList.add("pcc-fill-copy");
-				d.setAttribute("data-g-badge", "1");
-				d.setAttribute("data-fill-label", opts.fill.label);
-				d.setAttribute("data-fill-value", opts.fill.value);
-			}
-			if (opts.maxw) d.style.maxWidth = opts.maxw;
-			if (opts.nav) {
-				d.style.cursor = "pointer";
-				d.title = "Go to WTS/VITALS";
-				d.addEventListener("mousedown", function() {
-					hlTile(d, false);
-				});
-				d.addEventListener("click", function() {
-					if (!goWtsVitals()) {
-						if (!ls.getAttribute("data-tm-orig")) ls.setAttribute("data-tm-orig", ls.textContent);
-						ls.textContent = "Not found";
-						setTimeout(function() {
-							var o = ls.getAttribute("data-tm-orig");
-							if (o) {
-								ls.textContent = o;
-								ls.removeAttribute("data-tm-orig");
-							}
-						}, 1400);
-					}
-				});
-			}
-			if (opts.delegate === "meds") {
-				d.setAttribute("data-tm-copy", "1");
-				d.style.cursor = "pointer";
-				d.title = "Click to copy";
-				d.addEventListener("mousedown", function() {
-					hlTile(d, false);
-				});
-				d.addEventListener("click", function() {
-					var p = medsPanel();
-					if (p && p.btn) {
-						fireClick(p.btn);
-						flashLabel(ls, d);
-					}
-				});
-			}
-			if (opts.click) {
-				d.style.cursor = "pointer";
-				d.title = "Click to copy";
-				d.addEventListener("mousedown", function() {
-					hlTile(d, false);
-				});
-				d.addEventListener("click", function() {
-					queueCopy(opts.click.label, opts.click.value);
-					flashLabel(ls, d);
-				});
-			}
-			return d;
-		}
+		try {
+			if (window.__tmCore) window.__tmCore.hooks = {
+				queueCopy,
+				hlTile,
+				goWtsVitals,
+				medsPanel,
+				fireClick,
+				flashLabel
+			};
+		} catch (e) {}
 		function fireClick(el) {
 			var W = el.ownerDocument && el.ownerDocument.defaultView || window;
 			[
@@ -9120,13 +9743,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			} catch (e) {}
 			var tw = null;
 			try {
-				tw = JSON.parse(localStorage.getItem("tmTileWarn") || "null");
+				tw = window.__tmCore && window.__tmCore.warn ? window.__tmCore.warn() : JSON.parse(localStorage.getItem("tmTileWarn") || "null");
 			} catch (e) {}
 			if (tw && Date.now() - (tw.ts || 0) > 12e4) tw = null;
 			if (tw) {
 				var noteOpen = false;
 				try {
-					var no = JSON.parse(localStorage.getItem("tmNoteOpen") || "null");
+					var no = window.__tmCore && window.__tmCore.noteOpen ? window.__tmCore.noteOpen() : JSON.parse(localStorage.getItem("tmNoteOpen") || "null");
 					noteOpen = !!(no && no.ts && Date.now() - no.ts < 3e4);
 				} catch (e) {}
 				if (!noteOpen) tw = null;
@@ -9154,25 +9777,39 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			row.id = ROW_ID;
 			row.setAttribute("data-sig", sig);
 			row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
-			if (d.admission) {
-				var m = d.admission.match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
-				var kind = m && m[3] ? m[3].toLowerCase() : "";
-				row.appendChild(tile(kind ? "Admission (" + kind + ")" : "Admission", m ? m[1] : d.admission, {}));
+			function mkTile(label, value, opts, chip) {
+				var el = document.createElement("tm-tile");
+				el.label = label;
+				el.value = value || "";
+				el.opts = opts || {};
+				if (chip) el.chip = chip;
+				if (opts && opts.fill) {
+					el.classList.add("pcc-fill-copy");
+					el.setAttribute("data-g-badge", "1");
+					el.setAttribute("data-fill-label", opts.fill.label);
+					el.setAttribute("data-fill-value", opts.fill.value);
+				}
+				if (opts && opts.delegate === "meds") el.setAttribute("data-tm-copy", "1");
+				el.style.display = "contents";
+				return el;
 			}
-			if (d.ageSex) row.appendChild(tile("Age / Sex", d.ageSex, {
+			var admM = (d.admission || "").match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
+			var admKind = admM && admM[3] ? admM[3].toLowerCase() : "";
+			row.appendChild(mkTile(admKind ? "Admission (" + admKind + ")" : "Admission (re-entry)", admM ? admM[1] : d.admission || "", {}));
+			row.appendChild(mkTile("Age / Sex", d.ageSex || "", {
 				pad: "12px 13px 14px",
 				warn: !!(tw && tw.age),
 				click: {
 					label: "Age/Sex",
-					value: d.ageSex
+					value: d.ageSex || ""
 				},
 				fill: {
 					label: "Age/Sex",
-					value: d.ageSex
+					value: d.ageSex || ""
 				}
 			}));
-			if (d.room) row.appendChild(tile("Room", d.room, {}));
-			if (d.allergies) row.appendChild(tile("Allergies", d.allergies, {
+			row.appendChild(mkTile("Room", d.room || "", {}));
+			row.appendChild(mkTile("Allergies", d.allergies || "", {
 				natW: true,
 				maxW: 300,
 				weight: 600,
@@ -9181,37 +9818,31 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				warn: !!(tw && tw.allergies),
 				click: {
 					label: "Allergies",
-					value: d.allergies
+					value: d.allergies || ""
 				},
 				fill: {
 					label: "Allergies",
-					value: d.allergies
+					value: d.allergies || ""
 				}
 			}));
-			function medCountChip(txt) {
-				var c = document.createElement("span");
-				c.textContent = txt;
-				c.style.cssText = "font-size:16px;font-weight:800;color:" + (tw && tw.meds ? "#ffffff" : "#2563eb") + ";";
-				return c;
-			}
-			if (d.weight) row.appendChild(tile("Weight", d.weight, {
+			row.appendChild(mkTile("Weight", d.weight || "", {
 				nav: true,
 				color: d.weightRed ? "#a33327" : void 0
 			}));
-			if (d.bims) row.appendChild(tile("BIMS", d.bims, {
+			row.appendChild(mkTile("BIMS", d.bims || "", {
 				natW: true,
 				nowrap: true,
 				fit: true,
 				click: {
 					label: "BIMS",
-					value: d.bims
+					value: d.bims || ""
 				},
 				fill: {
 					label: "BIMS",
-					value: d.bims
+					value: d.bims || ""
 				}
 			}));
-			if (d.rel) row.appendChild(tile("Relationships", d.rel, {
+			row.appendChild(mkTile("Relationships", d.rel || "", {
 				natW: true,
 				maxW: 280,
 				minW: 168,
@@ -9219,44 +9850,41 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				warn: !!(tw && tw.rel),
 				click: {
 					label: "Relationships",
-					value: d.rel
+					value: d.rel || ""
 				},
 				fill: {
 					label: "Relationships",
-					value: d.rel
+					value: d.rel || ""
 				}
 			}));
-			if (d.meds) {
-				if (d.medsFill !== null && d.medsFill !== void 0) row.appendChild(tile("Psych meds", d.meds, {
-					cols: true,
-					wide: true,
-					multi: true,
-					size: 13,
-					weight: 600,
-					maxw: "920px",
-					warn: !!(tw && tw.meds),
-					btn: medCountChip(String(d.meds === "- none" ? 0 : d.meds.split("\n").length)),
-					click: {
-						label: "Psych meds",
-						value: d.medsFill
-					},
-					fill: {
-						label: "Psych meds",
-						value: d.medsFill
-					}
-				}));
-				else row.appendChild(tile("Psych meds", d.meds, {
-					cols: true,
-					wide: true,
-					multi: true,
-					size: 13,
-					weight: 600,
-					maxw: "920px",
-					warn: !!(tw && tw.meds),
-					btn: medCountChip(String(d.meds === "- none" ? 0 : d.meds.split("\n").length)),
-					delegate: "meds"
-				}));
-			}
+			var medsChip = String(d.meds === "- none" ? 0 : d.meds ? d.meds.split("\n").length : 0);
+			if (d.medsFill !== null && d.medsFill !== void 0) row.appendChild(mkTile("Psych meds", d.meds || "", {
+				cols: true,
+				wide: true,
+				multi: true,
+				size: 13,
+				weight: 600,
+				maxw: "920px",
+				warn: !!(tw && tw.meds),
+				click: {
+					label: "Psych meds",
+					value: d.medsFill
+				},
+				fill: {
+					label: "Psych meds",
+					value: d.medsFill
+				}
+			}, medsChip));
+			else row.appendChild(mkTile("Psych meds", d.meds || "", {
+				cols: true,
+				wide: true,
+				multi: true,
+				size: 13,
+				weight: 600,
+				maxw: "920px",
+				warn: !!(tw && tw.meds),
+				delegate: "meds"
+			}, medsChip));
 			bar.parentNode.insertBefore(row, bar.nextSibling);
 			var fitIt = function() {
 				fitAllergies(row);
@@ -10219,5 +10847,339 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			900,
 			2e3
 		]);
+	})();
+	(function() {
+		"use strict";
+		function allergySet(s) {
+			return s.split(",").map(function(x) {
+				return x.trim().toLowerCase();
+			}).filter(Boolean).sort().join("|");
+		}
+		var MED_PAIRS = [
+			["Risperdal", "risperidone"],
+			["Seroquel", "quetiapine"],
+			["Zyprexa", "olanzapine"],
+			["Abilify", "aripiprazole"],
+			["Invega", "paliperidone"],
+			["Latuda", "lurasidone"],
+			["Geodon", "ziprasidone"],
+			["Haldol", "haloperidol"],
+			["Prolixin", "fluphenazine"],
+			["Thorazine", "chlorpromazine"],
+			["Clozaril", "clozapine"],
+			["Zoloft", "sertraline"],
+			["Prozac", "fluoxetine"],
+			["Paxil", "paroxetine"],
+			["Celexa", "citalopram"],
+			["Lexapro", "escitalopram"],
+			["Effexor", "venlafaxine"],
+			["Cymbalta", "duloxetine"],
+			["Wellbutrin", "bupropion"],
+			["Remeron", "mirtazapine"],
+			["Trintellix", "vortioxetine"],
+			["Viibryd", "vilazodone"],
+			["Lamictal", "lamotrigine"],
+			["Depakote", "divalproex"],
+			["Depakote", "valproic acid"],
+			["Depakote", "valproate"],
+			["Tegretol", "carbamazepine"],
+			["Trileptal", "oxcarbazepine"],
+			["Topamax", "topiramate"],
+			["Neurontin", "gabapentin"],
+			["Lyrica", "pregabalin"],
+			["Ativan", "lorazepam"],
+			["Klonopin", "clonazepam"],
+			["Xanax", "alprazolam"],
+			["Valium", "diazepam"],
+			["Restoril", "temazepam"],
+			["Ambien", "zolpidem"],
+			["Lunesta", "eszopiclone"],
+			["Buspar", "buspirone"],
+			["Vistaril", "hydroxyzine"],
+			["Intuniv", "guanfacine"],
+			["Strattera", "atomoxetine"],
+			["Concerta", "methylphenidate"],
+			["Vyvanse", "lisdexamfetamine"],
+			["Adderall", "amphetamine"],
+			["Cogentin", "benztropine"],
+			["Aricept", "donepezil"],
+			["Namenda", "memantine"],
+			["Exelon", "rivastigmine"],
+			["Razadyne", "galantamine"]
+		];
+		var MED_CANON = {};
+		MED_PAIRS.forEach(function(p) {
+			MED_CANON[p[0].toLowerCase()] = p[1];
+			MED_CANON[p[1]] = p[1];
+		});
+		function canonMed(name) {
+			var n = (name || "").toLowerCase().replace(/\b(hcl|hydrochloride|sodium|sulfate|fumarate|mesylate|succinate|phosphate)\b/g, "").replace(/\b(er|xr|sr|cr|odt|ir|la)\b/g, "").replace(/\s+/g, " ").trim();
+			return MED_CANON[n] || n;
+		}
+		function parseMedLine(line) {
+			var m = line.match(/^-\s+(.+?)\s+(\d[\s\S]*)$/);
+			if (!m) return null;
+			var name = m[1].trim(), rest = m[2].trim();
+			if (name.indexOf(",") !== -1) return null;
+			var spec = rest, ind = "";
+			var fi = rest.lastIndexOf(" for ");
+			if (fi !== -1) {
+				spec = rest.slice(0, fi).trim();
+				ind = rest.slice(fi + 5).trim();
+			}
+			if (!/\d\s*(mg|mcg|g|ml)\b/i.test(spec) && !/\b(QD|BID|TID|QID|QHS|QAM|QPM|PRN|daily|nightly|every)\b/i.test(spec)) return null;
+			return {
+				name,
+				spec,
+				ind,
+				canon: canonMed(name)
+			};
+		}
+		function normSpec(s) {
+			return (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+		}
+		function medSectionLines(txt) {
+			var lines = txt.split("\n"), hi = -1, ei = -1, i = 0;
+			for (; i < lines.length; i++) if (/^\s*Psych meds\s*$/.test(lines[i])) {
+				hi = i;
+				break;
+			}
+			if (hi === -1) return null;
+			for (i = hi + 1; i < lines.length; i++) if (/^\s*PLAN\b/.test(lines[i])) {
+				ei = i;
+				break;
+			}
+			if (ei === -1) ei = lines.length;
+			return lines.slice(hi + 1, ei);
+		}
+		function tileVerdicts(txt, medsTxt, chart) {
+			var v = {
+				age: false,
+				allergies: false,
+				meds: false,
+				rel: false
+			};
+			if (chart.ageSex) {
+				var hm = txt.match(/^[ \t]*HPI[ \t]+(\d{1,3})[MF]\b/m);
+				var qa = String(chart.ageSex).match(/\d{1,3}/);
+				v.age = !hm || !qa || hm[1] !== qa[0];
+			}
+			if (chart.allergies) {
+				var am = txt.match(/^[ \t]*Allergies[ \t]*:?[ \t]*(.*)$/m);
+				if (!am || !am[1].trim()) v.allergies = true;
+				else {
+					var nka = /^(NKA|NKDA|No[ \t]+known)/i;
+					v.allergies = (nka.test(am[1].trim()) ? "" : allergySet(am[1].trim())) !== (nka.test(String(chart.allergies).trim()) ? "" : allergySet(String(chart.allergies)));
+				}
+			}
+			if (chart.meds) {
+				var secLines = null;
+				if (medsTxt !== null && medsTxt !== void 0) secLines = String(medsTxt).split("\n");
+				else secLines = medSectionLines(txt);
+				var chartNone = /^\s*-\s*none\s*$/i.test(String(chart.meds).trim());
+				if (!secLines) v.meds = true;
+				else {
+					var content = secLines.filter(function(l) {
+						return l.trim() !== "";
+					});
+					var noteNone = content.length === 1 && /^\s*-\s*none\s*$/i.test(content[0].trim());
+					if (!content.length) v.meds = true;
+					else if (noteNone || chartNone) v.meds = noteNone !== chartNone;
+					else {
+						var noteMap = {}, chartMap = {}, diff = false, k;
+						var noteSeq = [], chartSeq = [];
+						content.forEach(function(l) {
+							var p = parseMedLine(l);
+							if (p) {
+								noteMap[p.canon] = normSpec(p.spec);
+								noteSeq.push(p.canon);
+							}
+						});
+						String(chart.meds).split("\n").forEach(function(l) {
+							var p = parseMedLine(l);
+							if (p) {
+								chartMap[p.canon] = normSpec(p.spec);
+								chartSeq.push(p.canon);
+							}
+						});
+						for (k in chartMap) if (noteMap[k] !== chartMap[k]) {
+							diff = true;
+							break;
+						}
+						if (!diff) {
+							for (k in noteMap) if (!(k in chartMap)) {
+								diff = true;
+								break;
+							}
+						}
+						if (!diff && noteSeq.join("|") !== chartSeq.join("|")) diff = true;
+						v.meds = diff;
+					}
+				}
+			}
+			if (chart.rel) {
+				var cm = txt.match(/^[ \t]*Primary contact[ \t]+(.+)$/im);
+				if (!cm || !cm[1].trim() || /^xx\b/i.test(cm[1].trim())) v.rel = true;
+				else {
+					var relSet = function(s) {
+						var out = {};
+						String(s).split(/[,;]|\s+and\s+/i).forEach(function(p) {
+							var q = p.replace(/^[\s\-]+|[\s\-]+$/g, "").toLowerCase().replace(/\s+/g, " ");
+							if (q) out[q] = 1;
+						});
+						return out;
+					};
+					var nSet = relSet(cm[1]), cSet = relSet(chart.rel), rDiff = false, rk;
+					for (rk in cSet) if (!nSet[rk]) {
+						rDiff = true;
+						break;
+					}
+					if (!rDiff) {
+						for (rk in nSet) if (!cSet[rk]) {
+							rDiff = true;
+							break;
+						}
+					}
+					v.rel = rDiff;
+				}
+			}
+			return v;
+		}
+		var tileWarnPublished = false, tileWarnLast = "", tileWarnTs = 0, weHoldOpen = false, openChain = false;
+		function clearTileWarn() {
+			if (weHoldOpen) {
+				try {
+					localStorage.removeItem("tmNoteOpen");
+				} catch (e) {}
+				weHoldOpen = false;
+			}
+			if (!tileWarnPublished) return;
+			tileWarnPublished = false;
+			tileWarnLast = "";
+			try {
+				localStorage.removeItem("tmTileWarn");
+			} catch (e) {}
+		}
+		function publishTileWarn() {
+			var chart = null;
+			try {
+				chart = JSON.parse(localStorage.getItem("tmTileChart") || "null");
+			} catch (e) {}
+			if (chart && chart.ts && Date.now() - chart.ts > 45e3) chart = null;
+			var field = findNoteField();
+			if (!chart || !field) {
+				clearTileWarn();
+				return;
+			}
+			var txt = field.value || "";
+			if (!looksLikeHisNote(txt)) {
+				clearTileWarn();
+				return;
+			}
+			var mf = findMedsField(field);
+			var v = tileVerdicts(txt, mf ? mf.value || "" : null, chart);
+			var s = JSON.stringify(v);
+			if (s !== tileWarnLast || Date.now() - tileWarnTs > 2e4) {
+				tileWarnLast = s;
+				tileWarnTs = Date.now();
+				try {
+					localStorage.setItem("tmTileWarn", JSON.stringify({
+						age: v.age,
+						allergies: v.allergies,
+						meds: v.meds,
+						rel: v.rel,
+						key: chart && chart.key || null,
+						ts: tileWarnTs
+					}));
+				} catch (e) {}
+			}
+			tileWarnPublished = true;
+			try {
+				localStorage.setItem("tmNoteOpen", JSON.stringify({ ts: Date.now() }));
+			} catch (e) {}
+			weHoldOpen = true;
+			if (!openChain) {
+				openChain = true;
+				setTimeout(function() {
+					openChain = false;
+					try {
+						publishTileWarn();
+					} catch (e) {}
+				}, 15e3);
+			}
+		}
+		var tileInputLast = 0;
+		document.addEventListener("input", function(e) {
+			if (!e.isTrusted) return;
+			var now = Date.now();
+			if (now - tileInputLast < 700) return;
+			tileInputLast = now;
+			setTimeout(publishTileWarn, 50);
+		}, true);
+		function findNoteField() {
+			var labels = document.querySelectorAll("td, th, div, span, label, b");
+			for (var i = 0; i < labels.length; i++) {
+				var t = (labels[i].textContent || "").replace(/\s+/g, " ").trim();
+				if (/^1\.\s*Psychiatry\s+Consult:?$/i.test(t) || /^Psychiatry\s+Consult:?$/i.test(t) || /^\d\.\s*HPI\s*\//i.test(t) || /^HPI\s*\//i.test(t)) {
+					var all = document.querySelectorAll("textarea");
+					for (var j = 0; j < all.length; j++) if (labels[i].compareDocumentPosition(all[j]) & Node.DOCUMENT_POSITION_FOLLOWING) return all[j];
+				}
+			}
+			var tas = document.querySelectorAll("textarea"), best = null, bestArea = 0;
+			for (var k = 0; k < tas.length; k++) {
+				var r = tas[k].getBoundingClientRect();
+				var area = r.width * r.height;
+				if (area > bestArea && r.width > 100 && r.height > 50) {
+					bestArea = area;
+					best = tas[k];
+				}
+			}
+			return best;
+		}
+		function looksLikeHisNote(txt) {
+			var anchors = 0;
+			if (/\bHPI\b/.test(txt)) anchors++;
+			if (/Medical Hx/.test(txt)) anchors++;
+			if (/Psych meds/.test(txt)) anchors++;
+			if (/Allergies/.test(txt)) anchors++;
+			if (/Primary contact/.test(txt)) anchors++;
+			if (/\bBIMS\b/.test(txt)) anchors++;
+			return anchors >= 2;
+		}
+		function findMedsField(mainField) {
+			var tas = document.querySelectorAll("textarea");
+			for (var i = 0; i < tas.length; i++) {
+				if (tas[i] === mainField) continue;
+				var v = tas[i].value || "";
+				if (/^\s*Psych meds\s*$/m.test(v) && (/^\s*PLAN\b/m.test(v) || /^\s*DX\b/m.test(v))) return tas[i];
+			}
+			return null;
+		}
+		var lastClickPub = 0;
+		document.addEventListener("click", function(e) {
+			if (!e.isTrusted) return;
+			var now = Date.now();
+			if (now - lastClickPub < 1e3) return;
+			lastClickPub = now;
+			setTimeout(publishTileWarn, 400);
+		}, true);
+		if (window.__tmCore && window.__tmCore.ladder) window.__tmCore.ladder(function() {
+			publishTileWarn();
+		}, [
+			800,
+			2e3,
+			4e3,
+			8e3,
+			15e3
+		]);
+		else [
+			800,
+			2e3,
+			4e3,
+			8e3,
+			15e3
+		].forEach(function(ms) {
+			setTimeout(publishTileWarn, ms);
+		});
 	})();
 })();
