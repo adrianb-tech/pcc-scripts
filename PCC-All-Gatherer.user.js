@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.16
+// @version      2.17
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -256,6 +256,22 @@
       }
       var wb = weightBlock(doc);
       if (wb) { out.weight = wb.value; if (wb.flagged) out.weightFlagged = true; }
+      // The curated med list, line for line (v2.17): the
+      // tile row must show THIS list on every tab - the
+      // orders-derived names were the wrong list in the
+      // wrong format (his two screenshots, 2026-10-19).
+      // Scraped exactly like the row's own medsDisplay.
+      var mbox = doc.getElementById('medListBox');
+      if (mbox) {
+        var mdivs = mbox.querySelectorAll('div');
+        var mlines = [];
+        for (var mi = 1; mi < mdivs.length; mi++) {
+          var mtx = (mdivs[mi].textContent || '').trim();
+          if (mtx.indexOf('\u26A0 REVIEW') === 0) break;
+          if (mtx) mlines.push(mtx);
+        }
+        if (mlines.length) out.medsList = mlines.join('\n').slice(0, 2000);
+      }
       var btn = doc.getElementById('copyMedListBtn');
       if (btn) {
         var bNode = btn.parentElement;
@@ -509,7 +525,8 @@
     var s = packet.stops;
     if (s.relations.status === 'landed' && s.relations.summary) feedEvent({ rel: s.relations.summary });
     if (s.bims.status === 'landed') { var bl = bimsLine(s.bims); if (bl) feedEvent({ bims: bl }); }
-    if (s.orders.status === 'landed') { var ml = medsLines(s.orders); if (ml) feedEvent({ meds: ml }); }
+    var ml = (s.header.status === 'landed' && s.header.medsList) ? s.header.medsList : (s.orders.status === 'landed' ? medsLines(s.orders) : '');
+    if (ml) feedEvent({ meds: ml });
   }
   function feedRowTile(summary) {
     feedEvent({ rel: summary });
