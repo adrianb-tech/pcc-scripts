@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.25
+// @version      3.26
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -644,7 +644,20 @@
       badge.addEventListener('click', open);
       line.appendChild(btn);
       line.appendChild(badge);
-      row.parentNode.insertBefore(line, row);
+      // His placement (2026-10-19): above the tab bar,
+      // over the DASH tab - not down by the tile row.
+      line.style.cssText = 'display:flex;margin:0 0 6px;';
+      var bar = findTabStrip(document);
+      var host = bar && bar.parentNode ? bar.parentNode : row.parentNode;
+      var anchor = bar && bar.parentNode ? bar : row;
+      host.insertBefore(line, anchor);
+      try {
+        var dashTab = bar ? findTabInDoc(document, 'DASH') : null;
+        if (dashTab) {
+          var lr = line.getBoundingClientRect(), tr = dashTab.getBoundingClientRect();
+          line.style.paddingLeft = Math.max(0, Math.round(tr.left - lr.left)) + 'px';
+        }
+      } catch (e2) {}
     } catch (e) {}
   }
   function openFaceSheet() {
