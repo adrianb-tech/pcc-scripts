@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.32
+// @version      3.33
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -553,6 +553,27 @@
       d.bims = bimsValue();
       d.rel = relValue();
     }
+  // His med order (2026-10-19): medications for the
+    // same indication sit together, and seizure /
+    // Parkinson's medications go last. Groups keep
+    // first-appearance order; lines keep theirs within
+    // a group. The indication is the stated 'for X'.
+    function medsOrderLines(lines) {
+    var buckets = [], seen = {};
+    lines.forEach(function (ln, i) {
+      var m = / for (.+)$/.exec(ln);
+      var ind = m ? m[1].replace(/\s+/g, ' ').replace(/[.\s]+$/, '').toLowerCase() : '';
+      var last = /seizure|epilep|parkinson/.test(ind || ln);
+      var key = (last ? 'L|' : 'M|') + (ind || ('#' + i));
+      if (!seen[key]) { seen[key] = []; buckets.push(seen[key]); }
+      seen[key].push({ ln: ln, last: last });
+    });
+    var main = buckets.filter(function (b) { return !b[0].last; });
+    var lastB = buckets.filter(function (b) { return b[0].last; });
+    var out = [];
+    main.concat(lastB).forEach(function (b) { b.forEach(function (it) { out.push(it.ln); }); });
+    return out;
+    }
     // His order rule (2026-10-19): in the Psych meds box,
     // medications FOR seizure or Parkinson's go LAST -
     // the stated indication decides ('for seizure
@@ -562,11 +583,7 @@
     // the note receives the same order he sees.
     var medsLast = function (txt) {
       if (!txt || txt.indexOf('\n') === -1) return txt;
-      var keep = [], last = [];
-      txt.split('\n').forEach(function (ln) {
-        if (/seizure|epilep|parkinson/i.test(ln)) last.push(ln); else keep.push(ln);
-      });
-      return keep.concat(last).join('\n');
+      return medsOrderLines(txt.split('\n')).join('\n');
     };
     if (d.meds) d.meds = medsLast(d.meds);
     if (d.medsFill) d.medsFill = medsLast(d.medsFill);
