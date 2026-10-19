@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.7
+// @version      2.8
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -431,9 +431,55 @@
       try { document.dispatchEvent(new CustomEvent('tm-gather-update')); } catch (e) {}
     }
   }
+  // The native Contacts table (v2.8) - the source the G
+  // engine itself reads. Present in the raw Profile HTML,
+  // so a FETCH of the Profile lands relations from any
+  // page he arrives on. Relation comes from the Relation
+  // column, or from a (SISTER)-style parenthetical in the
+  // name cell when the column is blank (1901). Format
+  // mirrors his tile: 'self' first, then counts by size,
+  // ties in table order ('5 daughters, son').
+  var RELSET = { self: 1, spouse: 1, wife: 1, husband: 1, daughter: 1, son: 1, sister: 1, brother: 1, mother: 1, father: 1, friend: 1, niece: 1, nephew: 1, partner: 1, guardian: 1 };
+  function parseContacts(doc) {
+    var tables = doc.querySelectorAll('table');
+    for (var ti = 0; ti < tables.length; ti++) {
+      var ttxt = tables[ti].textContent || '';
+      if (!/Relation/.test(ttxt) && !/Emergency Contact/.test(ttxt)) continue;
+      var rows = tables[ti].querySelectorAll('tr');
+      var seen = [], counts = {}, hasSelf = false;
+      for (var r = 0; r < rows.length; r++) {
+        var cells = rows[r].querySelectorAll('td');
+        var rel = '';
+        for (var c = 0; c < cells.length; c++) {
+          var ct = norm(cells[c].textContent).toLowerCase();
+          if (RELSET[ct]) { rel = ct; break; }
+        }
+        if (!rel) {
+          for (var c2 = 0; c2 < cells.length; c2++) {
+            var pm = (cells[c2].textContent || '').match(/\(([a-z]+)\)/i);
+            if (pm && RELSET[pm[1].toLowerCase()]) { rel = pm[1].toLowerCase(); break; }
+          }
+        }
+        if (!rel) continue;
+        if (rel === 'self') { hasSelf = true; continue; }
+        if (!counts[rel]) { counts[rel] = 0; seen.push(rel); }
+        counts[rel]++;
+      }
+      if (!seen.length && !hasSelf) continue;
+      seen.sort(function (a, b) { return counts[b] - counts[a]; });
+      var parts = seen.map(function (w) { return counts[w] > 1 ? counts[w] + ' ' + w + 's' : w; });
+      if (hasSelf) parts.unshift('self');
+      return parts.join(', ');
+    }
+    return '';
+  }
   function parseProfile(doc) {
     var el = doc.querySelector('[data-fill-label="Relationships"]');
     var val = el ? (el.getAttribute('data-fill-value') || txt(el)) : '';
+    if (!val || /^[—–-]+$/.test(norm(val)) || /^N\/?A$/i.test(norm(val))) {
+      var cv = parseContacts(doc);
+      if (cv) { landRelations(cv); return; }
+    }
     if (!val) {
       var els = doc.querySelectorAll('div, span, td');
       for (var i = 0; i < els.length; i++) {
