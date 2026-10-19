@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.36
+// @version 1.37
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @name         Boro Park — Consult form defaults
@@ -297,14 +297,31 @@
 
         // Check for the actual READMISSION flag element (id tmReadmitBox, mode alert)
         // in the opener — not just the word, which can appear elsewhere.
+        // v1.37: search the opener's WHOLE frame tree, not just the
+        // opener and top documents. His report, 2026-10-19: a readmission
+        // copy popup came up 'Other' with the READMISSION chip plain on
+        // the chart — the flag plants its hidden box in whichever
+        // document holds the resident header, and in the framed layout
+        // that can be a frame neither the opener nor the top. (The
+        // popup's own capture, TREE-1640, holds only the popup document,
+        // so which document carried the box that day is not provable
+        // from it; the widened search covers every plant site.)
         var isReadmission = false;
         try {
-            var openerDocs = [];
-            if (window.opener) { openerDocs.push(window.opener.document); }
-            try { if (window.opener && window.opener.top) openerDocs.push(window.opener.top.document); } catch(e){}
-            for (var d = 0; d < openerDocs.length && !isReadmission; d++) {
+            var docs = [];
+            var seen = [];
+            function collect(win) {
                 try {
-                    var flagEl = openerDocs[d].getElementById('tmReadmitBox');
+                    if (!win || seen.indexOf(win) !== -1) return;
+                    seen.push(win);
+                    if (win.document) docs.push(win.document);
+                    for (var f = 0; f < win.frames.length; f++) collect(win.frames[f]);
+                } catch (e3) {}
+            }
+            if (window.opener) { collect(window.opener); try { collect(window.opener.top); } catch (e4) {} }
+            for (var d = 0; d < docs.length && !isReadmission; d++) {
+                try {
+                    var flagEl = docs[d].getElementById('tmReadmitBox');
                     if (flagEl && flagEl.__mode === 'alert') isReadmission = true;
                 } catch(e2){}
             }
