@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.13
+// @version      2.14
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -140,6 +140,7 @@
       var d = new Date(s0.date);
       if (isNaN(d.getTime())) return;
       var val = s0.score + ' on ' + (d.getMonth() + 1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2);
+      feedEvent({ bims: val });
       var k = storeKey || residentKey();
       if (k) localStorage.setItem('tmBimsFor:' + k, JSON.stringify({ value: val, ts: Date.now() }));
     } catch (e) {}
@@ -470,7 +471,17 @@
   // copy-box script already writes; the Gatherer joins
   // that contract with its strong values, so the
   // always-there tile is also the always-correct one.
+  // Same-document feed (v2.14): storage keys can miss
+  // across sessions (tokens rotate), but the Gatherer
+  // running in THIS document gathered THIS resident -
+  // so it also hands the values straight to the row in
+  // this document with an event. The row keeps them in
+  // memory; storage remains the cross-page path.
+  function feedEvent(detail) {
+    try { document.dispatchEvent(new CustomEvent('tm-gather-feed', { detail: detail })); } catch (e) {}
+  }
   function feedRowTile(summary) {
+    feedEvent({ rel: summary });
     try { localStorage.setItem('pccFillRelationships', JSON.stringify({ value: summary, ts: Date.now() })); } catch (e) {}
     // The row's own reader (More/Less v3.12) takes the
     // value from a RESIDENT-SCOPED key: the pccFill key
@@ -665,6 +676,8 @@
   document.addEventListener('click', function () { gatherPage(); gatherFetches(); }, true);
 
   loadStored();
+  if (packet.stops.relations.status === 'landed') feedEvent({ rel: packet.stops.relations.summary });
+  if (packet.stops.bims.status === 'landed') feedBimsTile(packet.stops.bims);
   [0, 600, 1500, 3000].forEach(function (ms) { setTimeout(function () { gatherPage(); gatherFetches(); }, ms); });
   publish();
 
