@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.9
+// @version      2.10
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -324,22 +324,37 @@
 
   // ---------- fetch engine ----------
   function discoverUrls() {
+    // HREF evidence beats label text (v2.10): his Dash
+    // fetchLog showed the 'profile' slot filled by the
+    // page chrome's 'Edit My Profile' link
+    // (editmyprofile.jsp - the USER's account page, which
+    // also fails to fetch), while the resident's Profile
+    // tab anchor sat further down. Pass 1 matches the
+    // href itself; pass 2 falls back to tab labels.
+    var want = [
+      { key: 'assess', label: /assmnts|assessments/i, href: /cp_assessment|assessments/i },
+      { key: 'profile', label: /^profile$/i, href: /careclientprofile/i },
+      { key: 'results', label: /results/i, href: /resultsportal|labresults/i },
+      { key: 'orders', label: /orders/i, href: /orders/i },
+      { key: 'weights', label: /wts|weights/i, href: /weightsandvitals/i }
+    ];
     var map = {};
     var anchors = document.querySelectorAll('a[href]');
-    var want = [
-      [/assmnts|assessments/i, 'assess'],
-      [/profile/i, 'profile'],
-      [/results/i, 'results'],
-      [/orders/i, 'orders'],
-      [/wts|weights/i, 'weights']
-    ];
-    for (var i = 0; i < anchors.length; i++) {
-      var a = anchors[i];
-      var label = norm(a.textContent);
-      if (!label || label.length > 24) continue;
-      for (var j = 0; j < want.length; j++) {
-        if (want[j][0].test(label) && !map[want[j][1]]) {
-          try { map[want[j][1]] = new URL(a.getAttribute('href'), location.href).href; } catch (e) {}
+    function accept(a) {
+      var h = a.getAttribute('href') || '';
+      if (/editmyprofile|myprofile/i.test(h)) return null;
+      try { return new URL(h, location.href).href; } catch (e) { return null; }
+    }
+    for (var p = 0; p < 2; p++) {
+      for (var i = 0; i < anchors.length; i++) {
+        var a = anchors[i];
+        var href = a.getAttribute('href') || '';
+        var label = norm(a.textContent);
+        for (var j = 0; j < want.length; j++) {
+          var w = want[j];
+          if (map[w.key]) continue;
+          var hit = (p === 0) ? w.href.test(href) : (label && label.length <= 24 && w.label.test(label));
+          if (hit) { var u = accept(a); if (u) map[w.key] = u; }
         }
       }
     }
