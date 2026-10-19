@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.3
+// @version      2.4
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
 // @run-at       document-idle
+// @allFrames    true
 // @grant        none
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Gatherer.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Gatherer.user.js
@@ -86,6 +87,30 @@
       STOP_KEYS.forEach(function (k) {
         if (stored.stops[k] && stored.stops[k].status === 'landed') packet.stops[k] = stored.stops[k];
       });
+    } catch (e) {}
+  }
+  // Adopt stored landings not yet landed in THIS frame
+  // (v2.4): the chart is one shell page whose tabs swap
+  // content frames - the Profile lives in a frame of its
+  // own, so the Gatherer runs in every frame and the
+  // packet converges through the shared per-resident
+  // store. Stamps stay original.
+  function mergeStored() {
+    try {
+      if (!storeKey) storeKey = residentKey();
+      if (!storeKey) return;
+      var raw = localStorage.getItem('tmGatherV2:' + storeKey);
+      if (!raw) return;
+      var stored = JSON.parse(raw);
+      if (!stored || !stored.stops) return;
+      var changed = false;
+      STOP_KEYS.forEach(function (k) {
+        if (packet.stops[k].status !== 'landed' && stored.stops[k] && stored.stops[k].status === 'landed') {
+          packet.stops[k] = stored.stops[k];
+          changed = true;
+        }
+      });
+      if (changed) publish();
     } catch (e) {}
   }
   function saveStored() {
@@ -256,6 +281,7 @@
   }
   function gatherPage() {
     if (stopped) return;
+    mergeStored();
     var h = selfHeader(document);
     if (Object.keys(h).length >= 2) land('header', { source: 'Dash', at: nowT(), facts: h });
     var b = readTile(/^Behaviors?\b/i, 700);
