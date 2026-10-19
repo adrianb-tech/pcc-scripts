@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.4
+// @version      2.5
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -66,12 +66,28 @@
   // on every other page afterwards, keeping its original
   // source + time stamp. Facts stay in his browser.
   function residentKey() {
+    // The EID tokens in PCC's URLs rotate per page and per
+    // link (his captures prove it) - useless as a key. The
+    // stable key is the chart number in the resident
+    // header itself: 'Last, First (CH187985)' - the same
+    // element the S key reads. No name is stored; the key
+    // is the number alone.
+    try {
+      var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+        if (tx.length > 70 || tx.length < 5) continue;
+        if (/^clinical\s/i.test(tx)) continue;
+        var em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+        if (em) return 'chart:' + em[1].toUpperCase();
+      }
+    } catch (e) {}
     var m = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
-    if (m) return m[1];
+    if (m) return 'eid:' + m[1];
     var as = document.querySelectorAll('a[href*="ESOLclientid="]');
     for (var i = 0; i < as.length; i++) {
       var mm = (as[i].getAttribute('href') || '').match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
-      if (mm) return mm[1];
+      if (mm) return 'eid:' + mm[1];
     }
     return null;
   }
