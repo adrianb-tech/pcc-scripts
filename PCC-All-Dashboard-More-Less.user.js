@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.23
+// @version      3.24
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -706,7 +706,12 @@
       var vv = box.querySelector('.bims-value');
       return vv ? (vv.textContent || '').trim() : '';
     });
-    if (bv) return bv;
+    // 'N/A' is the badge's word for "none in this view"
+    // (the list is filtered) - it is not a score. The
+    // gathered last BIMS outranks it (2026-10-19: on the
+    // ASSMNTS page filtered to Psych: Consult, the tile
+    // showed N/A while the packet held 13 on 9/10/26).
+    if (bv && bv !== 'N/A') return bv;
     if (feedBims) return feedBims;
     return scopedFeed('tmBimsFor:');
   }
