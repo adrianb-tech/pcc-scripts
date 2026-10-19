@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Psychiatry tab
 // @namespace    mica.pcc
-// @version      1.10
+// @version      1.11
 // @description  Adds a Psychiatry tab to the chart's tab bar. Clicking it opens the one page below the tabs (title, header tile row, Your words tile, section tiles). Toggles closed on the tab, on another tab, or with 0. Read-only; writes nothing anywhere.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -412,7 +412,50 @@
     }
   }
 
+  // ---- Same-document hosting (v1.11) ----
+  // The extractor tiles' functions split in two: buttons
+  // bound on the elements travel anywhere, but the
+  // behavior tile's jump-to-note rides a click handler
+  // delegated on ITS document - moving the tile into the
+  // shell document keeps the feedback buttons and kills
+  // the jumps. So when the tiles live in a frame, the
+  // panel opens INSIDE that frame (same document - every
+  // function intact) and the shell tile calls across.
+  // His requirement, 2026-10-19: the tiles bring their
+  // saving and their jumping with them.
+  function tilesFrameWin() {
+    var frames = document.querySelectorAll('iframe');
+    for (var i = 0; i < frames.length; i++) {
+      try {
+        var fw = frames[i].contentWindow;
+        var fd = frames[i].contentDocument;
+        if (fw && fd && fw.__tmPsych && (fd.getElementById('pnBehBox') || fd.getElementById('pnDxBox'))) return fw;
+      } catch (e) {}
+    }
+    return null;
+  }
+  function openHere() {
+    // Runs inside the tiles' own document.
+    var panel = document.getElementById('tmPsychPage');
+    if (panel && panel.style.display !== 'none') { setOpen(false); return false; }
+    if (!panel) {
+      panel = buildPanel();
+      var wrap = document.getElementById('pnTilesWrap');
+      if (wrap && wrap.parentNode) wrap.parentNode.insertBefore(panel, wrap);
+      else if (document.body) document.body.insertBefore(panel, document.body.firstChild);
+    } else panel.style.display = '';
+    open = true;
+    adoptTiles(panel);
+    renderPacketInto(panel);
+    return true;
+  }
+  try { window.__tmPsych = { openHere: openHere }; } catch (e) {}
+
   function setOpen(v, bar) {
+    if (!v) {
+      // Closing also closes a frame-hosted panel.
+      try { var fw0 = tilesFrameWin(); if (fw0 && open) fw0.__tmPsych.openHere(); } catch (e) {}
+    }
     open = v;
     var tile = document.getElementById('tmPsychTab');
     var panel = document.getElementById('tmPsychPage');
@@ -445,6 +488,15 @@
         tile.appendChild(document.createTextNode('Psychiatry'));
         tile.addEventListener('click', function (e) {
           e.stopPropagation();
+          var fw = tilesFrameWin();
+          if (fw) {
+            // The tiles live in a frame: the panel opens
+            // in the frame's document, not the shell's.
+            var nowOpen = fw.__tmPsych.openHere();
+            open = !!nowOpen;
+            styleTile(tile, open);
+            return;
+          }
           setOpen(!open, findBar());
         });
         styleTile(tile, open);
