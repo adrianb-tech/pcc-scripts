@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.10
+// @version      2.11
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -448,16 +448,28 @@
   // and never lands at all while a carrier element
   // exists (its value is still on its way).
   var relationsWeak = false;
+  // Feed the tile row (his ruling, 2026-10-19):
+  // Relationships lives on the ROW, visible at all times -
+  // not on the Psychiatry tab. The row's own machinery
+  // (G key, click, copy) reads the pccFill contract the
+  // copy-box script already writes; the Gatherer joins
+  // that contract with its strong values, so the
+  // always-there tile is also the always-correct one.
+  function feedRowTile(summary) {
+    try { localStorage.setItem('pccFillRelationships', JSON.stringify({ value: summary, ts: Date.now() })); } catch (e) {}
+  }
   function landRelations(summary) {
     var cur = packet.stops.relations;
     summary = norm(summary).slice(0, 300);
     if (cur.status !== 'landed') {
       land('relations', { source: 'Profile', at: nowT(), summary: summary });
+      feedRowTile(summary);
       return;
     }
     if (cur.summary !== summary) {
       packet.stops.relations = { status: 'landed', source: 'Profile', at: nowT(), summary: summary };
       relationsWeak = false;
+      feedRowTile(summary);
       publish(); saveStored();
       try { document.dispatchEvent(new CustomEvent('tm-gather-update')); } catch (e) {}
     }
