@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Focus keeper (pop-ups)
-// @version      1.3
+// @version      1.4
 // @description  His rule (2026-10-19): when a pop-up appears, the pop-up takes the focus; when the pop-up disappears, focus returns to the place it was before the pop-up. Built because after signing a note, focus stayed parked in the closed signature flow and every letter key went dead until he clicked the page. Detection is click-driven with bounded follow-up checks (no permanent observers, no timers): a trusted click arms a few quick looks for a dialog; while one is tracked, later clicks/keys check whether it has gone.
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Focus-keeper.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Focus-keeper.user.js
@@ -92,7 +92,7 @@
     else if (el.className && typeof el.className === 'string') s += '.' + el.className.split(' ')[0];
     return s;
   }
-  function logEvent(msg) {
+  function logRender() {
     try {
       var n = document.getElementById('tmFocusLog');
       if (!n) {
@@ -101,12 +101,31 @@
         n.style.display = 'none';
         (document.body || document.documentElement).appendChild(n);
       }
-      var lines = (n.textContent || '').split(' | ').filter(Boolean);
-      lines.push(msg);
-      while (lines.length > 6) lines.shift();
-      n.textContent = lines.join(' | ');
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem('tmFocusLogLS') || '[]'); } catch (e) {}
+      n.textContent = arr.join(' | ');
     } catch (e) {}
   }
+  function logEvent(msg) {
+    // The log lives in localStorage (v1.4): a DOM-only log
+    // died with the pop-up window that wrote it, which is
+    // why four captures showed nothing - the pop-ups are
+    // separate WINDOWS, and their keeper instances (and
+    // logs) vanished with them. Every page renders the
+    // shared log into its hidden #tmFocusLog div, so a
+    // capture on ANY page shows the whole history.
+    try {
+      var arr = [];
+      try { arr = JSON.parse(localStorage.getItem('tmFocusLogLS') || '[]'); } catch (e) {}
+      var d = new Date();
+      var hh = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2) + ':' + ('0' + d.getSeconds()).slice(-2);
+      arr.push(hh + ' ' + msg);
+      while (arr.length > 8) arr.shift();
+      try { localStorage.setItem('tmFocusLogLS', JSON.stringify(arr)); } catch (e) {}
+    } catch (e) {}
+    logRender();
+  }
+  logRender();
 
   function usableReturn(el) {
     if (!el || !el.isConnected) return null;
@@ -211,32 +230,94 @@
     armChecks();
   }, true);
 
-  // Window layer (v1.1): PCC often puts the form in a
-  // pop-up WINDOW. When such a window closes after Save,
-  // he should land back on the window that opened it.
-  // As the window goes away, hand focus to the opener;
-  // a broadcast also tells the opener's keeper to put
-  // focus back on the element he was using there.
+  // The last element he actually focused in THIS window
+  // (the opener-side return address for window pop-ups).
   var lastOwnFocus = null;
   document.addEventListener('focusin', function (e) {
     if (e.target && e.target !== document.body) lastOwnFocus = e.target;
   }, true);
-  var chan = null;
-  try { chan = new BroadcastChannel('tm-focus-keeper-v1'); } catch (e) {}
-  if (chan) {
-    chan.onmessage = function (ev) {
-      if (OFF || !ev.data || ev.data.type !== 'popup-closed') return;
-      try { window.focus(); } catch (e) {}
-      var back = usableReturn(lastOwnFocus);
-      try {
-        if (back) back.focus();
-        else if (document.body && document.body.focus) document.body.focus();
-      } catch (e) {}
-    };
+
+  // Window layer (v1.4, rebuilt on capture evidence):
+  // his pop-ups are separate WINDOWS - the four captures
+  // (2026-10-19 08:00) contained no in-page dialog at
+  // all, and no keeper log: each window's keeper died
+  // with it. v1.1's handoff (pagehide + BroadcastChannel)
+  // never landed - a dying window's broadcast is
+  // unreliable and Dia has ignored programmatic window
+  // focus from a closing window before (2026-10-14).
+  // The reliable mailbox is localStorage: writes are
+  // synchronous, survive the writer, and the 'storage'
+  // event fires in every other window.
+  //
+  // Pop-up window duties: a window WITH an opener is a
+  // pop-up - it takes the focus itself on arrival (his
+  // rule: the pop-up becomes the focus), aiming at its
+  // first real field; and when it closes, it hands back
+  // from BEFOREUNLOAD (the window is still alive and
+  // focused then): opener.focus() directly, plus the
+  // mailbox note naming its opener.
+  // Opener duties: on the mailbox note, the named
+  // window restores focus to the element he was using;
+  // an unnamed close is claimed by the root window
+  // (no opener of its own) after a short wait.
+  var isPopupWin = false;
+  try { isPopupWin = !!(window.opener && !window.opener.closed && window.opener !== window); } catch (e) {}
+  if (isPopupWin) {
+    [300, 900, 2000].forEach(function (ms) {
+      setTimeout(function () {
+        if (OFF || lastUserTarget) return; // he already took over in here
+        var f = firstFocusable(document);
+        try {
+          if (f && document.activeElement !== f) { f.focus(); logEvent('popup window: focus -> ' + describe(f)); }
+        } catch (e) {}
+      }, ms);
+    });
   }
-  window.addEventListener('pagehide', function () {
-    try { if (window.opener && !window.opener.closed) window.opener.focus(); } catch (e) {}
-    try { if (chan) chan.postMessage({ type: 'popup-closed' }); } catch (e) {}
+  var handedOff = false;
+  function handOff() {
+    if (handedOff || !isPopupWin) return;
+    handedOff = true;
+    var openerHref = '';
+    try { openerHref = (window.opener.location.href || '').slice(0, 120); } catch (e) {}
+    try { window.opener.focus(); } catch (e) {}
+    try { localStorage.setItem('tmPopupClosed', JSON.stringify({ ts: Date.now(), opener: openerHref })); } catch (e) {}
+    logEvent('popup closing: handoff to opener');
+  }
+  window.addEventListener('beforeunload', handOff);
+  window.addEventListener('pagehide', handOff);
+
+  var lastHandledClose = 0;
+  function restoreFromClose(ts) {
+    try { localStorage.setItem('tmPopupClaimed', String(ts)); } catch (e) {}
+    try { window.focus(); } catch (e) {}
+    var back = usableReturn(lastOwnFocus);
+    try {
+      if (back) back.focus();
+      else if (document.body && document.body.focus) document.body.focus();
+    } catch (e) {}
+    setTimeout(function () {
+      var b2 = usableReturn(lastOwnFocus);
+      try { if (b2 && document.activeElement !== b2) b2.focus(); } catch (e) {}
+    }, 400);
+    logEvent('opener: restored -> ' + describe(back));
+  }
+  window.addEventListener('storage', function (e) {
+    if (OFF || !e || e.key !== 'tmPopupClosed' || !e.newValue) return;
+    var info = null;
+    try { info = JSON.parse(e.newValue); } catch (err) {}
+    if (!info || !info.ts || info.ts === lastHandledClose) return;
+    if (Date.now() - info.ts > 5000) return;
+    lastHandledClose = info.ts;
+    var mine = (location.href || '').slice(0, 120);
+    if (info.opener && info.opener === mine) { restoreFromClose(info.ts); return; }
+    if (!info.opener && !window.opener) {
+      var tsSeen = info.ts;
+      setTimeout(function () {
+        var claimed = 0;
+        try { claimed = +(localStorage.getItem('tmPopupClaimed') || 0); } catch (err) {}
+        if (claimed !== tsSeen) restoreFromClose(tsSeen);
+      }, 700);
+    }
   });
 
   document.addEventListener('keydown', function (e) {
