@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.13
+// @version      2.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -221,9 +221,20 @@
   function applyFButton() {
     try {
       if (!shouldRun()) return;
-      // Remove stale buttons first
+      // Remove stale buttons first - but ONLY this function's
+      // own badge (plain base class, no suffix, not the View All
+      // badge). The old sweep took EVERY .pcc-f-btn in the
+      // document at the 0/1.5/4s passes, View All badge
+      // included; the View All passes re-planted it, but each
+      // re-plant starts hidden for its settle, so the F next
+      // to View All visibly cycled off and on after every page
+      // load (his report, 2026-10-19; fixture h131, TREE-1312).
       var olds = document.querySelectorAll('.' + FBTN_CLASS);
-      for (var i = olds.length - 1; i >= 0; i--) olds[i].remove();
+      for (var i = olds.length - 1; i >= 0; i--) {
+        if (olds[i].id === 'tmPnViewAllF') continue;
+        if ((olds[i].className || '').indexOf(FBTN_CLASS + '-') !== -1) continue;
+        olds[i].remove();
+      }
       if (!isBedfordOrCH()) return;
       var target = findSaveSignLockExit();
       if (!target || !target.parentNode) return;
