@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.38
+// @version      3.39
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -603,6 +603,20 @@
     var tw = null;
     try { tw = JSON.parse(localStorage.getItem('tmTileWarn') || 'null'); } catch (e) {}
     if (tw && Date.now() - (tw.ts || 0) > 2 * 60000) tw = null;
+    // Red requires PROOF his note is open right now
+    // (his rule, 2026-10-19): the form window's engine
+    // stamps tmNoteOpen while the note field exists and
+    // heartbeats it; without a fresh stamp, no tile
+    // paints red - even if verdicts linger from a form
+    // that has since closed or never opened.
+    if (tw) {
+      var noteOpen = false;
+      try {
+        var no = JSON.parse(localStorage.getItem('tmNoteOpen') || 'null');
+        noteOpen = !!(no && no.ts && (Date.now() - no.ts) < 30000);
+      } catch (e) {}
+      if (!noteOpen) tw = null;
+    }
     var sig = [d.admission || '', d.ageSex || '', d.room || '', d.allergies || '', d.weight || '', d.weightRed ? 'R' : '', d.meds || '', d.medsFill === null ? '~' : d.medsFill, d.bims || '', d.rel || '', tw ? (tw.age ? '1' : '0') + (tw.allergies ? '1' : '0') + (tw.meds ? '1' : '0') + (tw.rel ? '1' : '0') : '----'].join('|');
     if (row && row.getAttribute('data-sig') === sig) return;
     if (row) row.remove();
