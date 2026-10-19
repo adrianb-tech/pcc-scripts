@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard (meds + safety)
-// @version      2.30
+// @version      2.31
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard.user.js
 // @match        https://*.pointclickcare.com/*
@@ -724,7 +724,28 @@
       (c.r0.tier === 1 ? last : main).push(entry);
     });
 
-    return { lines: main.concat(last), review: review };
+  // His med order (2026-10-19): medications for the
+  // same indication sit together, and seizure /
+  // Parkinson's medications go last. Groups keep
+  // first-appearance order; lines keep theirs within
+  // a group. The indication is the stated 'for X'.
+  function medsOrderLines(lines) {
+    var buckets = [], seen = {};
+    lines.forEach(function (ln, i) {
+      var m = / for (.+)$/.exec(ln);
+      var ind = m ? m[1].replace(/\s+/g, ' ').replace(/[.\s]+$/, '').toLowerCase() : '';
+      var last = /seizure|epilep|parkinson/.test(ind || ln);
+      var key = (last ? 'L|' : 'M|') + (ind || ('#' + i));
+      if (!seen[key]) { seen[key] = []; buckets.push(seen[key]); }
+      seen[key].push({ ln: ln, last: last });
+    });
+    var main = buckets.filter(function (b) { return !b[0].last; });
+    var lastB = buckets.filter(function (b) { return b[0].last; });
+    var out = [];
+    main.concat(lastB).forEach(function (b) { b.forEach(function (it) { out.push(it.ln); }); });
+    return out;
+  }
+    return { lines: medsOrderLines(main.concat(last)), review: review };
   }
 
   function copyToClipboard(doc, text, btn) {
