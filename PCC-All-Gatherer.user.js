@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.19
+// @version      2.20
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -745,46 +745,70 @@
     var haveCurated = (packet.stops.header.medsList) ||
       (packet.stops.dashmeds && packet.stops.dashmeds.status === 'landed');
     if (!haveCurated) {
-      var dashUrl = '';
-      try { if (/cp_residentdashboard\.jsp/.test(window.top.location.href)) dashUrl = window.top.location.href; } catch (e) {}
-      // From any other resident page (v2.19 - the
-      // Progress Notes page above all, which has no tab
-      // bar and therefore no chart links to discover):
-      // the chart shell answers to this page's own
-      // ESOLclientid, so build its URL directly. Without
-      // this, the meds fetch could only ever start from
-      // the Dash itself and every other page waited on a
-      // Dash visit that might never come.
-      if (!dashUrl) {
-        var eid = null, em2 = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
-        if (em2) eid = em2[1];
-        if (!eid) {
-          var as2 = document.querySelectorAll('a[href*="ESOLclientid="]');
-          for (var ai2 = 0; ai2 < as2.length; ai2++) {
-            var mm2 = (as2[ai2].getAttribute('href') || '').match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
-            if (mm2) { eid = mm2[1]; break; }
-          }
+      // Which resident? The page's own dashboard link is
+      // unambiguous (v2.20, his ASSMNTS report): the
+      // assessments page carries SEVERAL EID tokens - its
+      // tab links are unresolved {{clientId}} templates
+      // and other residents' tokens appear in list rows -
+      // but the cp_residentdashboard anchor names THIS
+      // resident. Fallbacks: this page's URL, any anchor,
+      // then a scan of the page's own markup.
+      var eid = null;
+      var dashLink = document.querySelector('a[href*="cp_residentdashboard.jsp?ESOLclientid="]');
+      if (dashLink) { var dm = (dashLink.getAttribute('href') || '').match(/ESOLclientid=(EID_[A-Za-z0-9]+)/); if (dm) eid = dm[1]; }
+      if (!eid) { var em2 = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/); if (em2) eid = em2[1]; }
+      if (!eid) {
+        var as2 = document.querySelectorAll('a[href*="ESOLclientid="]');
+        for (var ai2 = 0; ai2 < as2.length; ai2++) {
+          var mm2 = (as2[ai2].getAttribute('href') || '').match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+          if (mm2) { eid = mm2[1]; break; }
         }
-        if (eid) dashUrl = location.origin + '/admin/client/cp_residentdashboard.jsp?ESOLclientid=' + eid;
       }
-      if (dashUrl) {
-        jobs.push(fetchDoc(dashUrl).then(function (dashDoc) {
-          noteFetch('dash', dashUrl, dashDoc);
-          if (stopped) return;
-          var frames = dashDoc.querySelectorAll('iframe');
-          var medsUrl = '';
-          for (var fi = 0; fi < frames.length; fi++) {
-            var fsrc = frames[fi].getAttribute('src') || frames[fi].getAttribute('data-src') || '';
-            if (/res_medications\.jsp/.test(fsrc)) { try { medsUrl = new URL(fsrc, dashUrl).href; } catch (e) {} break; }
-          }
-          if (!medsUrl) return;
-          return fetchDoc(medsUrl).then(function (medDoc) {
-            noteFetch('dashmeds', medsUrl, medDoc);
-            if (stopped) return;
+      if (!eid) { var hm = document.documentElement.innerHTML.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/); if (hm) eid = hm[1]; }
+      var shellUrl = '';
+      try { if (/cp_residentdashboard\.jsp/.test(window.top.location.href)) shellUrl = window.top.location.href; } catch (e) {}
+      if (!shellUrl && eid) shellUrl = location.origin + '/admin/client/cp_residentdashboard.jsp?ESOLclientid=' + eid;
+      if (eid || shellUrl) {
+        jobs.push((function () {
+          // DIRECT first (v2.20): the medications frame's
+          // URL is a fixed shape (from his own Dash
+          // capture) - build it from the EID and skip the
+          // shell entirely. The shell hop stays as the
+          // fallback when the direct page won't curate:
+          // one resident, one fetch, no dependence on
+          // which tab the shell session last rendered.
+          function curateAndLand(medDoc, tag) {
+            if (stopped || !medDoc) return false;
             var cur = (typeof window.__tmDashCurateMeds === 'function') ? window.__tmDashCurateMeds(medDoc) : null;
-            if (cur) land('dashmeds', { source: 'Dash (fetched)', at: nowT(), lines: cur.slice(0, 2000), summary: 'curated psych meds (Dash format)' });
-          });
-        }).catch(function (e) { noteFetch('dash', dashUrl, null, e); }));
+            if (!cur) return false;
+            land('dashmeds', { source: 'Dash (fetched)', at: nowT(), lines: cur.slice(0, 2000), summary: 'curated psych meds (Dash format)' });
+            return true;
+          }
+          function shellHop() {
+            if (!shellUrl) return;
+            return fetchDoc(shellUrl).then(function (dashDoc) {
+              noteFetch('dash', shellUrl, dashDoc);
+              if (stopped || !dashDoc) return;
+              var frames = dashDoc.querySelectorAll('iframe');
+              var medsUrl = '';
+              for (var fi = 0; fi < frames.length; fi++) {
+                var fsrc = frames[fi].getAttribute('src') || frames[fi].getAttribute('data-src') || '';
+                if (/res_medications\.jsp/.test(fsrc)) { try { medsUrl = new URL(fsrc, shellUrl).href; } catch (e) {} break; }
+              }
+              if (!medsUrl) return;
+              return fetchDoc(medsUrl).then(function (medDoc) {
+                noteFetch('dashmeds', medsUrl, medDoc);
+                curateAndLand(medDoc, 'shell');
+              });
+            }).catch(function (e) { noteFetch('dash', shellUrl, null, e); });
+          }
+          if (!eid) return shellHop();
+          var directUrl = location.origin + '/care/dashboards/res_medications.jsp?ESOLviewId=25&ESOLtitle=Medications&ESOLtabtype=C&ESOLclientid=' + eid + '&ESOLcolspan=2';
+          return fetchDoc(directUrl).then(function (medDoc) {
+            noteFetch('dashmeds', directUrl, medDoc);
+            if (!curateAndLand(medDoc, 'direct')) return shellHop();
+          }).catch(function () { return shellHop(); });
+        })());
       }
     }
     if (jobs.length) { lastFetchAt = now; Promise.allSettled(jobs); }
