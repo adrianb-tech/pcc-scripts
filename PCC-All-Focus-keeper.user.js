@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Focus keeper (pop-ups)
-// @version      1.1
+// @version      1.2
 // @description  His rule (2026-10-19): when a pop-up appears, the pop-up takes the focus; when the pop-up disappears, focus returns to the place it was before the pop-up. Built because after signing a note, focus stayed parked in the closed signature flow and every letter key went dead until he clicked the page. Detection is click-driven with bounded follow-up checks (no permanent observers, no timers): a trusted click arms a few quick looks for a dialog; while one is tracked, later clicks/keys check whether it has gone.
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Focus-keeper.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Focus-keeper.user.js
@@ -53,15 +53,49 @@
   }
 
   function firstFocusable(root) {
+    // The RIGHT place inside a pop-up (v1.2): a field he
+    // is meant to type in beats a button - v1.0/v1.1 took
+    // the first focusable of any kind, which could be a
+    // close link or the Cancel button. Also leaves a
+    // hidden decision log in the page (#tmFocusLog) so a
+    // capture can show exactly what the keeper did.
     var list = root.querySelectorAll('input:not([type="hidden"]), textarea, select, button, a[href], [tabindex]');
+    var fallback = null;
     for (var i = 0; i < list.length; i++) {
       var el = list[i];
-      if (el.disabled) continue;
+      if (el.disabled || el.readOnly) continue;
       var cs = window.getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden') continue;
-      return el;
+      var tag = el.tagName;
+      var type = (el.getAttribute('type') || '').toLowerCase();
+      if (tag === 'TEXTAREA' || (tag === 'INPUT' && type !== 'checkbox' && type !== 'radio' && type !== 'button' && type !== 'submit')) return el;
+      if (!fallback) fallback = el;
     }
-    return null;
+    return fallback;
+  }
+
+  function describe(el) {
+    if (!el) return 'none';
+    if (el === document.body) return 'body';
+    var s = el.tagName.toLowerCase();
+    if (el.id) s += '#' + el.id;
+    else if (el.className && typeof el.className === 'string') s += '.' + el.className.split(' ')[0];
+    return s;
+  }
+  function logEvent(msg) {
+    try {
+      var n = document.getElementById('tmFocusLog');
+      if (!n) {
+        n = document.createElement('div');
+        n.id = 'tmFocusLog';
+        n.style.display = 'none';
+        (document.body || document.documentElement).appendChild(n);
+      }
+      var lines = (n.textContent || '').split(' | ').filter(Boolean);
+      lines.push(msg);
+      while (lines.length > 6) lines.shift();
+      n.textContent = lines.join(' | ');
+    } catch (e) {}
   }
 
   function usableReturn(el) {
@@ -79,6 +113,7 @@
 
   function engage(popup) {
     tracked = popup;
+    logEvent('engaged ' + describe(popup));
     escortStart();
     var back = usableReturn(returnTo);
     returnTo = back; // may be null -> body is the fallback
@@ -100,6 +135,7 @@
     var ae = document.activeElement;
     var focusLost = !ae || ae === document.body || ae === document.documentElement;
     if (lastUserTarget && ae === lastUserTarget && !focusLost) return; // he chose a new place himself
+    logEvent('released -> ' + describe(back));
     try {
       if (back) back.focus();
       else if (document.body && document.body.focus) document.body.focus();
