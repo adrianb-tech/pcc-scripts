@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.8
+// @version 1.11
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -29,36 +29,66 @@
   // CNR/Saints: "Consult Form - Psychiatry" under "Form Date".
   // Boro Park: "Psych: Consult" assessments under "Assessment Date".
   function lastPsychForm(){
-    var best = null, bestStr = '', tableFound = false;
-    // Check we're on the forms/assessments page
-    var bodyText = (document.body.textContent || '').toLowerCase();
-    if (bodyText.indexOf('form date') === -1 && bodyText.indexOf('assessment date') === -1) return { tableFound: false, d: null, s: '' };
-    tableFound = true;
-    // Find all text nodes containing "psychiatry" (CNR/Saints) or "psych:"
-    // (Boro Park "Psych: Consult"), get the date from the same row
-    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null);
+    // v1.10: mine psych ROWS, nothing else. Three poisons
+    // killed the earlier versions: script/style text (the
+    // Gatherer's packet JSON reads like psych rows), the
+    // ancestor climb (a stray 'psych' node climbed into a
+    // page-wide container and took the first date there -
+    // the resident's DATE OF BIRTH, 9/1/1932, on the Dash),
+    // and pages that merely mention the words. Rules now:
+    // no script/style/template text; a date counts only
+    // within the psych node's own row-sized chunk
+    // (< 400 chars, stop at the TR); and the page must
+    // prove it is a forms list - a header row naming the
+    // date column, the #assessments container, or psych
+    // rows actually found.
+    var best = null, bestStr = '', psychRows = 0;
+    var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode: function (n) {
+        var p = n.parentElement;
+        while (p) {
+          if (p.tagName === 'SCRIPT' || p.tagName === 'STYLE' || p.tagName === 'TEMPLATE') return NodeFilter.FILTER_REJECT;
+          p = p.parentElement;
+        }
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
     var node;
     while ((node = walker.nextNode())){
       var t = (node.nodeValue || '').toLowerCase();
       var isPsych = t.indexOf('psychiatry') !== -1 || t.indexOf('psych:') !== -1;
       if (!isPsych) continue;
       if (t.indexOf('psycholog') !== -1) continue;
-      // Found a psychiatry mention — look at the parent row for a date
-      var el = node.parentElement;
-      var depth = 0;
+      var el = node.parentElement, depth = 0, found = null;
       while (el && depth < 6){
-        var rowText = (el.textContent || '');
-        var m = rowText.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (m){
-          var d = parseDate(m[0]);
-          if (d && (!best || d > best)){ best = d; bestStr = m[0]; }
-          break;
-        }
+        var rt = el.textContent || '';
+        if (rt.length > 400) break;
+        var m = rt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (m) { found = m[0]; break; }
+        if (el.tagName === 'TR') break;
         el = el.parentElement;
         depth++;
       }
+      if (found) {
+        psychRows++;
+        var d = parseDate(found);
+        if (d && (!best || d > best)) { best = d; bestStr = found; }
+      }
     }
-    return { tableFound: tableFound, d: best, s: bestStr };
+    var headerRow = false;
+    var trs = document.querySelectorAll('tr');
+    for (var i = 0; i < trs.length; i++) {
+      var ht = (trs[i].textContent || '').toLowerCase();
+      // A real column-header row is SHORT. The Dash shell
+      // carries a giant facility-menu row whose text
+      // (scripts included) happens to contain the words -
+      // it must not count (caught in harness on his 0657
+      // Dash capture).
+      if (ht.length > 300) continue;
+      if (ht.indexOf('form date') !== -1 || ht.indexOf('assessment date') !== -1) { headerRow = true; break; }
+    }
+    var isList = headerRow || psychRows > 0 || !!document.getElementById('assessments');
+    return { tableFound: isList, d: best, s: bestStr };
   }
 
   // Finds the date text next to the "Admission (re-entry)" label
