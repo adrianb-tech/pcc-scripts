@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.0.7
+// @version      2.1.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5017,21 +5017,25 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					return true;
 				}
 			}
-		} catch (e) {}
+		} catch {}
 		return false;
 	}
 	var ladderFns = new Map();
 	var ladderArmed = new Set();
 	function ladder(fn, times) {
 		for (const ms of times) {
-			if (!ladderFns.has(ms)) ladderFns.set(ms, []);
-			ladderFns.get(ms).push(fn);
+			let arr = ladderFns.get(ms);
+			if (!arr) {
+				arr = [];
+				ladderFns.set(ms, arr);
+			}
+			arr.push(fn);
 			if (!ladderArmed.has(ms)) {
 				ladderArmed.add(ms);
 				setTimeout(() => {
 					for (const f of ladderFns.get(ms) || []) try {
 						f(ms);
-					} catch (e) {}
+					} catch {}
 				}, ms);
 			}
 		}
@@ -5050,7 +5054,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		try {
 			const raw = localStorage.getItem(name);
 			return raw ? JSON.parse(raw) : null;
-		} catch (e) {
+		} catch {
 			return null;
 		}
 	}
@@ -8708,6 +8712,39 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				parseResults(document);
 			} catch (e) {}
 		}
+		function gatherCtx() {
+			return {
+				land,
+				publish,
+				nowT,
+				norm,
+				txt,
+				feedRowTile,
+				residentKey,
+				get packet() {
+					return packet;
+				},
+				get storeKey() {
+					return storeKey;
+				}
+			};
+		}
+		function parseAssessments(doc) {
+			var r = window.__tmReaders;
+			if (r && r.parseAssessments) return r.parseAssessments(doc, gatherCtx());
+		}
+		function parseProfile(doc) {
+			var r = window.__tmReaders;
+			if (r && r.parseProfile) return r.parseProfile(doc, gatherCtx());
+		}
+		function parseResults(doc) {
+			var r = window.__tmReaders;
+			if (r && r.parseResults) return r.parseResults(doc, gatherCtx());
+		}
+		function parseOrders(doc) {
+			var r = window.__tmReaders;
+			if (r && r.parseOrders) return r.parseOrders(doc, gatherCtx());
+		}
 		function discoverUrls() {
 			var want = [
 				{
@@ -8800,86 +8837,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				return new DOMParser().parseFromString(html, "text/html");
 			});
 		}
-		function ctxt(el) {
-			if (!el) return "";
-			var c = el.cloneNode(true);
-			var junk = c.querySelectorAll("script, style, pre");
-			for (var i = 0; i < junk.length; i++) junk[i].remove();
-			return norm(c.textContent);
-		}
-		function firstDate(cells) {
-			for (var i = 0; i < cells.length; i++) {
-				var m = cells[i].match(/\d{1,2}\/\d{1,2}\/\d{4}/);
-				if (m) return m[0];
-			}
-			return "";
-		}
-		var BIMS_RE = /BIMS|cognitive|cognitively|impair|intact/i;
-		var PSYCH_RE = /psychiatr|psych\s*:|psych\s+consult/i;
-		var MDACK_RE = /MD:\s*Psychiatry\s+Consult\s+Ack/i;
-		var SCORE_RE = /^\d{1,2}(\.\d+)?$/;
-		function parseAssessments(doc) {
-			var heads = doc.querySelectorAll("th, td");
-			var hasScore = false;
-			for (var i = 0; i < heads.length; i++) if (/^Score$/i.test(ctxt(heads[i]))) {
-				hasScore = true;
-				break;
-			}
-			if (!hasScore) {
-				try {
-					packet.stops.bims.why = "no Score column in fetched list";
-					publish();
-				} catch (e) {}
-				return;
-			}
-			var bims = [], visits = [], mdAck = "", bimsRowsSeen = 0;
-			var rows = doc.querySelectorAll("tr");
-			for (var r = 0; r < rows.length; r++) {
-				var row = rows[r];
-				if (!row.cells || row.cells.length < 6 || row.querySelector("tr")) continue;
-				var t = Array.prototype.map.call(row.cells, ctxt);
-				var dateStr = firstDate(t);
-				if (!dateStr) continue;
-				var rowText = t.join(" | ");
-				var score = t.find(function(c) {
-					return SCORE_RE.test(c);
-				});
-				if (MDACK_RE.test(rowText)) {
-					if (!mdAck) mdAck = dateStr;
-				} else if (PSYCH_RE.test(rowText)) visits.push(dateStr);
-				else if (t.some(function(c) {
-					return BIMS_RE.test(c);
-				}) && score !== void 0) {
-					bimsRowsSeen++;
-					var n = parseFloat(score);
-					if (n >= 0 && n <= 15) bims.push({
-						date: dateStr,
-						score: n
-					});
-				}
-			}
-			if (!bims.length) try {
-				packet.stops.bims.why = "Score column present; BIMS-like rows matched=" + bimsRowsSeen + " (0 = the fetched list holds no BIMS rows)";
-				publish();
-			} catch (e) {}
-			if (bims.length) {
-				bims.sort(function(a, b2) {
-					return new Date(b2.date) - new Date(a.date);
-				});
-				land("bims", {
-					source: "Assessments",
-					at: nowT(),
-					facts: { latest: bims[0].score + " on " + bims[0].date },
-					series: bims.slice(0, 24),
-					summary: "BIMS " + bims[0].score + " on " + bims[0].date + " · " + bims.length + " scored"
-				});
-			}
-			if (visits.length || mdAck) land("ownnotes", {
-				source: "Assessments",
-				at: nowT(),
-				summary: (visits.length ? "Your consults: " + visits.slice(0, 12).join(", ") : "") + (mdAck ? " · latest MD acknowledgement " + mdAck : "")
-			});
-		}
 		var fedSent = {};
 		function feedEvent(detail) {
 			var keys = Object.keys(detail);
@@ -8924,233 +8881,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					ts: Date.now()
 				}));
 			} catch (e) {}
-		}
-		function landRelations(summary) {
-			var cur = packet.stops.relations;
-			summary = norm(summary).slice(0, 300);
-			if (/^relationships\b[\s:—–-]*$/i.test(summary)) return;
-			if (cur.status !== "landed") {
-				land("relations", {
-					source: "Profile",
-					at: nowT(),
-					summary
-				});
-				feedRowTile(summary);
-				return;
-			}
-			if (cur.summary !== summary) {
-				packet.stops.relations = {
-					status: "landed",
-					source: "Profile",
-					at: nowT(),
-					summary
-				};
-				feedRowTile(summary);
-				publish();
-				saveStored();
-				try {
-					document.dispatchEvent(new CustomEvent("tm-gather-update"));
-				} catch (e) {}
-			}
-		}
-		var RELSET = {
-			self: 1,
-			spouse: 1,
-			wife: 1,
-			husband: 1,
-			daughter: 1,
-			son: 1,
-			sister: 1,
-			brother: 1,
-			mother: 1,
-			father: 1,
-			friend: 1,
-			niece: 1,
-			nephew: 1,
-			partner: 1,
-			guardian: 1,
-			cousin: 1,
-			grandson: 1,
-			granddaughter: 1,
-			aunt: 1,
-			uncle: 1,
-			"daughter-in-law": 1,
-			"son-in-law": 1,
-			"mother-in-law": 1,
-			"father-in-law": 1,
-			"sister-in-law": 1,
-			"brother-in-law": 1
-		};
-		function parseContacts(doc) {
-			var tables = doc.querySelectorAll("table");
-			for (var ti = 0; ti < tables.length; ti++) {
-				var ttxt = tables[ti].textContent || "";
-				if (!/Relation/.test(ttxt) && !/Emergency Contact/.test(ttxt)) continue;
-				var rows = tables[ti].querySelectorAll("tr");
-				var seen = [], counts = {}, hasSelf = false;
-				for (var r = 0; r < rows.length; r++) {
-					var cells = rows[r].querySelectorAll("td");
-					var rel = "";
-					for (var c = 0; c < cells.length; c++) {
-						var ct = norm(cells[c].textContent).toLowerCase();
-						if (RELSET[ct]) {
-							rel = ct;
-							break;
-						}
-					}
-					if (!rel) for (var c2 = 0; c2 < cells.length; c2++) {
-						var pm = (cells[c2].textContent || "").match(/\(([a-z]+)\)/i);
-						if (pm && RELSET[pm[1].toLowerCase()]) {
-							rel = pm[1].toLowerCase();
-							break;
-						}
-					}
-					if (!rel) continue;
-					if (rel === "self") {
-						hasSelf = true;
-						continue;
-					}
-					if (!counts[rel]) {
-						counts[rel] = 0;
-						seen.push(rel);
-					}
-					counts[rel]++;
-				}
-				if (!seen.length && !hasSelf) continue;
-				seen.sort(function(a, b) {
-					return counts[b] - counts[a];
-				});
-				var parts = seen.map(function(w) {
-					return counts[w] > 1 ? counts[w] + " " + w + "s" : w;
-				});
-				if (hasSelf) parts.unshift("self");
-				return parts.join(", ");
-			}
-			return "";
-		}
-		function parseProfile(doc) {
-			var el = doc.querySelector("[data-fill-label=\"Relationships\"]");
-			if (el && (el.tagName && el.tagName.toLowerCase() === "tm-tile" || el.closest && el.closest("tm-tile"))) el = null;
-			var val = el ? el.getAttribute("data-fill-value") || txt(el) : "";
-			if (!val || /^[—–-]+$/.test(norm(val)) || /^N\/?A$/i.test(norm(val))) {
-				var cv = parseContacts(doc);
-				if (cv) {
-					landRelations(cv);
-					return;
-				}
-			}
-			if (!val) {
-				var els = doc.querySelectorAll("div, span, td");
-				for (var i = 0; i < els.length; i++) if (/^Relationships$/i.test(txt(els[i])) && els[i].parentElement) {
-					var pt = txt(els[i].parentElement);
-					if (pt.length > 14) {
-						val = pt.replace(/^Relationships\s*/i, "");
-						break;
-					}
-				}
-			}
-			if (val && !/^[—–-]+$/.test(norm(val)) && !/^N\/?A$/i.test(norm(val))) {
-				landRelations(val);
-				return;
-			}
-			if (el) return;
-			if (!val && /Resident Profile/i.test(doc.title || "")) {
-				var words = [
-					"spouse",
-					"wife",
-					"husband",
-					"daughter",
-					"son",
-					"sister",
-					"brother",
-					"mother",
-					"father",
-					"friend",
-					"niece",
-					"nephew",
-					"partner",
-					"guardian",
-					"cousin",
-					"grandson",
-					"granddaughter",
-					"aunt",
-					"uncle"
-				];
-				var bodyT = doc.body && doc.body.textContent || "";
-				var found = words.filter(function(wd) {
-					return new RegExp("\\b" + wd + "\\b", "i").test(bodyT);
-				});
-				if (found.length) val = found.join(", ");
-			}
-			if (val && !/^[—–-]+$/.test(norm(val)) && !/^N\/?A$/i.test(norm(val))) {
-				if (packet.stops.relations.status !== "landed") land("relations", {
-					source: "Profile",
-					at: nowT(),
-					summary: norm(val).slice(0, 300)
-				});
-			}
-		}
-		function parseResults(doc) {
-			var reports = [];
-			var rows = doc.querySelectorAll("tr");
-			for (var i = 0; i < rows.length; i++) {
-				if (!rows[i].querySelector("[onclick*=\"viewReportPopup\"]")) continue;
-				var cells = rows[i].cells ? Array.prototype.map.call(rows[i].cells, ctxt) : [];
-				var date = firstDate(cells);
-				var name = "";
-				for (var k = 0; k < cells.length; k++) if (cells[k].length > name.length && !/Actions/i.test(cells[k])) name = cells[k];
-				reports.push({
-					name: name.slice(0, 80),
-					date
-				});
-			}
-			if (reports.length) land("labs", {
-				source: "Results",
-				at: nowT(),
-				reports: reports.slice(0, 40),
-				summary: reports.length + " reports · latest " + (reports[0].name || "") + " " + (reports[0].date || "")
-			});
-		}
-		var PSYCH_MED_RE = /alprazolam|xanax|citalopram|celexa|escitalopram|lexapro|sertraline|zoloft|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|duloxetine|cymbalta|desvenlafaxine|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|vortioxetine|clozapine|clozaril|olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|lurasidone|latuda|cariprazine|brexpiprazole|haloperidol|haldol|fluphenazine|chlorpromazine|perphenazine|loxapine|asenapine|iloperidone|divalproex|depakote|valproate|lamotrigine|lamictal|carbamazepine|tegretol|oxcarbazepine|lithium|gabapentin|neurontin|pregabalin|lyrica|topiramate|hydroxyzine|vistaril|buspirone|clonazepam|klonopin|lorazepam|ativan|diazepam|valium|temazepam|zolpidem|ambien|eszopiclone|zaleplon|ramelteon|suvorexant|doxepin|amitriptyline|nortriptyline|imipramine|clomipramine|methylphenidate|amphetamine|adderall|lisdexamfetamine|vyvanse|atomoxetine|guanfacine|clonidine|prazosin|propranolol|benztropine|donepezil|memantine|rivastigmine|galantamine|naltrexone|acamprosate|disulfiram|methadone|buprenorphine/i;
-		function parseOrders(doc) {
-			var active = [], psych = [];
-			var rows = doc.querySelectorAll("tr");
-			for (var i = 0; i < rows.length; i++) {
-				var row = rows[i];
-				if (!row.cells || row.cells.length < 5) continue;
-				var t = Array.prototype.map.call(row.cells, ctxt);
-				var statusIdx = t.findIndex(function(c) {
-					return /^Active$/i.test(c);
-				});
-				if (statusIdx < 0) continue;
-				var sigIdx = t.findIndex(function(c) {
-					return /^(Give|Apply|Inject|Take|Instill|Inhale)\b/i.test(c);
-				});
-				var medCell = sigIdx > 0 ? t[sigIdx - 1] : "";
-				var sig = sigIdx >= 0 ? t[sigIdx] : "";
-				var start = "";
-				for (var k = statusIdx + 1; k < t.length; k++) if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(t[k])) {
-					start = t[k];
-					break;
-				}
-				if (!medCell) continue;
-				var rec = {
-					name: medCell.slice(0, 90),
-					sig: sig.slice(0, 140),
-					start: start.slice(0, 16)
-				};
-				active.push(rec);
-				if (PSYCH_MED_RE.test(medCell)) psych.push(rec);
-			}
-			if (active.length) land("orders", {
-				source: "Orders",
-				at: nowT(),
-				active: active.length,
-				psych: psych.slice(0, 30),
-				summary: active.length + " active orders · " + psych.length + " psychiatric: " + psych.slice(0, 8).map(function(p) {
-					return p.name;
-				}).join("; ")
-			});
 		}
 		function parseWeights(doc) {
 			var wp = readWeightsPage(doc);
@@ -9320,6 +9050,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			3e3
 		]);
 		publish();
+		window.addEventListener("storage", function(e) {
+			if (!e.key || e.key.indexOf("tmGatherV2:") !== 0) return;
+			try {
+				mergeStored();
+			} catch (err) {}
+		});
 		try {
 			window.__tmGather = {
 				packet,
@@ -9331,6 +9067,322 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				gatherFetches
 			};
 		} catch (e) {}
+	})();
+	(function() {
+		"use strict";
+		function ctxt(el) {
+			if (!el) return "";
+			var c = el.cloneNode(true);
+			var junk = c.querySelectorAll("script, style, pre");
+			for (var i = 0; i < junk.length; i++) junk[i].remove();
+			return (c.textContent || "").replace(/\s+/g, " ").trim();
+		}
+		function firstDate(cells) {
+			for (var i = 0; i < cells.length; i++) {
+				var m = cells[i].match(/\d{1,2}\/\d{1,2}\/\d{4}/);
+				if (m) return m[0];
+			}
+			return "";
+		}
+		var BIMS_RE = /BIMS|cognitive|cognitively|impair|intact/i;
+		var PSYCH_RE = /psychiatr|psych\s*:|psych\s+consult/i;
+		var MDACK_RE = /MD:\s*Psychiatry\s+Consult\s+Ack/i;
+		var SCORE_RE = /^\d{1,2}(\.\d+)?$/;
+		function parseAssessments(doc, G) {
+			var heads = doc.querySelectorAll("th, td");
+			var hasScore = false;
+			for (var i = 0; i < heads.length; i++) if (/^Score$/i.test(ctxt(heads[i]))) {
+				hasScore = true;
+				break;
+			}
+			if (!hasScore) {
+				try {
+					G.packet.stops.bims.why = "no Score column in fetched list";
+					G.publish();
+				} catch (e) {}
+				return;
+			}
+			var bims = [], visits = [], mdAck = "", bimsRowsSeen = 0;
+			var rows = doc.querySelectorAll("tr");
+			for (var r = 0; r < rows.length; r++) {
+				var row = rows[r];
+				if (!row.cells || row.cells.length < 6 || row.querySelector("tr")) continue;
+				var t = Array.prototype.map.call(row.cells, ctxt);
+				var dateStr = firstDate(t);
+				if (!dateStr) continue;
+				var rowText = t.join(" | ");
+				var score = t.find(function(c) {
+					return SCORE_RE.test(c);
+				});
+				if (MDACK_RE.test(rowText)) {
+					if (!mdAck) mdAck = dateStr;
+				} else if (PSYCH_RE.test(rowText)) visits.push(dateStr);
+				else if (t.some(function(c) {
+					return BIMS_RE.test(c);
+				}) && score !== void 0) {
+					bimsRowsSeen++;
+					var n = parseFloat(score);
+					if (n >= 0 && n <= 15) bims.push({
+						date: dateStr,
+						score: n
+					});
+				}
+			}
+			if (!bims.length) try {
+				G.packet.stops.bims.why = "Score column present; BIMS-like rows matched=" + bimsRowsSeen + " (0 = the fetched list holds no BIMS rows)";
+				G.publish();
+			} catch (e) {}
+			if (bims.length) {
+				bims.sort(function(a, b2) {
+					return new Date(b2.date) - new Date(a.date);
+				});
+				G.land("bims", {
+					source: "Assessments",
+					at: G.nowT(),
+					facts: { latest: bims[0].score + " on " + bims[0].date },
+					series: bims.slice(0, 24),
+					summary: "BIMS " + bims[0].score + " on " + bims[0].date + " · " + bims.length + " scored"
+				});
+			}
+			if (visits.length || mdAck) G.land("ownnotes", {
+				source: "Assessments",
+				at: G.nowT(),
+				summary: (visits.length ? "Your consults: " + visits.slice(0, 12).join(", ") : "") + (mdAck ? " · latest MD acknowledgement " + mdAck : "")
+			});
+		}
+		function landRelations(summary, G) {
+			var cur = G.packet.stops.relations;
+			summary = G.norm(summary).slice(0, 300);
+			if (/^relationships\b[\s:—–-]*$/i.test(summary)) return;
+			if (cur.status !== "landed") {
+				G.land("relations", {
+					source: "Profile",
+					at: G.nowT(),
+					summary
+				});
+				G.feedRowTile(summary);
+				return;
+			}
+			if (cur.summary !== summary) {
+				G.packet.stops.relations = {
+					status: "landed",
+					source: "Profile",
+					at: G.nowT(),
+					summary
+				};
+				G.feedRowTile(summary);
+				G.publish();
+				saveStored();
+				try {
+					document.dispatchEvent(new CustomEvent("tm-gather-update"));
+				} catch (e) {}
+			}
+		}
+		var RELSET = {
+			self: 1,
+			spouse: 1,
+			wife: 1,
+			husband: 1,
+			daughter: 1,
+			son: 1,
+			sister: 1,
+			brother: 1,
+			mother: 1,
+			father: 1,
+			friend: 1,
+			niece: 1,
+			nephew: 1,
+			partner: 1,
+			guardian: 1,
+			cousin: 1,
+			grandson: 1,
+			granddaughter: 1,
+			aunt: 1,
+			uncle: 1,
+			"daughter-in-law": 1,
+			"son-in-law": 1,
+			"mother-in-law": 1,
+			"father-in-law": 1,
+			"sister-in-law": 1,
+			"brother-in-law": 1
+		};
+		function parseContacts(doc, G) {
+			var tables = doc.querySelectorAll("table");
+			for (var ti = 0; ti < tables.length; ti++) {
+				var ttxt = tables[ti].textContent || "";
+				if (!/Relation/.test(ttxt) && !/Emergency Contact/.test(ttxt)) continue;
+				var rows = tables[ti].querySelectorAll("tr");
+				var seen = [], counts = {}, hasSelf = false;
+				for (var r = 0; r < rows.length; r++) {
+					var cells = rows[r].querySelectorAll("td");
+					var rel = "";
+					for (var c = 0; c < cells.length; c++) {
+						var ct = G.norm(cells[c].textContent).toLowerCase();
+						if (RELSET[ct]) {
+							rel = ct;
+							break;
+						}
+					}
+					if (!rel) for (var c2 = 0; c2 < cells.length; c2++) {
+						var pm = (cells[c2].textContent || "").match(/\(([a-z]+)\)/i);
+						if (pm && RELSET[pm[1].toLowerCase()]) {
+							rel = pm[1].toLowerCase();
+							break;
+						}
+					}
+					if (!rel) continue;
+					if (rel === "self") {
+						hasSelf = true;
+						continue;
+					}
+					if (!counts[rel]) {
+						counts[rel] = 0;
+						seen.push(rel);
+					}
+					counts[rel]++;
+				}
+				if (!seen.length && !hasSelf) continue;
+				seen.sort(function(a, b) {
+					return counts[b] - counts[a];
+				});
+				var parts = seen.map(function(w) {
+					return counts[w] > 1 ? counts[w] + " " + w + "s" : w;
+				});
+				if (hasSelf) parts.unshift("self");
+				return parts.join(", ");
+			}
+			return "";
+		}
+		function parseProfile(doc, G) {
+			var el = doc.querySelector("[data-fill-label=\"Relationships\"]");
+			if (el && (el.tagName && el.tagName.toLowerCase() === "tm-tile" || el.closest && el.closest("tm-tile"))) el = null;
+			var val = el ? el.getAttribute("data-fill-value") || G.txt(el) : "";
+			if (!val || /^[—–-]+$/.test(G.norm(val)) || /^N\/?A$/i.test(G.norm(val))) {
+				var cv = parseContacts(doc, G);
+				if (cv) {
+					landRelations(cv, G);
+					return;
+				}
+			}
+			if (!val) {
+				var els = doc.querySelectorAll("div, span, td");
+				for (var i = 0; i < els.length; i++) if (/^Relationships$/i.test(G.txt(els[i])) && els[i].parentElement) {
+					var pt = G.txt(els[i].parentElement);
+					if (pt.length > 14) {
+						val = pt.replace(/^Relationships\s*/i, "");
+						break;
+					}
+				}
+			}
+			if (val && !/^[—–-]+$/.test(G.norm(val)) && !/^N\/?A$/i.test(G.norm(val))) {
+				landRelations(val, G);
+				return;
+			}
+			if (el) return;
+			if (!val && /Resident Profile/i.test(doc.title || "")) {
+				var words = [
+					"spouse",
+					"wife",
+					"husband",
+					"daughter",
+					"son",
+					"sister",
+					"brother",
+					"mother",
+					"father",
+					"friend",
+					"niece",
+					"nephew",
+					"partner",
+					"guardian",
+					"cousin",
+					"grandson",
+					"granddaughter",
+					"aunt",
+					"uncle"
+				];
+				var bodyT = doc.body && doc.body.textContent || "";
+				var found = words.filter(function(wd) {
+					return new RegExp("\\b" + wd + "\\b", "i").test(bodyT);
+				});
+				if (found.length) val = found.join(", ");
+			}
+			if (val && !/^[—–-]+$/.test(G.norm(val)) && !/^N\/?A$/i.test(G.norm(val))) {
+				if (G.packet.stops.relations.status !== "landed") G.land("relations", {
+					source: "Profile",
+					at: G.nowT(),
+					summary: G.norm(val).slice(0, 300)
+				});
+			}
+		}
+		function parseResults(doc, G) {
+			var reports = [];
+			var rows = doc.querySelectorAll("tr");
+			for (var i = 0; i < rows.length; i++) {
+				if (!rows[i].querySelector("[onclick*=\"viewReportPopup\"]")) continue;
+				var cells = rows[i].cells ? Array.prototype.map.call(rows[i].cells, ctxt) : [];
+				var date = firstDate(cells);
+				var name = "";
+				for (var k = 0; k < cells.length; k++) if (cells[k].length > name.length && !/Actions/i.test(cells[k])) name = cells[k];
+				reports.push({
+					name: name.slice(0, 80),
+					date
+				});
+			}
+			if (reports.length) G.land("labs", {
+				source: "Results",
+				at: G.nowT(),
+				reports: reports.slice(0, 40),
+				summary: reports.length + " reports · latest " + (reports[0].name || "") + " " + (reports[0].date || "")
+			});
+		}
+		var PSYCH_MED_RE = /alprazolam|xanax|citalopram|celexa|escitalopram|lexapro|sertraline|zoloft|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|duloxetine|cymbalta|desvenlafaxine|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|vortioxetine|clozapine|clozaril|olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|lurasidone|latuda|cariprazine|brexpiprazole|haloperidol|haldol|fluphenazine|chlorpromazine|perphenazine|loxapine|asenapine|iloperidone|divalproex|depakote|valproate|lamotrigine|lamictal|carbamazepine|tegretol|oxcarbazepine|lithium|gabapentin|neurontin|pregabalin|lyrica|topiramate|hydroxyzine|vistaril|buspirone|clonazepam|klonopin|lorazepam|ativan|diazepam|valium|temazepam|zolpidem|ambien|eszopiclone|zaleplon|ramelteon|suvorexant|doxepin|amitriptyline|nortriptyline|imipramine|clomipramine|methylphenidate|amphetamine|adderall|lisdexamfetamine|vyvanse|atomoxetine|guanfacine|clonidine|prazosin|propranolol|benztropine|donepezil|memantine|rivastigmine|galantamine|naltrexone|acamprosate|disulfiram|methadone|buprenorphine/i;
+		function parseOrders(doc, G) {
+			var active = [], psych = [];
+			var rows = doc.querySelectorAll("tr");
+			for (var i = 0; i < rows.length; i++) {
+				var row = rows[i];
+				if (!row.cells || row.cells.length < 5) continue;
+				var t = Array.prototype.map.call(row.cells, ctxt);
+				var statusIdx = t.findIndex(function(c) {
+					return /^Active$/i.test(c);
+				});
+				if (statusIdx < 0) continue;
+				var sigIdx = t.findIndex(function(c) {
+					return /^(Give|Apply|Inject|Take|Instill|Inhale)\b/i.test(c);
+				});
+				var medCell = sigIdx > 0 ? t[sigIdx - 1] : "";
+				var sig = sigIdx >= 0 ? t[sigIdx] : "";
+				var start = "";
+				for (var k = statusIdx + 1; k < t.length; k++) if (/\d{1,2}\/\d{1,2}\/\d{4}/.test(t[k])) {
+					start = t[k];
+					break;
+				}
+				if (!medCell) continue;
+				var rec = {
+					name: medCell.slice(0, 90),
+					sig: sig.slice(0, 140),
+					start: start.slice(0, 16)
+				};
+				active.push(rec);
+				if (PSYCH_MED_RE.test(medCell)) psych.push(rec);
+			}
+			if (active.length) G.land("orders", {
+				source: "Orders",
+				at: G.nowT(),
+				active: active.length,
+				psych: psych.slice(0, 30),
+				summary: active.length + " active orders · " + psych.length + " psychiatric: " + psych.slice(0, 8).map(function(p) {
+					return p.name;
+				}).join("; ")
+			});
+		}
+		window.__tmReaders = {
+			parseAssessments,
+			parseProfile,
+			parseResults,
+			parseOrders
+		};
 	})();
 	(function() {
 		"use strict";
