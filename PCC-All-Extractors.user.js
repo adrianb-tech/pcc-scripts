@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.0.2
+// @version      1.0.3
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -2776,8 +2776,16 @@
   }
 
   function fireClick(el) {
+    // Core's tiles carry .pcc-fill-copy on the tm-tile HOST,
+    // but the tile's click handler lives on its inner card
+    // ([data-tm-card]) - a click dispatched on the host never
+    // descends to it, so G reached the tiles (v1.0.2) yet
+    // still queued nothing (his report, 2026-10-19; fixture
+    // h133 on TREE-1154). Aim at the card when there is one.
+    var t = el;
+    if (el && el.querySelector) { var card = el.querySelector('[data-tm-card]'); if (card) t = card; }
     ['mousedown', 'mouseup', 'click'].forEach(function (type) {
-      el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      t.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
     });
   }
 
