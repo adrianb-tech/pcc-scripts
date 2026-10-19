@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Dashboard header: More / Less
-// @version      3.16
+// @version      3.17
 // @description  On the resident dashboard header: hides PCC's Care Profile and PointClickCare Connect buttons and adds a third button in the identical rh-header-btn style labeled More. Click More and both buttons come back (it turns to Less); click Less and they hide again. Standalone by his request (2026-10-14) so it can't disturb the other scripts; the tiling redesign of the extended header area will live here too.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dashboard-More-Less.user.js
@@ -312,7 +312,7 @@
     d.style.cssText = 'background:' + (opts.warn ? '#ff1a1a' : (opts.rose ? '#fdf3f2' : '#fff')) + ';border:1px solid ' +
       (opts.warn ? '#ff8080' : (opts.rose ? '#f0c8c2' : '#e2e8f0')) + ';border-radius:12px;box-shadow:' +
       (opts.warn ? '0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)' : '0 1px 3px rgba(15,23,42,.05)') + ';' +
-      'padding:' + (opts.pad || '12px 16px 14px') + ';' + (opts.wide ? 'flex:1 1 520px;min-width:440px;' : (opts.grow ? 'flex:1 1 400px;min-width:340px;' : (opts.fixedW ? 'flex:none;width:' + opts.fixedW + 'px;' : 'flex:none;')));
+      'padding:' + (opts.pad || '12px 16px 14px') + ';min-width:0;' + (opts.wide ? 'flex:1 1 520px;min-width:0;' : (opts.grow ? 'flex:1 1 400px;min-width:0;' : (opts.fixedW ? 'flex:0 1 ' + opts.fixedW + 'px;width:' + opts.fixedW + 'px;' : 'flex:none;')));
     var lab = document.createElement('div');
     lab.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:14px;';
     var ls = document.createElement('span');
@@ -561,7 +561,7 @@
     row = document.createElement('div');
     row.id = ROW_ID;
     row.setAttribute('data-sig', sig);
-    row.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;margin:12px 0 4px;' +
+    row.style.cssText = 'display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;' +
       'font-family:-apple-system,Helvetica,Arial,sans-serif;';
     if (d.admission) {
       var m = d.admission.match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
@@ -578,6 +578,10 @@
       return c;
     }
     if (d.weight) row.appendChild(tile('Weight', d.weight, { nav: true, color: d.weightRed ? '#a33327' : undefined }));
+    // His order (2026-10-19): BIMS and Relationships sit
+    // right after Weight; Psych meds follows them.
+    if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 200, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
+    if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 250, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
     if (d.meds) {
       // Design A in the row, right after Weight (his pick): a wide
       // banner tile whose lines flow into columns. First-class tile
@@ -590,10 +594,28 @@
         row.appendChild(tile('Psych meds', d.meds, { cols: true, multi: true, size: 13, weight: 600, maxw: '920px', warn: !!(tw && tw.meds), btn: medCountChip(String(d.meds === '- none' ? 0 : d.meds.split('\n').length)), delegate: 'meds' }));
       }
     }
-    if (d.bims) row.appendChild(tile('BIMS', d.bims, { fixedW: 340, fit: true, click: { label: 'BIMS', value: d.bims }, fill: { label: 'BIMS', value: d.bims } }));
-    if (d.rel) row.appendChild(tile('Relationships', d.rel, { fixedW: 340, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel }, fill: { label: 'Relationships', value: d.rel } }));
     bar.parentNode.insertBefore(row, bar.nextSibling);
     fitAllergies(row);
+    fitRow(row);
+  }
+
+  // Single-row fit (v3.17): if the row is wider than its
+  // container (split view), step the tile values' fonts
+  // down until it fits - the row never wraps, never clips.
+  function fitRow(row) {
+    try {
+      var guard = 0;
+      while (guard < 12 && row.scrollWidth > row.clientWidth + 2) {
+        var vals = row.querySelectorAll('[data-fit="1"]');
+        var shrank = false;
+        for (var i = 0; i < vals.length; i++) {
+          var cur = parseFloat(vals[i].style.fontSize) || 21;
+          if (cur > 11) { vals[i].style.fontSize = (cur - 1) + 'px'; shrank = true; }
+        }
+        if (!shrank) break;
+        guard++;
+      }
+    } catch (e) {}
   }
 
   // The Allergies box is always the same size; a long allergy list
