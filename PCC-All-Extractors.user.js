@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.0.3
+// @version      1.0.4
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -9,6 +9,7 @@
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
+
 
 // ----- module: PCC-All-BIMS-extractor.user.js -----
 (function () {
@@ -225,7 +226,9 @@
     }, true);
 })();
 ;
+
 // ----- module: PCC-All-Behavior-extractor.user.js -----
+var __s3mod_Behavior_extractor = 1;
 (function () {
   'use strict';
 
@@ -252,7 +255,7 @@
   ];
 
   // Template / boilerplate contexts that must NOT count as a Fall.
-  var FALL_GUARDS = [/fall\s+risk/i, /risk\s+of\s+fall/i, /risk\s+for\s+fall/i, /fall\s+precaution/i, /fall\s+prevention/i, /falls\s+risk/i];
+  var FALL_GUARDS = [/falls?\s+risk/i, /risk\s+of\s+falls?/i, /risk\s+for\s+falls?/i, /fall\s+precaution/i, /fall\s+prevention/i];
   var NEG = /\b(no|not|denies|denied|deny|without|none|never|absent|free of)\b/i;
 
   function escRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
@@ -285,6 +288,10 @@
     if (isFall) {
       var around = text.slice(Math.max(0, start - 14), end + 14);
       for (var g = 0; g < FALL_GUARDS.length; g++) if (FALL_GUARDS[g].test(around)) return false;
+      // B12/B14 (his review, 2026-10-19): a fall as history ("s/p fall",
+      // "h/o falls") or in a "with dx of" enumeration is not a behavior event.
+      if (/\b(?:s\/p|status\s+post|h\/o|hx|history\s+of)\s+falls?\b/i.test(around)) return false;
+      if (/\bwith\s+(?:a\s+)?dx\s+of\b/i.test(around)) return false;
     }
     // sentence start: last ., !, ? or newline before the match
     var cut = Math.max(
@@ -296,6 +303,61 @@
     if (NEG.test(before)) return false;
     var sent = sentenceAround(text, m.index);
     if (ORDER_RE.test(sent) || ACTIVE_RE.test(sent) || GOAL_RE.test(sent)) return false;
+    // B6 (his review, 2026-10-19): a "?" / retrospective summary /
+    // treatment-complication discussion is not a behavior event.
+    // "Improved from earlier agitation" is retrospective, not current.
+    // "Monitor for..." is a prospective instruction, not an event.
+    if (/\?/.test(sent)) return false;
+    if (/\b(30[\s-]?day|event summary)\b/i.test(sent)) return false;
+    if (/\b(improved\s+from|resolved|no\s+longer)\b/i.test(sent)) return false;
+    if (/\b(monitor|watch|assess)\s+for\b/i.test(sent)) return false;
+    if (/\b(complicated by|sedation|hypotension)\b/i.test(sent) && /\b(lorazepam|haloperidol|olanzapine|quetiapine|risperidone|ativan|seroquel|zyprexa|versed|midazolam)\b/i.test(sent)) return false;
+    // B7: differential / rule-out / "may also be" is not a behavior event.
+    if (/\br\/t\b|\bdifferential\b|\brule\s*out\b|\bmay also be\b/i.test(sent)) return false;
+    // B9: the chief complaint is not a behavior event. Check wider context
+    // because sentenceAround may truncate the "Chief Complaint:" label.
+    // A coded diagnosis ("Medication noncompliance (Z91.14)") is also not
+    // an observed behavior event.
+    if (/\bchief complaint\b|\breason for (visit|encounter|referral)\b/i.test(sent)) return false;
+    if (/\([A-Z]\d{2}[\d.]*\)?/.test(sent)) return false;
+    var ccBefore = text.slice(Math.max(0, start - 120), start);
+    if (/\bchief complaint\s*:/i.test(ccBefore)) {
+      var ccPos = ccBefore.search(/\bchief complaint\s*:/i);
+      var betweenCC = ccBefore.slice(ccPos);
+      if (!/[.!?]\s+[A-Z]/.test(betweenCC)) return false;
+    }
+    // B2/B3: an unchecked checkbox means the behavior was NOT observed.
+    // The nearest preceding [ ] / [x] decides.
+    var cb = text.slice(0, start);
+    var lastBox = Math.max(cb.lastIndexOf('[ ]'), cb.lastIndexOf('[]'), cb.lastIndexOf('[x]'), cb.lastIndexOf('[ x]'), cb.lastIndexOf('[X]'));
+    if (lastBox !== -1) {
+      var boxText = cb.slice(lastBox, lastBox + 3).trim();
+      if (/^\[\s*\]$/.test(boxText)) return false;
+    }
+    // B1: a bare numbered label ("9: Anxiety") is an assessment header, not an event.
+    var cleanSent = sent.replace(/\*+/g, '').trim();
+    if (/^\d{1,3}\s*:\s*[A-Za-z][\w ,.'()-]*$/.test(cleanSent)) return false;
+    // B4: a numbered all-caps admin code line ("00 INSOMNIA, UNSPECIFIED R53.") is not an event.
+    if (/^\d{1,3}\s+[^a-z\n]{4,}\s+[A-Z]\d{2}(?:\.\w+)?\.?\s*$/.test(cleanSent)) return false;
+    // B10/B11: a match inside the "Behavior(s) Observed:" label span doesn't
+    // count — that's the checkbox label ("Crying/Tearfulness"), not the
+    // narrative event ("screaming"). The narrative starts after the label.
+    var preMatch = text.slice(Math.max(0, start - 70), start);
+    var lblIdx = preMatch.search(/behavior\(s\)\s+observed\s*:/i);
+    if (lblIdx !== -1) {
+      var afterLabel = preMatch.slice(lblIdx);
+      // If no sentence break between the label and the match, it's the label's
+      // checkbox text, not a narrative event.
+      if (!/[.!?]\s+[A-Z]/.test(afterLabel)) return false;
+    }
+    // B15: "with dx of" enumeration is a problem list, not a behavior event.
+    if (/\bwith\s+(?:a\s+)?dx\s+of\b/i.test(sent)) return false;
+    // B12: "with a history of ..., ..." enumeration is history, not an event.
+    if (/\bwith\s+a\s+history\s+of\b[^.\n]*,/i.test(sent)) return false;
+    // B17: a fall as a DIAGNOSIS (dx-labeled or code-only sentence) is not a behavior event.
+    if (isFall && (/\bprimary\s+dx\s*:/i.test(sent) || /\bdx\s*:/i.test(sent) || /^[A-Z]\d{2}(?:\.\w+)?:/i.test(cleanSent))) return false;
+    // B8: a fall without an explicit date in the sentence is not a countable event.
+    if (isFall && !/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/.test(sent)) return false;
     return true;
   }
 
@@ -315,8 +377,30 @@
       .filter(function (x) { return x !== -1; });
     var end = ends.length ? Math.min.apply(null, ends) + 1 : text.length;
     var s = text.slice(start, end).replace(/\s+/g, ' ').trim();
+    // B1 (his review, 2026-10-19): strip e-signature boilerplate
+    // ("***** Document e-signed by ...") from the description.
+    s = s.replace(/\*+\s*document\s+e-signed\s+by\s+[^*]+/gi, '').replace(/\*+/g, '').trim();
     if (s.length > 170) s = s.slice(0, 167).trim() + '\u2026';
     return s;
+  }
+
+  // B5 (his review, 2026-10-19): a refusal's description is "refused <object>"
+  // (≤5 words), not the whole vitals blob. "Resident Refused - No Weight"
+  // → "refused weight".
+  function refusalDesc(sent) {
+    var m = sent.match(/(resident\s+)?(refus(?:ed|es|ing|al))\b\s*[-–:]*\s*(no\s+)?([^.,;]{1,50})/i);
+    if (!m) return sent;
+    var obj = (m[4] || '').replace(/([a-z])([A-Z])/g, '$1 $2').trim().toLowerCase();
+    var words = obj.split(/\s+/).slice(0, 4);
+    obj = words.join(' ').trim();
+    if (!obj) return sent;
+    return m[2].toLowerCase() + ' ' + obj;
+  }
+
+  // B8: a fall's description is just its date.
+  function fallDate(sent) {
+    var m = sent.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/);
+    return m ? m[0] : sent;
   }
 
   function noteScan(text) {
@@ -328,7 +412,29 @@
         re.lastIndex = 0;
         var m;
         while ((m = re.exec(text)) !== null) {
-          if (matchCounts(text, m, isFall)) { found[sig.label] = { sent: sentenceAround(text, m.index), phrase: m[0] }; break; }
+          if (matchCounts(text, m, isFall)) {
+            var sent = sentenceAround(text, m.index);
+            // B5: reshape refusal descriptions.
+            if (sig.label === 'Refusals') sent = refusalDesc(sent);
+            // B8: fall descriptions are just the date.
+            if (isFall) sent = fallDate(sent);
+            // B13 (his review, 2026-10-19): an aggression description extends
+            // through the following act-word sentence ("attempting to strike
+            // me with a television remote control"), up to 320 chars total.
+            if (sig.label === 'Aggression' || sig.label === 'Physical aggression') {
+              var afterMatch = text.slice(m.index + m[0].length, m.index + m[0].length + 400);
+              // Find the end of the current sentence, then the next sentence.
+              var sentEnd = afterMatch.search(/[.!?]\s+[A-Z]/);
+              if (sentEnd !== -1) {
+                var nextM = afterMatch.slice(sentEnd + 1).match(/^\s*([^.!?]{1,160}[.!?])/);
+                if (nextM && /\b(attempting|trying|tried|strike|struck|hit|hitting|kick|kicking|push|pushing|grab|grabbing|throw|throwing|swing|swinging)\b/i.test(nextM[1])) {
+                  var ext = nextM[1].replace(/\s+/g, ' ').trim();
+                  if ((sent + ' ' + ext).length <= 320) sent = sent + ' ' + ext;
+                }
+              }
+            }
+            found[sig.label] = { sent: sent, phrase: m[0] }; break;
+          }
           if (m[0].length === 0) re.lastIndex++;
         }
       }
@@ -366,9 +472,12 @@
     // Template labels are bold and end with a colon ("Objectives
     // and Assessment (resident reports SOB, agitation, etc.):").
     // They are prompts, not findings - drop them before scanning.
+    // B9 (his review, 2026-10-19): KEEP "Chief Complaint:" / "Reason for..."
+    // labels — the chief complaint is rejectable, and the label marks it.
     var bs = clone.querySelectorAll('b, strong');
     for (var i = 0; i < bs.length; i++) {
-      if (/:\s*$/.test((bs[i].textContent || '').trim())) bs[i].remove();
+      var bt = (bs[i].textContent || '').trim();
+      if (/:\s*$/.test(bt) && !/chief complaint|reason for/i.test(bt)) bs[i].remove();
     }
     var tb = clone.querySelectorAll('.pnBehTopBtn, .pnBehFbBar');
     for (var q = 0; q < tb.length; q++) tb[q].remove();
@@ -1008,8 +1117,10 @@
   }, true);
 })();
 ;
+
 // ----- module: PCC-All-Diagnosis-extractor.user.js -----
-(function(){
+var __s3mod_Diagnosis_extractor = 1;
+(function (){
   var pnStart = Date.now();
   // ===== Medical Abbreviations Mapping =====
   var ABBR = [
@@ -1085,6 +1196,10 @@
     text = text.replace(/\bc\.\s*diff\b/gi, 'C-Diff');
     text = text.replace(/\b(?:primary\s+)?admitting diagnosis\s*:\s*/gi, '');
     text = text.replace(/\badmission diagnosis\s*:\s*/gi, '');
+    // D4/D5 (his review, 2026-10-19): "Primary DX:" and
+    // "Primary Admitting Dx;" are labels, not diagnoses.
+    text = text.replace(/\bprimary\s+admitting\s+dx\s*;\s*/gi, '');
+    text = text.replace(/\bprimary\s+dx\s*:\s*/gi, '');
 
     var raw = [];
     function push(s){ if (s) raw.push(s); }
@@ -1149,10 +1264,19 @@
     if (hoLists.length) raw = hoLists;
 
     // "Additional Diagnosis:" / "Secondary diagnosis:" — capture verbatim
-    // (explicit clinician statements, bypass condensing filters)
+    // (explicit clinician statements, bypass condensing filters).
+    // D1 (his review, 2026-10-19): anchored at line start — the old
+    // \b form false-matched "Substantiation of Secondary Diagnosis:"
+    // and swallowed a whole prose sentence as a diagnosis.
     var verbatim = [];
-    grab(text, /\bAdditional Diagnosis\s*:\s*([^\n]+)/gi).forEach(function(s){ verbatim.push(s.trim()); });
-    grab(text, /\bSecondary diagnosis\s*:\s*([^\n]+)/gi).forEach(function(s){
+    grab(text, /(?:^|[\n;.])\s*Additional Diagnosis\s*:\s*([^\n]+)/gim).forEach(function(s){
+      // D5: an embedded "Secondary Dx;" inside an Additional Diagnosis line
+      // loses its label (the list continues); a STANDALONE secondary
+      // (D1/D7) keeps it, as he wrote them.
+      s = s.trim().replace(/\bsecondary\s+(?:diagnosis|dx)\s*[:;]\s*/gi, '');
+      verbatim.push(s);
+    });
+    grab(text, /(?:^|[\n;.])\s*Secondary\s+diagnosis\s*:\s*([^\n]+)/gim).forEach(function(s){
       // Avoid double-counting if already inside an Additional Diagnosis capture
       var dup = verbatim.some(function(v){ return v.toLowerCase().indexOf(s.trim().toLowerCase()) >= 0; });
       if (!dup) verbatim.push(s.trim());
@@ -1168,17 +1292,37 @@
     verbatim = verbatim.map(function (s) {
       // Generalized history labels are not diagnoses — the whole list is a history
       // (his rule, 2026-10-13). Specific "hx of falls"-type mentions are untouched.
-      // "Secondary Dx;" / "Secondary diagnosis:" is a label, not a diagnosis (his rule, 2026-10-13)
-      s = s.replace(/\b(?:secondary|additional)\s+(?:diagnosis|dx)\s*[:;]\s*/gi, '');
+      // D1/D7 (his review, 2026-10-19): a STANDALONE secondary keeps its label,
+      // as he wrote it — only "Additional" is stripped here. (An embedded
+      // "Secondary Dx;" inside an Additional line was stripped at capture.)
+      s = s.replace(/\badditional\s+diagnosis\s*:\s*/gi, '');
+      // D6: a nested bare "diagnosis:" ("Additional Diagnosis: diagnosis: fall, ...").
+      s = s.replace(/^\s*diagnosis\s*:\s*/i, '');
       s = s.replace(/\bPMHx?\s*:\s*/gi, '').replace(/\bpast\s+(?:medical|psychiatric)\s+history\s*:\s*/gi, '');
       s = s.replace(/\.\s+/g, ', ');
       s = s.replace(/^\s*weakness\s*\.\s*/i, '');
-      s = applyAbbr(s);   // abbreviations apply everywhere, verbatim included (his "always" rule, 2026-10-13)
-      s = s.split(/\s*,\s*/).filter(function (p) {
-        if (isProcedureItem(p) || isWeaknessItem(p)) return false;
-        if (/^(?:unspecified|not intractable|intractable|with status epilepticus|without status epilepticus)$/i.test(p.trim())) return false;
-        return true;
-      }).join(', ');
+      // D9: episode descriptors are not diagnoses ("initial encounter").
+      s = s.replace(/,?\s*\b(initial|subsequent)\s+encounter\b/gi, '');
+      var segs = s.split(/\s*,\s*/);
+      var outSegs = [];
+      for (var _si = 0; _si < segs.length; _si++) {
+        var p = segs[_si];
+        if (isProcedureItem(p) || isWeaknessItem(p)) continue;
+        if (/^(?:unspecified|not intractable|intractable|with status epilepticus|without status epilepticus)$/i.test(p.trim())) continue;
+        // D1: a full sentence (reports / is being prescribed) is NEVER a dx item.
+        if (/\b(reports?|reported|prescrib\w*)\b/i.test(p)) continue;
+        if (/^(mr|mrs|ms|miss|dr)\.?$/i.test(p.trim())) continue;
+        // D9: bare episode descriptors and exam-status prose are not diagnoses.
+        if (/^(?:initial|subsequent)\s+encounter$/i.test(p.trim())) continue;
+        if (/\bon assessment\b/i.test(p)) continue;
+        if (/\baxox\d\b/i.test(p)) continue;
+        // D8: keep name + (abbrev) together — when the item already
+        // carries a parenthetical, keep it as written (never "DM (DM)").
+        var pa = p;
+        if (!/\([^)]+\)\s*$/.test(pa)) pa = applyAbbr(pa);
+        outSegs.push(pa);
+      }
+      s = outSegs.join(', ');
       var parts = s.split(/\s*,\s*/);
       var hasPost = parts.some(function (p) { return /\bpostfall\b/i.test(p) || /\bstatus\s*post\s*fall/i.test(p); });
       if (!hasPost) return s;
@@ -1226,6 +1370,8 @@
       return s.replace(/[\s.]+$/, '').split(/\s*,\s*/).filter(function (p) {
         if (!p || isProcedureItem(p) || isWeaknessItem(p)) return false;
         if (/^(?:unspecified|not intractable|intractable|with status epilepticus|without status epilepticus)$/i.test(p.trim())) return false;
+        // D9 (his review, 2026-10-19): episode descriptors are not diagnoses.
+        if (/^(?:initial|subsequent)\s+encounter$/i.test(p.trim())) return false;
         return true;
       }).join(', ');
     }
@@ -1235,6 +1381,20 @@
       var c = cleanDxList(s);
       if (c && !seen['v:' + c.toLowerCase()]) { seen['v:' + c.toLowerCase()] = 1; out.push(c); }
     });
+    // D7 (his review, 2026-10-19): a STANDALONE "Secondary Dx;" (not inside an
+    // Additional Diagnosis line) keeps its label, as he wrote it. The capture
+    // stops at a sentence boundary so trailing narrative ("Placed on CCHO...")
+    // is not swallowed. Added after the verbatim map so the label survives.
+    (function(){
+      var m7, re7 = /(?:^|[\n;.])\s*(Secondary\s+Dx\s*;)\s*([A-Z][^\n]+?)(?=\.\s+[A-Z]|\.\s*$|\n|$)/gim;
+      while ((m7 = re7.exec(text)) !== null) {
+        var item7 = (m7[1] + ' ' + m7[2]).trim();
+        // Skip if already inside an Additional/verbatim capture (D5's embedded one)
+        var dup7 = verbatim.some(function(v){ return v.toLowerCase().indexOf(m7[2].trim().toLowerCase()) >= 0; });
+        dup7 = dup7 || out.some(function(v){ return v.toLowerCase().indexOf(m7[2].trim().toLowerCase()) >= 0; });
+        if (!dup7 && item7.length > 3) verbatim.push(item7);
+      }
+    })();
     // Verbatim diagnoses go first, unfiltered
     verbatim.forEach(function(v){
       if (v && !seen['v:'+v.toLowerCase()]) { seen['v:'+v.toLowerCase()] = 1; out.push(v); }
@@ -1260,27 +1420,53 @@
       str = str.replace(/,?\s*reviewed\s+in\s+(?:the\s+)?chart\.?\s*$/gi, '');
 
       str.split(/\s*(?:,(?![^()]*\))|;|\u2022|\/\s+)\s*|\s+and\s+/i).forEach(function(it){
-        it = (it || '').replace(/\s+/g, ' ')
-               .replace(/^[-–—:\s.;()]+|[-–—:\s.;()]+$/g, '')
-               .replace(/^(?:hx|h\/o|history|recent|adm with dx|admitted for)\s+of\s+/i, '')
+        it = (it || '').replace(/\s+/g, ' ');
+        // D8 (his review, 2026-10-19): the old trailing cleanup ate closing
+        // parens, corrupting "(DKA, DM (DM" — only strip parens that are
+        // actually unbalanced.
+        (function(){
+          var o = (it.match(/\(/g)||[]).length, c = (it.match(/\)/g)||[]).length;
+          if (c > o) it = it.replace(/\)+\s*$/, function(m){ return m.slice(c - o); });
+          if (o > c) it = it.replace(/^\s*\(+/, function(m){ return m.slice(o - c); });
+          it = it.replace(/^[-–—:\s.;]+|[-–—:\s.;]+$/g, '');
+        })();
+        it = it.replace(/^(?:hx|h\/o|history|recent|adm with dx|admitted for)\s+of\s+/i, '')
                .replace(/^\/PSH\s*/i, '');
 
         if (/^(?:c|diff)$/i.test(it)) return;   // split "c. diff" debris is not a diagnosis
         if (/^post\s+(?:fall|falls|falling)\b/i.test(it)) return;   // "post fall due to ..." is the tail of the previous item, not a diagnosis (his CNR chart, 2026-10-14)
         if (/^(?:(?:subsequent|initial)\s+encounter|site not specified|not elsewhere classified|unspecified severity|stage\s+\d+\s+unspecified)$/i.test(it)) return;   // ICD description fragments, not diagnoses
+        // D2 (his review, 2026-10-19): care-planning / counseling discussion is
+        // an administrative Z-code description, not a diagnosis.
+        if (/\badvanc(?:ed|e)\s+care\s+planning\b|\bcounseling\s+discussion\b/i.test(it)) return;
+        // D9: episode descriptors and exam-status prose are not diagnoses.
+        if (/\bon assessment\b/i.test(it)) return;
+        if (/\baxox\d\b/i.test(it)) return;
+        it = it.replace(/,?\s*\b(initial|subsequent)\s+encounter\b/gi, '');
+        // D1: honorifics are never diagnoses.
+        if (/^(?:mr|mrs|ms|miss|dr)\.?$/i.test(it.trim())) return;
+        // D7: a bare leftover label is not a diagnosis (the labeled list
+        // itself keeps its label in the verbatim path, as he wrote it).
+        if (/^(?:secondary|additional)\s+(?:dx|diagnosis)$/i.test(it.trim())) return;
         if (!it || ADMIN_JUNK.test(it) || PROSE.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it) || isWeaknessItem(it)) return;
         if (/\d+\.\d+/.test(it)) return;
-        // Reject fragments and narrative leftovers
-        if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
+        // Reject fragments and narrative leftovers. D8 (his review,
+        // 2026-10-19): a leading "and"/"or" from list-splitting must not
+        // condemn the fragment — test the core after stripping it.
+        var itCore = it.replace(/^(?:and|or)\s+/i, '').trim();
+        if (FRAGMENT.test(itCore) || NARRATIVE.test(it)) return;
         // Reject overly long items (real diagnoses are concise; longer = narrative)
         if (it.split(/\s+/).length > 6 || it.length > 50) return;
 
-        // Apply Abbreviation Mappings
-        it = applyAbbr(it);
+        // Apply Abbreviation Mappings. D8 (his review, 2026-10-19): when the
+        // item already carries a parenthetical — an abbreviation "(OM)" or a
+        // redaction "(RESIDENT)" — keep name + paren together as written;
+        // abbreviating the name makes a nonsense "DM (DM)" / "HLD (RESIDENT)".
+        if (!/\([^)]+\)\s*$/.test(it)) it = applyAbbr(it);
         it = it.replace(/\s+/g, ' ').trim();
 
         if (!it || ADMIN_JUNK.test(it) || EXCLUDE_EXACT.test(it) || isProcedureItem(it) || isWeaknessItem(it)) return;
-        if (FRAGMENT.test(it) || NARRATIVE.test(it)) return;
+        if (FRAGMENT.test(itCore) || NARRATIVE.test(it)) return;
         if (it.split(/\s+/).length > 6 || it.length > 50) return;
 
         // Smart Deduplication: normalize and keep the shortest form
@@ -1300,7 +1486,12 @@
     // lines on ", " so a concept mentioned twice — once inside a line, once on
     // its own (Seizure disorder / Seizures, hypertension / HTN) — appears once.
     out = out.map(function (s) {
-      s = s.replace(/\((?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?)(?:\s*\/\s*(?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?))*\)\s*/g, '');
+      // D1 (his review, 2026-10-19): a secondary-led verbatim item keeps its
+      // label AND its code — "Secondary Diagnosis: (300.02/F41.1) ...".
+      var isSecondary = /^\s*secondary\s+(?:dx|diagnosis)\s*[:;]/i.test(s);
+      if (!isSecondary) {
+        s = s.replace(/\((?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?)(?:\s*\/\s*(?:\d{3}(?:\.\d+)?|[A-Z]\d{2}(?:\.\d+)?))*\)\s*/g, '');
+      }
       s = s.replace(/^(?:[A-Z]\d{2}\.\d+|\d{3}\.\d+)\s+/, '');
       return s.replace(/\s*,\s*/g, ', ').replace(/\.\s+/g, ', ').replace(/[\s.,]+$/, '').replace(/\s+/g, ' ').trim();
     });
@@ -1309,12 +1500,32 @@
       var kept = [];
       item.split(', ').forEach(function (seg) {
         var k = normDx(seg);
-        if (!k || seenAll[k]) return;
+        if (!k) return;
+        // D7/D5 (his review, 2026-10-19): his corrected keeps adjacent exact
+        // duplicates ("RESIDENT, RESIDENT") — don't dedupe those.
+        if (kept.length && seg === kept[kept.length - 1]) { kept.push(seg); return; }
+        if (seenAll[k]) return;
         seenAll[k] = 1;
         kept.push(seg);
       });
       if (kept.length) finalOut.push(kept.join(', '));
     });
+    // D1/D7 (his review, 2026-10-19): a secondary-led verbatim list goes
+    // last, as he wrote it — ". " when it was its own sentence
+    // ("Secondary Dx;"), ", " when it continues the list
+    // ("Secondary Diagnosis:").
+    (function(){
+      var secs = [];
+      finalOut = finalOut.filter(function(item){
+        var m = item.match(/^\s*secondary\s+(dx\s*;|diagnosis\s*:)/i);
+        if (m) { secs.push({ item: item, dot: /dx\s*;/i.test(m[1]) }); return false; }
+        return true;
+      });
+      secs.forEach(function(sx){
+        if (finalOut.length) finalOut[finalOut.length - 1] += (sx.dot ? '. ' : ', ') + sx.item;
+        else finalOut.push(sx.item);
+      });
+    })();
     out = finalOut;
     // Cap at 12 most important (ICD lines come first, so they're prioritized)
     return { items: out.slice(0, 12), verbatimOnly: verbatimOnly };
@@ -1949,6 +2160,7 @@
   }, true);
 })();
 ;
+
 // ----- module: PCC-All-Relationships-copy-box.user.js -----
 (function () {
   // [pattern, singular, plural]. Most specific FIRST ("daughter-in-law" before "daughter").
@@ -2174,6 +2386,7 @@
   }, true);
 })();
 ;
+
 // ----- module: PCC-All-Vitals-expanded.user.js -----
 (function(){
   var done = false;   // one shot per page load — manual switches are respected
@@ -2316,6 +2529,7 @@
   }, true);
 })();
 ;
+
 // ----- module: PCC-All-Psych-orders.user.js -----
 (function () {
   'use strict';
@@ -2592,6 +2806,7 @@
   }).observe(document.body, { childList: true, subtree: true });
 })();
 ;
+
 // ----- module: PCC-All-S-copy-name-room.user.js -----
 (function () {
   'use strict';
@@ -2740,6 +2955,7 @@
   }, true);
 })();
 ;
+
 // ----- module: PCC-All-Header-copy-table.user.js -----
 (function () {
   'use strict';
@@ -2753,6 +2969,7 @@
   [600, 1800, 4000].forEach(function (ms) { setTimeout(removeCard, ms); });
 })();
 ;
+
 // ----- module: PCC-All-Grab-all.user.js -----
 (function () {
   'use strict';
