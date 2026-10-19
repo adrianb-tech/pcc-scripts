@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.1.0
+// @version      2.1.1
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9178,78 +9178,236 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				} catch (e) {}
 			}
 		}
-		var RELSET = {
-			self: 1,
-			spouse: 1,
-			wife: 1,
-			husband: 1,
-			daughter: 1,
-			son: 1,
-			sister: 1,
-			brother: 1,
-			mother: 1,
-			father: 1,
-			friend: 1,
-			niece: 1,
-			nephew: 1,
-			partner: 1,
-			guardian: 1,
-			cousin: 1,
-			grandson: 1,
-			granddaughter: 1,
-			aunt: 1,
-			uncle: 1,
-			"daughter-in-law": 1,
-			"son-in-law": 1,
-			"mother-in-law": 1,
-			"father-in-law": 1,
-			"sister-in-law": 1,
-			"brother-in-law": 1
+		var RELS = [
+			[
+				/\bgirl[\s-]*friends?\b/,
+				"girlfriend",
+				"girlfriends"
+			],
+			[
+				/\bwife\b/,
+				"wife",
+				"wives"
+			],
+			[
+				/\bhusband\b/,
+				"husband",
+				"husbands"
+			],
+			[
+				/\bspouse\b/,
+				"spouse",
+				"spouses"
+			],
+			[
+				/\bfianc[e\u00e9]e?\b/,
+				"fiancé",
+				"fiancés"
+			],
+			[
+				/\bdaughters?\b/,
+				"daughter",
+				"daughters"
+			],
+			[
+				/\bsons?\b/,
+				"son",
+				"sons"
+			],
+			[
+				/\bmother\b|\bmom\b/,
+				"mother",
+				"mothers"
+			],
+			[
+				/\bfather\b|\bdad\b/,
+				"father",
+				"fathers"
+			],
+			[
+				/\bsisters?\b/,
+				"sister",
+				"sisters"
+			],
+			[
+				/\bbrothers?\b/,
+				"brother",
+				"brothers"
+			],
+			[
+				/\bsiblings?\b/,
+				"sibling",
+				"siblings"
+			],
+			[
+				/\bpartner\b/,
+				"partner",
+				"partners"
+			],
+			[
+				/\bfriends?\b/,
+				"friend",
+				"friends"
+			],
+			[
+				/\bneighbou?rs?\b/,
+				"neighbor",
+				"neighbors"
+			],
+			[
+				/\broommates?\b/,
+				"roommate",
+				"roommates"
+			],
+			[
+				/\bnieces?\b/,
+				"niece",
+				"nieces"
+			],
+			[
+				/\bnephews?\b/,
+				"nephew",
+				"nephews"
+			],
+			[
+				/\bcousins?\b/,
+				"cousin",
+				"cousins"
+			],
+			[
+				/\bgranddaughters?\b/,
+				"granddaughter",
+				"granddaughters"
+			],
+			[
+				/\bgrandsons?\b/,
+				"grandson",
+				"grandsons"
+			],
+			[
+				/\baunt\b/,
+				"aunt",
+				"aunts"
+			],
+			[
+				/\buncle\b/,
+				"uncle",
+				"uncles"
+			],
+			[
+				/\bclergy\b|\bpastor\b|\bpriest\b|\bminister\b|\bimam\b|\brabbi\b/,
+				"clergy",
+				"clergy"
+			],
+			[
+				/\bnurse\b/,
+				"nurse",
+				"nurses"
+			],
+			[
+				/\bothers?\b/,
+				"other",
+				"others"
+			],
+			[
+				/\bself\b/,
+				"self",
+				"self"
+			]
+		];
+		RELS.forEach(function(r) {
+			r[0] = new RegExp(r[0].source, "i");
+		});
+		var REL_NO_COUNT = { self: true };
+		var REL_NAME_SKIP = {
+			other: 1,
+			nurse: 1,
+			clergy: 1,
+			self: 1
 		};
+		function relCanon(text) {
+			for (var k = 0; k < RELS.length; k++) if (RELS[k][0].test(text)) return {
+				c: RELS[k][1],
+				p: RELS[k][2]
+			};
+			return null;
+		}
+		function relTidy(t) {
+			return /^[A-Z]{2,4}$/.test(t) ? t : t.toLowerCase();
+		}
+		function relLabelFor(relText, nameText, G) {
+			var re = /\(([^()]*[A-Za-z][^()]*)\)/g, m, unknown = null;
+			while (m = re.exec(nameText)) {
+				var t = G.norm(m[1]);
+				if (!t) continue;
+				var c = relCanon(t);
+				if (c) return c;
+				if (!unknown) unknown = {
+					c: relTidy(t),
+					p: null
+				};
+			}
+			var r = G.norm(relText);
+			if (r && !/^(n\/?a|none|-+)$/i.test(r)) return relCanon(r) || {
+				c: relTidy(r),
+				p: null
+			};
+			if (unknown) return unknown;
+			for (var k = 0; k < RELS.length; k++) if (!REL_NAME_SKIP[RELS[k][1]] && RELS[k][0].test(nameText)) return {
+				c: RELS[k][1],
+				p: RELS[k][2]
+			};
+			return null;
+		}
 		function parseContacts(doc, G) {
 			var tables = doc.querySelectorAll("table");
 			for (var ti = 0; ti < tables.length; ti++) {
-				var ttxt = tables[ti].textContent || "";
-				if (!/Relation/.test(ttxt) && !/Emergency Contact/.test(ttxt)) continue;
 				var rows = tables[ti].querySelectorAll("tr");
-				var seen = [], counts = {}, hasSelf = false;
-				for (var r = 0; r < rows.length; r++) {
-					var cells = rows[r].querySelectorAll("td");
-					var rel = "";
-					for (var c = 0; c < cells.length; c++) {
-						var ct = G.norm(cells[c].textContent).toLowerCase();
-						if (RELSET[ct]) {
-							rel = ct;
-							break;
-						}
+				var hdr = -1, nameCol = -1, relCol = -1;
+				for (var i = 0; i < rows.length; i++) {
+					var cells = rows[i].querySelectorAll("td, th");
+					var texts = [];
+					for (var c0 = 0; c0 < cells.length; c0++) texts.push(ctxt(cells[c0]));
+					var n = -1;
+					for (var c1 = 0; c1 < texts.length; c1++) if (/^name\b/i.test(texts[c1])) {
+						n = c1;
+						break;
 					}
-					if (!rel) for (var c2 = 0; c2 < cells.length; c2++) {
-						var pm = (cells[c2].textContent || "").match(/\(([a-z]+)\)/i);
-						if (pm && RELSET[pm[1].toLowerCase()]) {
-							rel = pm[1].toLowerCase();
-							break;
-						}
+					var hasCT = false, rc = -1;
+					for (var c2 = 0; c2 < texts.length; c2++) {
+						if (/^contact type\b/i.test(texts[c2])) hasCT = true;
+						if (/^relation(ship)?\b/i.test(texts[c2])) rc = c2;
 					}
-					if (!rel) continue;
-					if (rel === "self") {
-						hasSelf = true;
-						continue;
+					if (n > -1 && hasCT) {
+						hdr = i;
+						nameCol = n;
+						relCol = rc;
+						break;
 					}
-					if (!counts[rel]) {
-						counts[rel] = 0;
-						seen.push(rel);
-					}
-					counts[rel]++;
 				}
-				if (!seen.length && !hasSelf) continue;
-				seen.sort(function(a, b) {
-					return counts[b] - counts[a];
-				});
-				var parts = seen.map(function(w) {
-					return counts[w] > 1 ? counts[w] + " " + w + "s" : w;
-				});
-				if (hasSelf) parts.unshift("self");
-				return parts.join(", ");
+				if (hdr === -1) continue;
+				var counts = {}, order = [], plural = {};
+				function add(lab) {
+					if (!lab) return;
+					if (!(lab.c in counts)) {
+						counts[lab.c] = 0;
+						order.push(lab.c);
+						plural[lab.c] = lab.p;
+					}
+					counts[lab.c]++;
+				}
+				for (var j = hdr + 1; j < rows.length; j++) {
+					var tds = rows[j].querySelectorAll("td");
+					if (tds.length <= nameCol) continue;
+					add(relLabelFor(relCol > -1 && tds[relCol] ? ctxt(tds[relCol]) : "", ctxt(tds[nameCol]), G));
+				}
+				if (!order.length) continue;
+				return order.map(function(cn) {
+					if (REL_NO_COUNT[cn]) return cn;
+					var n2 = counts[cn];
+					if (n2 < 2) return cn;
+					return plural[cn] ? n2 + " " + plural[cn] : cn + " (" + n2 + ")";
+				}).join(", ");
 			}
 			return "";
 		}
@@ -9266,11 +9424,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			if (!val) {
 				var els = doc.querySelectorAll("div, span, td");
-				for (var i = 0; i < els.length; i++) if (/^Relationships$/i.test(G.txt(els[i])) && els[i].parentElement) {
-					var pt = G.txt(els[i].parentElement);
-					if (pt.length > 14) {
-						val = pt.replace(/^Relationships\s*/i, "");
-						break;
+				for (var i = 0; i < els.length; i++) {
+					if (els[i].closest && els[i].closest("tm-tile")) continue;
+					if (/^Relationships$/i.test(G.txt(els[i])) && els[i].parentElement) {
+						var pt = G.txt(els[i].parentElement);
+						if (pt.length > 14) {
+							val = pt.replace(/^Relationships\s*/i, "");
+							break;
+						}
 					}
 				}
 			}
@@ -11114,11 +11275,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					v.allergies = (nka.test(am[1].trim()) ? "" : allergySet(am[1].trim())) !== (nka.test(String(chart.allergies).trim()) ? "" : allergySet(String(chart.allergies)));
 				}
 			}
-			if (chart.meds) {
+			if (chart.meds && !/^\s*(—|–|-)\s*$/.test(String(chart.meds))) {
 				var secLines = null;
 				if (medsTxt !== null && medsTxt !== void 0) secLines = String(medsTxt).split("\n");
 				else secLines = medSectionLines(txt);
-				var chartNone = /^\s*-\s*none\s*$/i.test(String(chart.meds).trim());
+				var chartMap0 = {}, chartSeq0 = [];
+				String(chart.meds).split("\n").forEach(function(l) {
+					var p = parseMedLine(l);
+					if (p) {
+						chartMap0[p.canon] = normSpec(p.spec);
+						chartSeq0.push(p.canon);
+					}
+				});
+				var chartNone = /^\s*-\s*none\s*$/i.test(String(chart.meds).trim()) || chartSeq0.length === 0;
 				if (!secLines) v.meds = true;
 				else {
 					var content = secLines.filter(function(l) {
@@ -11128,20 +11297,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					if (!content.length) v.meds = true;
 					else if (noteNone || chartNone) v.meds = noteNone !== chartNone;
 					else {
-						var noteMap = {}, chartMap = {}, diff = false, k;
-						var noteSeq = [], chartSeq = [];
+						var noteMap = {}, chartMap = chartMap0, diff = false, k;
+						var noteSeq = [], chartSeq = chartSeq0;
 						content.forEach(function(l) {
 							var p = parseMedLine(l);
 							if (p) {
 								noteMap[p.canon] = normSpec(p.spec);
 								noteSeq.push(p.canon);
-							}
-						});
-						String(chart.meds).split("\n").forEach(function(l) {
-							var p = parseMedLine(l);
-							if (p) {
-								chartMap[p.canon] = normSpec(p.spec);
-								chartSeq.push(p.canon);
 							}
 						});
 						for (k in chartMap) if (noteMap[k] !== chartMap[k]) {
