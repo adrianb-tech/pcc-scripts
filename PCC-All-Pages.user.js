@@ -1,7 +1,9 @@
 // ==UserScript==
 // @name         Every facility — PCC Pages (forms list & furniture)
-// @version      1.0
+// @version      1.0.1
 // @description  Stage 3 merge: Forms List 2.5 (incl. last-mode memory), Forms highlight, CNR/Saints Forms List, Readmission flag, Hide unused tabs 1.13 (frozen bar), Hide profile sections, Header emphasis, View All checkbox, Split view - nine page scripts in ONE, each module verbatim and gated to its own page as before. Replaces the nine separate page scripts.
+// @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Pages.user.js
+// @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Pages.user.js
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
 // @run-at       document-idle
