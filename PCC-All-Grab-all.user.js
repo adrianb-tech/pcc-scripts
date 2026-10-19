@@ -30,8 +30,16 @@
   }
 
   function fireClick(el) {
+    // Core's tiles carry .pcc-fill-copy on the tm-tile HOST,
+    // but the tile's click handler lives on its inner card
+    // ([data-tm-card]) - a click dispatched on the host never
+    // descends to it, so G reached the tiles (v1.0.2) yet
+    // still queued nothing (his report, 2026-10-19; fixture
+    // h133 on TREE-1154). Aim at the card when there is one.
+    var t = el;
+    if (el && el.querySelector) { var card = el.querySelector('[data-tm-card]'); if (card) t = card; }
     ['mousedown', 'mouseup', 'click'].forEach(function (type) {
-      el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      t.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
     });
   }
 
@@ -49,11 +57,24 @@
     setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 2450);
   }
 
+  // A Copy target counts as shown when it has a box of
+  // its own OR any visible descendant does. Core's tiles
+  // are display:contents hosts (no box of their own), and
+  // the old own-rects-only check skipped every tile on
+  // the page - G queued nothing but the classic buttons
+  // (his report, 2026-10-19: G sends diagnoses only).
+  function isShown(el) {
+    if (el.getClientRects().length) return true;
+    var kids = el.querySelectorAll ? el.querySelectorAll('*') : [];
+    for (var i = 0; i < kids.length; i++) if (kids[i].getClientRects().length) return true;
+    return false;
+  }
+
   function grabAll() {    var btns = document.querySelectorAll('.pcc-fill-copy');
     var queued = [];
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
-      if (!b.getClientRects().length) continue;                       // not on screen
+      if (!isShown(b)) continue;                       // not on screen
       var label = b.getAttribute('data-fill-label') || '';
       var value = b.getAttribute('data-fill-value');
       if (value === 'N/A') continue;                                  // nothing real to queue
@@ -74,7 +95,7 @@
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
       if (b.getAttribute('data-g-badge')) continue;
-      if (!b.getClientRects().length) continue;                 // not on screen yet
+      if (!isShown(b)) continue;                 // not on screen yet
       if (b.getAttribute('data-fill-value') === 'N/A') continue;
       b.setAttribute('data-g-badge', '1');
       var g = document.createElement('span');
