@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.12
+// @version      2.13
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -127,6 +127,21 @@
         }
       });
       if (changed) publish();
+    } catch (e) {}
+  }
+  // Feed the row's BIMS tile the same way (v2.13): the
+  // row only ever read the BIMS box out of a frame, so
+  // the tile vanished off the Forms page. Value in the
+  // row's own format ('13 on 9/10/26').
+  function feedBimsTile(stop) {
+    try {
+      if (!stop || !stop.series || !stop.series[0]) return;
+      var s0 = stop.series[0];
+      var d = new Date(s0.date);
+      if (isNaN(d.getTime())) return;
+      var val = s0.score + ' on ' + (d.getMonth() + 1) + '/' + d.getDate() + '/' + String(d.getFullYear()).slice(2);
+      var k = storeKey || residentKey();
+      if (k) localStorage.setItem('tmBimsFor:' + k, JSON.stringify({ value: val, ts: Date.now() }));
     } catch (e) {}
   }
   function saveStored() {
