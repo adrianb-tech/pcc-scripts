@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Gatherer
 // @namespace    mica.pcc
-// @version      2.5
+// @version      2.6
 // @description  Script 1 of the note system: when a chart opens, gathers in parallel - page-read stops from the page he is on plus background fetches of the chart's other pages (Assessments/BIMS, Profile, Results, Orders) discovered from the tab bar - and publishes one stamped packet for the tiles. Read-only: reads and presents; writes nothing, clicks nothing. 0 stops it.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -301,8 +301,12 @@
     var h = selfHeader(document);
     if (Object.keys(h).length >= 2) land('header', { source: 'Dash', at: nowT(), facts: h });
     var b = readTile(/^Behaviors?\b/i, 700);
+    var behBox = document.getElementById('pnBehBox');
+    if (behBox) b = norm(behBox.textContent).slice(0, 700);
     if (b) land('behaviors', { source: 'Progress Notes', at: nowT(), summary: b });
     var dx = readTile(/^Diagnoses\b/i, 700);
+    var dxBox = document.getElementById('pnDxBox');
+    if (dxBox) dx = norm(dxBox.textContent).slice(0, 700);
     if (dx) land('diagnoses', { source: 'Progress Notes', at: nowT(), summary: dx });
     var wp = readWeightsPage(document);
     if (wp) land('weights', { source: 'Wts/Vitals', at: nowT(), series: wp, summary: wp.length + ' dated weights; latest ' + wp[0].weight + ' lbs on ' + wp[0].date });
