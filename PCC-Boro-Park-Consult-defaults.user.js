@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.35
+// @version 1.36
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @name         Boro Park — Consult form defaults
@@ -86,7 +86,14 @@
     var userChoseEvalType = false;  // set if he clicks New/Follow Up/Other himself
     var evalDone = false;           // set after 3 polls — then NEVER touch again
     function applyEvalTypeAndFocus() {
-        if (userChoseEvalType || evalDone) return;
+        // v1.36: evalDone must NOT gate entry - the driver
+        // sets evalDone BEFORE its single kick-off call (it
+        // is the driver's "already kicked" flag), so the old
+        // check made this function return instantly on its
+        // only ever call: the Evaluation Type was never set,
+        // on any form, ever. Completion is tracked by
+        // evalPollCount below, which is what sets evalDone.
+        if (userChoseEvalType) return;
         evalPollCount++;
         if (evalPollCount > 3) { evalDone = true; return; }
         if (userTouched) return;
@@ -123,18 +130,33 @@
                 cbOther = checkboxBefore(tn);
             }
         }
-        // Fallback: check parent containers of each checkbox for label text
+        // Fallback (v1.36, rewritten): pair each option
+        // with its checkbox by the form's own contract -
+        // the three boxes share name Cust_A_A and carry
+        // values 1/2/3 in legend order - or, failing that,
+        // by the label in the checkbox's OWN row. The old
+        // parent-climb matched the shared options table,
+        // whose text holds all three labels, so cbNew,
+        // cbFollow and cbOther all landed on the FIRST
+        // box: a filled form then checked "New" (the exact
+        // opposite of the rule) whenever this path ran.
+        if (!cbNew || !cbFollow) {
+            var named = document.querySelectorAll('input[type="checkbox"][name="Cust_A_A"]');
+            for (var n = 0; n < named.length; n++) {
+                if (named[n].value === '1' && !cbNew) cbNew = named[n];
+                else if (named[n].value === '2' && !cbFollow) cbFollow = named[n];
+                else if (named[n].value === '3' && !cbOther) cbOther = named[n];
+            }
+        }
         if (!cbNew || !cbFollow) {
             var inputs = document.querySelectorAll('input[type="checkbox"]');
             for (var i = 0; i < inputs.length; i++) {
-                var p = inputs[i].parentElement;
-                for (var depth = 0; depth < 4 && p; depth++) {
-                    var pt = (p.textContent || '').replace(/\s+/g, ' ').trim();
-                    if (!cbNew && /\b1\.\s*New\b/i.test(pt) && !/\b2\.\s*Follow/i.test(pt)) cbNew = inputs[i];
-                    else if (!cbFollow && /\b2\.\s*Follow\s*Up\b/i.test(pt)) cbFollow = inputs[i];
-                    else if (!cbOther && /\b3\.\s*Other\b/i.test(pt)) cbOther = inputs[i];
-                    p = p.parentElement;
-                }
+                var row = inputs[i].closest ? inputs[i].closest('tr') : null;
+                var rt = row ? (row.textContent || '').replace(/\s+/g, ' ').trim() : '';
+                if (!rt) continue;
+                if (!cbNew && /^1\.\s*New\b/i.test(rt)) cbNew = inputs[i];
+                else if (!cbFollow && /^2\.\s*Follow\s*Up\b/i.test(rt)) cbFollow = inputs[i];
+                else if (!cbOther && /^3\.\s*Other\b/i.test(rt)) cbOther = inputs[i];
             }
         }
         if (!cbNew || !cbFollow) return;
@@ -194,6 +216,26 @@
     }
 
     function findNoteField() {
+        // Direct structural paths first (v1.36): on the
+        // current form the label is SPLIT - "1." sits in one
+        // cell, "Psychiatry Consult:" in the next - so the
+        // exact-label match below can never fire, and only
+        // the size heuristic was keeping this alive. The
+        // note field is the section's question-1 textarea
+        // (name Cust_A_1, id linkCust_A_1), and the label
+        // span alone is an exact anchor too.
+        var direct = document.querySelector('textarea[name="Cust_A_1"], textarea#linkCust_A_1');
+        if (direct) return direct;
+        var spans = document.querySelectorAll('span, td, th, div, label, b');
+        for (var s = 0; s < spans.length; s++) {
+            var st = (spans[s].textContent || '').replace(/\s+/g, ' ').trim();
+            if (/^Psychiatry\s+Consult:?$/i.test(st)) {
+                var tas0 = document.querySelectorAll('textarea');
+                for (var j0 = 0; j0 < tas0.length; j0++) {
+                    if (spans[s].compareDocumentPosition(tas0[j0]) & Node.DOCUMENT_POSITION_FOLLOWING) return tas0[j0];
+                }
+            }
+        }
         // Look for the textarea after "Psychiatry Consult" label
         var els = document.querySelectorAll('td, th, div, span, label, b');
         for (var i = 0; i < els.length; i++) {
