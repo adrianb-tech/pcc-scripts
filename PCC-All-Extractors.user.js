@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.0.1
+// @version      1.0.2
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -2795,11 +2795,24 @@
     setTimeout(function () { if (b.parentNode) b.parentNode.removeChild(b); }, 2450);
   }
 
+  // A Copy target counts as shown when it has a box of
+  // its own OR any visible descendant does. Core's tiles
+  // are display:contents hosts (no box of their own), and
+  // the old own-rects-only check skipped every tile on
+  // the page - G queued nothing but the classic buttons
+  // (his report, 2026-10-19: G sends diagnoses only).
+  function isShown(el) {
+    if (el.getClientRects().length) return true;
+    var kids = el.querySelectorAll ? el.querySelectorAll('*') : [];
+    for (var i = 0; i < kids.length; i++) if (kids[i].getClientRects().length) return true;
+    return false;
+  }
+
   function grabAll() {    var btns = document.querySelectorAll('.pcc-fill-copy');
     var queued = [];
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
-      if (!b.getClientRects().length) continue;                       // not on screen
+      if (!isShown(b)) continue;                       // not on screen
       var label = b.getAttribute('data-fill-label') || '';
       var value = b.getAttribute('data-fill-value');
       if (value === 'N/A') continue;                                  // nothing real to queue
@@ -2820,7 +2833,7 @@
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
       if (b.getAttribute('data-g-badge')) continue;
-      if (!b.getClientRects().length) continue;                 // not on screen yet
+      if (!isShown(b)) continue;                 // not on screen yet
       if (b.getAttribute('data-fill-value') === 'N/A') continue;
       b.setAttribute('data-g-badge', '1');
       var g = document.createElement('span');
