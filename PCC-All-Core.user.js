@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.8.0
+// @version      2.9.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5747,7 +5747,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		render() {
 			const o = this.opts || {};
 			const clickable = !!(o.click || o.delegate || o.nav || o.action);
-			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.frozenW && o.frozenH ? "flex:none;width:" + o.frozenW + "px;height:" + o.frozenH + "px;overflow:hidden;" : o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
 			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
 			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
 			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
@@ -7793,6 +7793,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					} catch (err) {}
 				};
 			}
+			var medBoxStamp = doc.getElementById("medListBox");
+			if (medBoxStamp) medBoxStamp.setAttribute("data-tm-meds-settled", "1");
 			var labsData = buildLabsData(groups);
 			var warnData = buildWarningsData(groups, doc);
 			var labsRow = doc.getElementById("pccLabsRow");
@@ -10750,13 +10752,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			};
 			if (d.meds) d.meds = medsLast(d.meds);
 			if (d.medsFill) d.medsFill = medsLast(d.medsFill);
-			var row = document.getElementById(ROW_ID);
-			if (!d) {
-				if (row) row.remove();
-				var or2 = document.getElementById("tmCardsRow2");
-				if (or2) or2.remove();
-				return;
-			}
+			document.getElementById(ROW_ID);
+			if (!d) return;
 			try {
 				var chartVals = [
 					d.ageSex || "",
@@ -10814,60 +10811,22 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var myKey = chartNumMatch();
 				if (myKey && tw.key !== myKey) tw = null;
 			}
-			var sig = [
-				d.admission || "",
-				d.ageSex || "",
-				d.room || "",
-				d.allergies || "",
-				d.weight || "",
-				d.weightRed ? "R" : "",
-				d.meds || "",
-				d.medsFill === null ? "~" : d.medsFill,
-				d.bims || "",
-				d.rel || "",
-				d.dx || "",
-				d.beh || "",
-				d.words || "",
-				d.summary || "",
-				d.stampRel || "",
-				d.stampBims || "",
-				d.stampMeds || "",
-				d.stampDx || "",
-				d.stampBeh || "",
-				tw ? (tw.age ? "1" : "0") + (tw.allergies ? "1" : "0") + (tw.meds ? "1" : "0") + (tw.rel ? "1" : "0") : "----"
-			].join("|");
-			if (row && row.getAttribute("data-sig") === sig && document.getElementById("tmCardsRow2")) return;
-			if (row) row.remove();
-			var oldRow2 = document.getElementById("tmCardsRow2");
-			if (oldRow2) oldRow2.remove();
-			row = document.createElement("div");
-			row.id = ROW_ID;
-			var row2 = document.createElement("div");
-			row2.id = "tmCardsRow2";
-			row2.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin:0 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
-			row.setAttribute("data-sig", sig);
-			row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
-			function mkTile(label, value, opts, chip, stamp) {
-				var el = document.createElement("tm-tile");
-				el.label = label;
-				el.value = value || "";
-				el.opts = opts || {};
-				if (chip) el.chip = chip;
-				if (stamp) el.stamp = stamp;
-				if (opts && opts.fill) {
-					el.classList.add("pcc-fill-copy");
-					el.setAttribute("data-g-badge", "1");
-					el.setAttribute("data-fill-label", opts.fill.label);
-					el.setAttribute("data-fill-value", opts.fill.value);
-				}
-				if (opts && opts.delegate === "meds") el.setAttribute("data-tm-copy", "1");
-				el.style.display = "contents";
-				return el;
+			var specs = [];
+			function mkSpec(rowN, key, label, value, opts, chip, stamp) {
+				specs.push({
+					row: rowN,
+					key,
+					label,
+					value: value || "",
+					opts: opts || {},
+					chip: chip || "",
+					stamp: stamp || ""
+				});
 			}
 			var admM = (d.admission || "").match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
 			var admKind = admM && admM[3] ? admM[3].toLowerCase() : "";
-			row.appendChild(mkTile(admKind ? "Admission (" + admKind + ")" : "Admission (re-entry)", admM ? admM[1] : d.admission || "", {}));
-			row.appendChild(mkTile("Age / Sex", d.ageSex || "", {
+			mkSpec(1, "admission", admKind ? "Admission (" + admKind + ")" : "Admission (re-entry)", admM ? admM[1] : d.admission || "", {});
+			mkSpec(1, "agesex", "Age / Sex", d.ageSex || "", {
 				pad: "12px 13px 14px",
 				warn: !!(tw && tw.age),
 				click: {
@@ -10878,9 +10837,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Age/Sex",
 					value: d.ageSex || ""
 				}
-			}));
-			row.appendChild(mkTile("Room", d.room || "", {}));
-			row.appendChild(mkTile("Allergies", d.allergies || "", {
+			});
+			mkSpec(1, "room", "Room", d.room || "", {});
+			mkSpec(1, "allergies", "Allergies", d.allergies || "", {
 				natW: true,
 				maxW: 300,
 				weight: 600,
@@ -10895,12 +10854,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Allergies",
 					value: d.allergies || ""
 				}
-			}));
-			row.appendChild(mkTile("Weight", d.weight || "", {
+			});
+			mkSpec(1, "weight", "Weight", d.weight || "", {
 				nav: true,
 				color: d.weightRed ? "#a33327" : void 0
-			}));
-			row.appendChild(mkTile("BIMS", d.bims || "", {
+			});
+			mkSpec(1, "bims", "BIMS", d.bims || "", {
 				natW: true,
 				nowrap: true,
 				fit: true,
@@ -10913,8 +10872,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "BIMS",
 					value: d.bims || ""
 				}
-			}, null, d.stampBims));
-			row.appendChild(mkTile("Relationships", d.rel || "", {
+			}, null, d.stampBims);
+			mkSpec(1, "rel", "Relationships", d.rel || "", {
 				natW: true,
 				maxW: 280,
 				minW: 168,
@@ -10928,9 +10887,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Relationships",
 					value: d.rel || ""
 				}
-			}, null, d.stampRel));
+			}, null, d.stampRel);
 			var medsChip = String(d.meds === "- none" ? 0 : d.meds ? d.meds.split("\n").length : 0);
-			if (d.medsFill !== null && d.medsFill !== void 0) row.appendChild(mkTile("Psych meds", d.meds || "", {
+			if (d.medsFill !== null && d.medsFill !== void 0) mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				cols: true,
 				wide: true,
 				multi: true,
@@ -10946,8 +10905,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Psych meds",
 					value: d.medsFill
 				}
-			}, medsChip, d.stampMeds));
-			else row.appendChild(mkTile("Psych meds", d.meds || "", {
+			}, medsChip, d.stampMeds);
+			else mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				cols: true,
 				wide: true,
 				multi: true,
@@ -10956,8 +10915,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				maxw: "920px",
 				warn: !!(tw && tw.meds),
 				delegate: "meds"
-			}, medsChip, d.stampMeds));
-			row2.appendChild(mkTile("Summary", d.summary || "", {
+			}, medsChip, d.stampMeds);
+			mkSpec(2, "summary", "Summary", d.summary || "", {
 				full: true,
 				multi: true,
 				size: 13,
@@ -10971,15 +10930,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Summary",
 					value: d.summary || ""
 				}
-			}, sumAnchorLabel()));
-			row2.appendChild(mkTile("Your words", d.words || "", {
+			}, sumAnchorLabel());
+			mkSpec(2, "words", "Your words", d.words || "", {
 				full: true,
 				multi: true,
 				size: 13,
 				weight: 600,
 				action: "yourwords"
-			}));
-			row2.appendChild(mkTile("Diagnoses", d.dx || "", {
+			});
+			mkSpec(2, "dx", "Diagnoses", d.dx || "", {
 				full: true,
 				multi: true,
 				warn: !!(tw && tw.dx),
@@ -10993,24 +10952,227 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Diagnoses",
 					value: d.dx || ""
 				}
-			}, null, d.stampDx));
-			row2.appendChild(mkTile("Behaviors", d.beh || "", {
+			}, null, d.stampDx);
+			mkSpec(2, "beh", "Behaviors", d.beh || "", {
 				full: true,
 				multi: true,
 				size: 13,
 				weight: 600
-			}, null, d.stampBeh));
-			bar.parentNode.insertBefore(row, bar.nextSibling);
-			bar.parentNode.insertBefore(row2, row.nextSibling);
+			}, null, d.stampBeh);
+			presentReadyTiles(specs);
+			updateTiles(specs);
+		}
+		function specSig(sp) {
+			try {
+				return JSON.stringify([
+					sp.label,
+					sp.value,
+					sp.chip,
+					sp.stamp,
+					sp.opts
+				]);
+			} catch (e) {
+				return "";
+			}
+		}
+		function applyTile(el, sp) {
+			el.label = sp.label;
+			el.value = sp.value || "";
+			var o = sp.opts || {};
+			if (el.getAttribute("data-tm-frozen")) {
+				var cur = el.opts || {};
+				if (cur.frozenW) o = Object.assign({}, o, {
+					frozenW: cur.frozenW,
+					frozenH: cur.frozenH
+				});
+			}
+			el.opts = o;
+			el.chip = sp.chip || "";
+			el.stamp = sp.stamp || "";
+			if (o.fill) {
+				el.classList.add("pcc-fill-copy");
+				el.setAttribute("data-g-badge", "1");
+				el.setAttribute("data-fill-label", o.fill.label);
+				el.setAttribute("data-fill-value", o.fill.value);
+			} else {
+				el.classList.remove("pcc-fill-copy");
+				el.removeAttribute("data-fill-label");
+				el.removeAttribute("data-fill-value");
+			}
+			if (o.delegate === "meds") el.setAttribute("data-tm-copy", "1");
+			else el.removeAttribute("data-tm-copy");
+		}
+		function createTile(sp) {
+			var el = document.createElement("tm-tile");
+			el.style.display = "contents";
+			applyTile(el, sp);
+			__tileReg[sp.key] = {
+				el,
+				sig: specSig(sp)
+			};
+			return el;
+		}
+		var __tileReg = {};
+		function settledNow() {
+			try {
+				return !!(window.__tmCore && window.__tmCore.settled && window.__tmCore.settled());
+			} catch (e) {
+				return false;
+			}
+		}
+		function plantBand() {
+			try {
+				var bar = document.getElementById("residentHeaderButtons");
+				if (!bar || !bar.parentNode) return;
+				var row = document.getElementById(ROW_ID);
+				var row2 = document.getElementById("tmCardsRow2");
+				if (row && row2) return;
+				if (!row) {
+					row = document.createElement("div");
+					row.id = ROW_ID;
+					row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+					bar.parentNode.insertBefore(row, bar.nextSibling);
+				}
+				if (!row2) {
+					row2 = document.createElement("div");
+					row2.id = "tmCardsRow2";
+					row2.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin:0 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+					bar.parentNode.insertBefore(row2, row.nextSibling);
+				}
+			} catch (e) {}
+		}
+		var __bandSwept = false;
+		var __settleObserved = false;
+		var ROW_KEYS = {
+			1: [
+				"admission",
+				"agesex",
+				"room",
+				"allergies",
+				"weight",
+				"bims",
+				"rel",
+				"meds"
+			],
+			2: [
+				"summary",
+				"words",
+				"dx",
+				"beh"
+			]
+		};
+		function stopLanded(k) {
+			var s = lastStops && lastStops[k];
+			return !!(s && s.status === "landed");
+		}
+		var SUMMARY_INPUTS = [
+			"hisnotes",
+			"behaviors",
+			"header",
+			"bims",
+			"diagnoses",
+			"labs",
+			"orders"
+		];
+		function stopResolved(k) {
+			var s = lastStops && lastStops[k];
+			return !!(s && s.status && s.status !== "not-loaded");
+		}
+		function medsPanelSettled() {
+			var docs = allDocs();
+			for (var i = 0; i < docs.length; i++) {
+				var box = docs[i].getElementById("medListBox");
+				if (box && box.hasAttribute("data-tm-meds-settled")) return true;
+			}
+			return false;
+		}
+		function tileReady(sp, fallback) {
+			if (sp.key === "meds") {
+				var p = medsPanel();
+				if (p && p.box) return medsPanelSettled();
+				if (stopLanded("dashmeds")) return true;
+				if (lastStops && lastStops.header && lastStops.header.medsList) return true;
+				return settledNow();
+			}
+			if (sp.key === "summary") {
+				if (!settledNow()) return false;
+				return SUMMARY_INPUTS.every(function(k) {
+					return stopResolved(k);
+				});
+			}
+			return settledNow() || fallback;
+		}
+		function keyOfTileEl(el) {
+			var ks = Object.keys(__tileReg);
+			for (var i = 0; i < ks.length; i++) if (__tileReg[ks[i]].el === el) return ks[i];
+			return "";
+		}
+		function insertTileInOrder(host, el, sp) {
+			var order = ROW_KEYS[sp.row] || [];
+			var myIdx = order.indexOf(sp.key);
+			var kids = host.querySelectorAll("tm-tile");
+			for (var i = 0; i < kids.length; i++) if (order.indexOf(keyOfTileEl(kids[i])) > myIdx) {
+				host.insertBefore(el, kids[i]);
+				return;
+			}
+			host.appendChild(el);
+		}
+		function presentReadyTiles(specs) {
+			plantBand();
+			var row = document.getElementById(ROW_ID);
+			var row2 = document.getElementById("tmCardsRow2");
+			if (!row || !row2) return;
+			if (!__bandSwept) {
+				__bandSwept = true;
+				[row, row2].forEach(function(r) {
+					Array.from(r.querySelectorAll("tm-tile")).forEach(function(t) {
+						t.remove();
+					});
+				});
+			}
+			var settled = settledNow();
+			var fallback = settled && __settleObserved;
+			if (settled) __settleObserved = true;
+			specs.forEach(function(sp) {
+				if (__tileReg[sp.key]) return;
+				if (!tileReady(sp, fallback)) return;
+				var el = createTile(sp);
+				insertTileInOrder(sp.row === 2 ? row2 : row, el, sp);
+				fitAndFreezeTile(sp.key, el);
+			});
+		}
+		function fitAndFreezeTile(key, el) {
 			var fitIt = function() {
-				fitAllergies(row);
-				fitMeds(row);
+				if (key === "allergies") fitAllergies(el);
+				if (key === "meds") fitMeds(el);
+				freezeTile(el);
 			};
 			if (window.requestAnimationFrame) requestAnimationFrame(function() {
 				requestAnimationFrame(fitIt);
 			});
 			else setTimeout(fitIt, 60);
-			addFaceSheetButton(bar, row);
+		}
+		function freezeTile(el) {
+			if (!el || el.getAttribute("data-tm-frozen")) return;
+			var card = el.querySelector("[data-tm-card]");
+			if (!card) return;
+			var wpx = card.offsetWidth, hpx = card.offsetHeight;
+			if (!wpx || !hpx) return;
+			el.setAttribute("data-tm-frozen", "1");
+			el.opts = Object.assign({}, el.opts, {
+				frozenW: wpx,
+				frozenH: hpx
+			});
+		}
+		function updateTiles(specs) {
+			specs.forEach(function(sp) {
+				var reg = __tileReg[sp.key];
+				if (!reg) return;
+				var s = specSig(sp);
+				if (s === reg.sig) return;
+				reg.sig = s;
+				applyTile(reg.el, sp);
+			});
 		}
 		var faceUrlCache = "";
 		function addFaceSheetButton(bar, row) {
@@ -11195,7 +11357,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		var lastStops = null;
 		function pullFromPacket(fromSettleEvent) {
 			try {
-				if (!fromSettleEvent && window.__tmCore && window.__tmCore.settled && window.__tmCore.settled() && document.getElementById("tmCardsRow")) return;
+				if (!fromSettleEvent && window.__tmCore && window.__tmCore.settled && window.__tmCore.settled()) return;
 				var n = document.getElementById("tmGatherPacket");
 				try {
 					var pk = JSON.parse(n && n.textContent || "{}");
@@ -11306,9 +11468,27 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			} catch (e) {}
 			return "";
 		}
-		function renderReadmitChip() {
+		function plantChipSlots() {
 			var g = document.getElementById("tmGBtn");
-			var old = document.getElementById("tmReadmitChip");
+			if (!g || !g.parentNode) return;
+			if (!document.getElementById("tmHighSlot")) {
+				var hs = document.createElement("span");
+				hs.id = "tmHighSlot";
+				hs.style.cssText = "display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;";
+				g.parentNode.insertBefore(hs, g.nextSibling);
+			}
+			if (!document.getElementById("tmReadmitSlot")) {
+				var rs = document.createElement("span");
+				rs.id = "tmReadmitSlot";
+				rs.style.cssText = "display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;";
+				g.parentNode.insertBefore(rs, g.nextSibling);
+			}
+		}
+		function renderReadmitChip() {
+			plantChipSlots();
+			var g = document.getElementById("tmGBtn");
+			var slot = document.getElementById("tmReadmitSlot");
+			var old = slot ? slot.firstElementChild : null;
 			var note = null;
 			try {
 				note = JSON.parse(localStorage.getItem("tmReadmitNote") || "null");
@@ -11334,11 +11514,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				show = !!idm && idm === note.id && curDate === note.date;
 			}
 			if (!show) {
-				if (old) old.remove();
+				if (slot) slot.textContent = "";
 				return;
 			}
 			if (old && old.getAttribute("data-mode") === chipMode) return;
-			if (old) old.remove();
+			if (slot) slot.textContent = "";
 			var chip = document.createElement("span");
 			chip.id = "tmReadmitChip";
 			chip.setAttribute("data-mode", chipMode);
@@ -11349,11 +11529,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				chip.textContent = "READMISSION";
 				chip.style.cssText = "display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;";
 			}
-			g.parentNode.insertBefore(chip, g.nextSibling);
+			if (slot) slot.appendChild(chip);
+			else if (g) g.parentNode.insertBefore(chip, g.nextSibling);
 		}
 		function renderHighChip() {
+			plantChipSlots();
 			var g = document.getElementById("tmGBtn");
-			var old = document.getElementById("tmHighChip");
+			var slot = document.getElementById("tmHighSlot");
+			var old = slot ? slot.firstElementChild : null;
 			var note = null;
 			try {
 				note = JSON.parse(localStorage.getItem("tmHighFlags") || "null");
@@ -11370,7 +11553,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			}
 			if (!show) {
-				if (old) old.remove();
+				if (slot) slot.textContent = "";
 				return;
 			}
 			var txt = note.highs.length === 1 ? "HIGH: " + note.highs[0] : note.highs.length + " HIGH FLAGS";
@@ -11383,9 +11566,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			chip.id = "tmHighChip";
 			chip.textContent = txt;
 			chip.title = note.highs.join(" · ");
-			chip.style.cssText = "display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;";
-			var anchorEl = document.getElementById("tmReadmitChip") || g;
-			anchorEl.parentNode.insertBefore(chip, anchorEl.nextSibling);
+			chip.style.cssText = "display:inline-block;margin-left:10px;padding:5px 14px;background:#ff1a1a;color:#fff;border:3px solid #ff8080;box-shadow:0 0 16px rgba(255,0,0,.6);border-radius:8px;font:800 15px -apple-system,Helvetica,Arial,sans-serif;letter-spacing:1px;vertical-align:middle;box-sizing:border-box;max-width:186px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+			if (slot) slot.appendChild(chip);
+			else if (g) {
+				var anchorEl = document.getElementById("tmReadmitChip") || g;
+				anchorEl.parentNode.insertBefore(chip, anchorEl.nextSibling);
+			}
 		}
 		function run() {
 			var bar = document.getElementById("residentHeaderButtons");
@@ -11426,6 +11612,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var sBtn = document.getElementById("tmSBtn");
 				bar.insertBefore(g, sBtn ? sBtn.nextSibling : more.nextSibling);
 			}
+			plantChipSlots();
 			if (!document.getElementById("tmGBtnStyle")) {
 				var gst = document.createElement("style");
 				gst.id = "tmGBtnStyle";
@@ -11490,6 +11677,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			} catch (err) {}
 			hlRestoreAll();
 		});
+		plantBand();
+		try {
+			addFaceSheetButton(document.getElementById("residentHeaderButtons"), null);
+		} catch (e) {}
 		window.__tmCore.ladder(run, [
 			300,
 			900,
