@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Pages (forms list & furniture)
-// @version      1.0.1
+// @version      1.1.0
 // @description  Stage 3 merge: Forms List 2.5 (incl. last-mode memory), Forms highlight, CNR/Saints Forms List, Readmission flag, Hide unused tabs 1.13 (frozen bar), Hide profile sections, Header emphasis, View All checkbox, Split view - nine page scripts in ONE, each module verbatim and gated to its own page as before. Replaces the nine separate page scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Pages.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Pages.user.js
@@ -356,9 +356,36 @@
     docs.forEach(function(d){ try { paint(d); } catch(e){} });
   }
 
-  // Scheduling: bounded staggered runs after load + re-run on your clicks.
-  // (Permanent interval removed in the reorganization — no-timers rule.)
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(runAll, ms); });
+  function paintedCount(){
+    var n = 0;
+    var rows = document.querySelectorAll('tr');
+    for (var i = 0; i < rows.length; i++){
+      var c = rows[i].cells && rows[i].cells[0];
+      if (c && (c.style.getPropertyValue('background-color') || '') === 'rgb(95, 184, 106)') n++;
+    }
+    return n;
+  }
+
+  // Scheduling (Smooth Arrival, audit C2): the highlight
+  // applies in the SAME pass as the list read - the
+  // first pass runs synchronously as this module
+  // evaluates (the list is server HTML, already here),
+  // not on a ladder tick seconds later. A bounded burst
+  // (250ms steps, ~4s) covers a list still streaming in
+  // and stops when the painted count is stable; re-runs
+  // on his clicks remain.
+  var hlTries = 0, hlLast = -1, hlAgree = 0;
+  function hlBurst(){
+    runAll();
+    hlTries++;
+    var n = paintedCount();
+    if (n > 0 && n === hlLast) hlAgree++;
+    else hlAgree = 0;
+    hlLast = n;
+    if (hlAgree >= 1 || hlTries >= 16) return;
+    setTimeout(hlBurst, 250);
+  }
+  hlBurst();
   var pccSchedLast = 0;
   document.addEventListener('click', function (e) {
       if (!e.isTrusted) return;
@@ -678,7 +705,9 @@
     return '';
   }
 
+  var flagPublished = false;
   function publishVerdict(verdict, reStr, lastFormStr){
+    flagPublished = true;
     // One verdict record, keyed to this resident + this
     // re-entry date, read on every tab (v1.7, his ask):
     // the tag everywhere must be the verdict the Forms
@@ -733,8 +762,29 @@
     }
   }
 
-  // Bounded staggered runs after load — then it stops (no permanent interval).
-  [600, 2000, 4000, 7000].forEach(function (ms) { setTimeout(update, ms); });
+  // Scheduling (Smooth Arrival, audit C3): the verdict
+  // publishes as early as the list allows - the ladder
+  // is gone. A bounded burst (250ms steps, ~7s, the old
+  // ladder's window) runs update() until a verdict is
+  // published; update()'s own two-agreeing-passes guard
+  // still applies, so the earliest publish is the second
+  // burst tick (~500ms) instead of the old 2s+4s pair.
+  // On a page with no forms list at all the burst stops
+  // after a few tries - the verdict is computed on the
+  // Forms page itself, and Core's reserved chip slot
+  // (its own frame, planted with the G button) is what
+  // the verdict lands in on every other tab.
+  var flagTries = 0, flagNoList = 0;
+  function flagBurst(){
+    update();
+    flagTries++;
+    if (flagPublished || flagTries >= 28) return;
+    var lf2 = lastPsychForm();
+    if (!lf2.tableFound && !reentryDate()) { flagNoList++; if (flagNoList >= 4) return; }
+    else flagNoList = 0;
+    setTimeout(flagBurst, 250);
+  }
+  flagBurst();
 })();
 ;
 // ----- module: PCC-All-Hide-unused-tabs.user.js -----
@@ -1139,16 +1189,34 @@
   }
 
   function run() {
-    if (!isProfilePage()) return;
+    if (!isProfilePage()) return false;
+    var found = 0, hidden = 0;
     TARGETS.forEach(function (text) {
       headingEls(text).forEach(function (h) {
+        found++;
         var card = sectionCard(h, text);
-        if (card) card.style.display = 'none';
+        if (card) { card.style.display = 'none'; hidden++; }
       });
     });
+    return found > 0 && hidden >= found;
   }
 
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(run, ms); });
+  // Scheduling (Smooth Arrival, audit C1): the decision
+  // happens at the EARLIEST eval moment - the furniture
+  // is server HTML, already in the page - so the first
+  // pass runs synchronously as this module evaluates.
+  // There is no visible-then-hidden second pass. A
+  // bounded burst (200ms steps, ~3s) covers a profile
+  // page still streaming in and stops the moment every
+  // target found is hidden; click re-runs remain.
+  var hpTries = 0;
+  function hpBurst() {
+    var decided = run();
+    hpTries++;
+    if (decided || hpTries >= 15) return;
+    setTimeout(hpBurst, 200);
+  }
+  hpBurst();
   var lastRun = 0;
   document.addEventListener('click', function (e) {
     if (!e.isTrusted) return;
@@ -1268,9 +1336,13 @@
     //   boldLabelValue('Admission\\s*\\(re-?entry\\)', /\d{1,2}\/\d{1,2}\/\d{2,4}/);  // re-admission date
   }
 
-  // Scheduling: bounded staggered runs after load + re-run on your clicks.
-  // (Permanent interval removed in the reorganization — no-timers rule.)
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(run, ms); });
+  // Scheduling (Smooth Arrival): run() is currently a
+  // no-op (all emphases off at his request), so the old
+  // staggered ladder only ever ran an empty function.
+  // It now runs once, synchronously at eval, like every
+  // other module's first pass; click re-runs remain for
+  // if an emphasis is ever switched back on.
+  run();
   var pccSchedLast = 0;
   document.addEventListener('click', function (e) {
       if (!e.isTrusted) return;
@@ -1358,10 +1430,26 @@
         cb.click();                                         // click only; never set .checked
     }
 
-    // Scheduling (v1.1): NO permanent interval. A few staggered runs after
-    // load, then re-checks only when YOU change a filter or press Apply
-    // (PCC also reloads the frame on Apply, which re-runs the load pass).
-    [400, 1200, 2500, 4500].forEach(function (ms) { setTimeout(tick, ms); });
+    // Scheduling (Smooth Arrival, audit C4): the sync
+    // decision happens at the EARLIEST pass - tick()
+    // runs synchronously as this module evaluates, not
+    // on a ladder tick. A bounded burst (250ms steps,
+    // ~4s) covers the filter bar still rendering and
+    // stops once the bar + checkbox have been present
+    // for two passes (the decision is per-state and
+    // tick() itself is once-per-state guarded). After
+    // that, re-checks only when YOU change a filter or
+    // press Apply, as before.
+    var vaTries = 0, vaPresent = 0;
+    function vaBurst() {
+        tick();
+        vaTries++;
+        if (getBar() && getViewAll()) vaPresent++;
+        else vaPresent = 0;
+        if (vaPresent >= 2 || vaTries >= 16) return;
+        setTimeout(vaBurst, 250);
+    }
+    vaBurst();
     document.addEventListener('change', function (e) {
         if (e.target && e.target.tagName === 'SELECT') setTimeout(tick, 150);
     }, true);
@@ -1503,4 +1591,3 @@
         e.preventDefault();
     }, true);
 })();
-;
