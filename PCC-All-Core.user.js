@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.9.0
+// @version      2.9.1
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11030,7 +11030,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (!row) {
 					row = document.createElement("div");
 					row.id = ROW_ID;
-					row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+					row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
 					bar.parentNode.insertBefore(row, bar.nextSibling);
 				}
 				if (!row2) {
@@ -11117,11 +11117,71 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			host.appendChild(el);
 		}
+		function measureWrapCss(sp) {
+			if (sp.key === "allergies") return "width:300px;";
+			if (sp.key === "summary") return "width:max-content;max-width:640px;";
+			if (sp.key === "words" || sp.key === "dx" || sp.key === "beh") return "width:max-content;max-width:720px;";
+			if (sp.key === "meds") return "width:max-content;max-width:920px;";
+			return "width:max-content;";
+		}
+		function measureTile(sp, done) {
+			var host = document.createElement("div");
+			host.setAttribute("data-tm-measure", "1");
+			host.style.cssText = "position:absolute;left:-99999px;top:0;visibility:hidden;" + measureWrapCss(sp);
+			var t = document.createElement("tm-tile");
+			t.style.display = "contents";
+			t.label = sp.label;
+			t.value = sp.value || "";
+			t.opts = sp.opts || {};
+			t.chip = sp.chip || "";
+			t.stamp = sp.stamp || "";
+			host.appendChild(t);
+			document.body.appendChild(host);
+			var finished = false, tries = 0;
+			function finish(size) {
+				if (finished) return;
+				finished = true;
+				try {
+					host.remove();
+				} catch (e) {}
+				done(size);
+			}
+			function read() {
+				try {
+					fitAllergies(t);
+				} catch (e) {}
+				try {
+					fitMeds(t);
+				} catch (e) {}
+				var card = t.querySelector("[data-tm-card]");
+				var wpx = card ? card.offsetWidth || 0 : 0;
+				var hpx = card ? card.offsetHeight || 0 : 0;
+				if (wpx > 0 && hpx > 0) {
+					finish([wpx, hpx]);
+					return;
+				}
+				if (++tries > 12) {
+					finish(null);
+					return;
+				}
+				if (window.requestAnimationFrame) requestAnimationFrame(read);
+				else setTimeout(read, 30);
+			}
+			if (t.updateComplete && t.updateComplete.then) t.updateComplete.then(function() {
+				if (window.requestAnimationFrame) requestAnimationFrame(read);
+				else setTimeout(read, 30);
+			});
+			else if (window.requestAnimationFrame) requestAnimationFrame(read);
+			else setTimeout(read, 30);
+		}
+		var __tileMeasuring = {};
+		var __lastSpecs = null;
 		function presentReadyTiles(specs) {
 			plantBand();
 			var row = document.getElementById(ROW_ID);
 			var row2 = document.getElementById("tmCardsRow2");
 			if (!row || !row2) return;
+			__lastSpecs = specs;
 			if (!__bandSwept) {
 				__bandSwept = true;
 				[row, row2].forEach(function(r) {
@@ -11134,35 +11194,43 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var fallback = settled && __settleObserved;
 			if (settled) __settleObserved = true;
 			specs.forEach(function(sp) {
-				if (__tileReg[sp.key]) return;
+				if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
 				if (!tileReady(sp, fallback)) return;
-				var el = createTile(sp);
-				insertTileInOrder(sp.row === 2 ? row2 : row, el, sp);
-				fitAndFreezeTile(sp.key, el);
+				__tileMeasuring[sp.key] = true;
+				measureTile(sp, function(size) {
+					delete __tileMeasuring[sp.key];
+					if (!size || __tileReg[sp.key]) return;
+					var fresh = null;
+					(__lastSpecs || []).forEach(function(s2) {
+						if (s2.key === sp.key) fresh = s2;
+					});
+					if (fresh && specSig(fresh) !== specSig(sp)) {
+						buildCards();
+						return;
+					}
+					var el = createTile(Object.assign({}, sp, { opts: Object.assign({}, sp.opts, {
+						frozenW: size[0],
+						frozenH: size[1]
+					}) }));
+					el.setAttribute("data-tm-frozen", "1");
+					__tileReg[sp.key].sig = specSig(sp);
+					var r1 = document.getElementById(ROW_ID);
+					var r2 = document.getElementById("tmCardsRow2");
+					if (r1 && r2) insertTileInOrder(sp.row === 2 ? r2 : r1, el, sp);
+					scheduleFit(sp.key, el);
+				});
 			});
 		}
-		function fitAndFreezeTile(key, el) {
+		function scheduleFit(key, el) {
+			if (!el) return;
 			var fitIt = function() {
 				if (key === "allergies") fitAllergies(el);
 				if (key === "meds") fitMeds(el);
-				freezeTile(el);
 			};
 			if (window.requestAnimationFrame) requestAnimationFrame(function() {
 				requestAnimationFrame(fitIt);
 			});
 			else setTimeout(fitIt, 60);
-		}
-		function freezeTile(el) {
-			if (!el || el.getAttribute("data-tm-frozen")) return;
-			var card = el.querySelector("[data-tm-card]");
-			if (!card) return;
-			var wpx = card.offsetWidth, hpx = card.offsetHeight;
-			if (!wpx || !hpx) return;
-			el.setAttribute("data-tm-frozen", "1");
-			el.opts = Object.assign({}, el.opts, {
-				frozenW: wpx,
-				frozenH: hpx
-			});
 		}
 		function updateTiles(specs) {
 			specs.forEach(function(sp) {
