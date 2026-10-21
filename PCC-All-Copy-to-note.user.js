@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.14
+// @version      1.15
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -370,7 +370,11 @@
     }
     if (chart.meds) {
       var secLines = null;
-      if (medsTxt !== null && medsTxt !== undefined) secLines = String(medsTxt).split('\n');
+      // Split-field meds text is sliced through the
+      // SAME section discipline as a single field:
+      // whole-field text admits the PLAN line as a
+      // phantom medication no fill can clear (2026-10-21; h168).
+      if (medsTxt !== null && medsTxt !== undefined) secLines = medSectionLines(String(medsTxt));
       else secLines = medSectionLines(txt);
       var chartNone = /^\s*-\s*none\s*$/i.test(String(chart.meds).trim());
       if (!secLines) v.meds = true;
