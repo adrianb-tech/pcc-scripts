@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.9.1
+// @version      2.9.2
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11888,7 +11888,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			if (chart.meds && !/^\s*(—|–|-)\s*$/.test(String(chart.meds))) {
 				var secLines = null;
-				if (medsTxt !== null && medsTxt !== void 0) secLines = String(medsTxt).split("\n");
+				if (medsTxt !== null && medsTxt !== void 0) secLines = medSectionLines(String(medsTxt));
 				else secLines = medSectionLines(txt);
 				var chartMap0 = {}, chartSeq0 = [];
 				String(chart.meds).split("\n").forEach(function(l) {
@@ -11940,9 +11940,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			};
 			var noteLatest = null;
 			var blines = txt.split("\n");
+			var bScoreRe = /^\s*\d{1,2}\s+on\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/;
+			var bXxRe = /^\s*(?:\d{1,2}|xx)\s+on\s+xx\s*$/i;
 			for (var bi = 0; bi < blines.length; bi++) {
 				if (!/BIMS/i.test(blines[bi])) continue;
-				var scan = blines[bi] + "\n" + (blines[bi + 1] || "");
+				var scanLines = [blines[bi]], bj = bi + 1;
+				if (bj < blines.length) {
+					scanLines.push(blines[bj]);
+					bj++;
+				}
+				while (bj < blines.length && (bScoreRe.test(blines[bj]) || bXxRe.test(blines[bj]) || !blines[bj].trim())) {
+					scanLines.push(blines[bj]);
+					bj++;
+				}
+				var scan = scanLines.join("\n");
 				var re2 = /(\d{1,2})\s+on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/g, mm;
 				while (mm = re2.exec(scan)) {
 					var dt = parseD(mm[2]);
