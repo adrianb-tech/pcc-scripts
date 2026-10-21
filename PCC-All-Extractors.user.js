@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.0.4
+// @version      1.1.0
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -175,7 +175,7 @@
         if (!apply || !hasScoreHeader()) {   // not the Forms/Assessments list
             var old = document.getElementById('custom-bims-badge');
             if (old && old.parentNode) old.parentNode.removeChild(old);
-            return;
+            return null;
         }
 
         var items = [];
@@ -210,19 +210,38 @@
         var cb = box.querySelector('button');
         if (cb) cb.setAttribute('data-fill-value', out);   // for the G sweep
         box.title = (!best && !filtersAreAll()) ? 'List is filtered, so a BIMS may exist under other types' : '';
+        return items.length + '|' + out;
     }
 
-    // Scheduling (v1.2): NO permanent interval. Bounded staggered runs after
-    // load (PCC grids populate late), then re-runs only on YOUR clicks
-    // (e.g. after you press Apply and the grid refreshes in place).
-    [400, 1200, 2500, 4500, 7000].forEach(function (ms) { setTimeout(tick, ms); });
+    // Scheduling (Smooth Arrival, audit B1): ONE pass,
+    // as early as the data is ready - the staggered
+    // ladder is gone. A bounded burst (250ms steps, the
+    // old ladder's ~7s window) retries only while the
+    // grid is still populating and stops the moment two
+    // consecutive passes see the same list; after that,
+    // silence until his click (e.g. Apply refreshes the
+    // grid in place, and the burst re-settles it once).
+    // organize() itself is no-op-safe and atomic: sort
+    // decision and highlights land in a single pass, and
+    // a pass over an already-sorted list moves nothing.
+    var bimsLastSig = null, bimsAgree = 0, bimsTries = 0;
+    function bimsBurst() {
+        var sig = tick();
+        bimsTries++;
+        if (sig !== null && sig === bimsLastSig) bimsAgree++;
+        else bimsAgree = 0;
+        bimsLastSig = sig;
+        if (bimsAgree >= 1 || bimsTries >= 28) return;
+        setTimeout(bimsBurst, 250);
+    }
+    bimsBurst();
     var lastClickRun = 0;
     document.addEventListener('click', function (e) {
         if (!e.isTrusted) return;
         var now = Date.now();
         if (now - lastClickRun < 800) return;
         lastClickRun = now;
-        setTimeout(tick, 350);
+        setTimeout(function () { bimsLastSig = null; bimsAgree = 0; bimsTries = 0; bimsBurst(); }, 350);
     }, true);
 })();
 ;
@@ -1014,6 +1033,10 @@ var __s3mod_Behavior_extractor = 1;
         var bar = all.parentElement;
         if (bar && bar.parentNode) bar.parentNode.insertBefore(box, bar.nextSibling);
       }
+      // In the wrap the box sits flush under the
+      // Diagnoses tile (its in-wrap margin, set once,
+      // here at plant time - never adjusted later).
+      if (wrap0 && box.parentElement === wrap0) box.style.margin = '8px 0 0';
       var behCopy = document.getElementById('pnBehCopy');
       behCopy.onclick = function () {
         var t = this.getAttribute('data-text');
@@ -1049,18 +1072,13 @@ var __s3mod_Behavior_extractor = 1;
         catch (err) { entry.row.scrollIntoView(); }
       });
     }
-    // Sit inside the white card with the Diagnoses tile when it
-    // exists (v1.3); otherwise keep the old standalone placement.
-    var wrap = document.getElementById('pnTilesWrap');
-    if (wrap) {
-      if (box.parentElement !== wrap) wrap.appendChild(box);
-      box.style.margin = '8px 0 0';
-    } else if (box.parentElement) {
-      var dx2 = document.getElementById('pnDxBox');
-      if (dx2 && dx2.parentNode && box.previousElementSibling !== dx2) {
-        dx2.parentNode.insertBefore(box, dx2.nextSibling);
-      }
-    }
+    // SMOOTH ARRIVAL (audit B2): the box NEVER moves
+    // after it is planted. Its home is chosen once, at
+    // plant time (inside the wrap, beside the Diagnoses
+    // tile, or the standalone fallback above) - the old
+    // re-siting pass that relocated it into the wrap when
+    // the wrap appeared later is gone: a planted frame
+    // stays where it landed.
     // Second net for the stray grab badge (it belongs to the
     // Diagnoses tile but can park below this one).
     if (box.parentElement) {
@@ -1106,14 +1124,30 @@ var __s3mod_Behavior_extractor = 1;
     insertBox(false);
   }
 
-  [300, 700, 1400, 2400, 4000, 6000, 8000].forEach(function (ms) { setTimeout(tick, ms); });
+  // Scheduling (Smooth Arrival, audit B1): the staggered
+  // ladder is gone. A bounded burst (250ms steps, the old
+  // ladder's ~8s window) runs until the box is planted
+  // and the notes fingerprint is stable across two
+  // passes; after that, silence until his click.
+  var behTries = 0, behLastFp = null, behAgree = 0;
+  function behBurst() {
+    tick();
+    behTries++;
+    var fp = notesFp();
+    if (fp && fp === behLastFp && document.getElementById('pnBehBox')) behAgree++;
+    else behAgree = 0;
+    behLastFp = fp;
+    if (behAgree >= 1 || behTries >= 32) return;
+    setTimeout(behBurst, 250);
+  }
+  behBurst();
   var last = 0;
   document.addEventListener('click', function (e) {
     if (!e.isTrusted) return;
     var now = Date.now();
     if (now - last < 800) return;
     last = now;
-    setTimeout(tick, 350);
+    setTimeout(function () { behTries = 0; behLastFp = null; behAgree = 0; behBurst(); }, 350);
   }, true);
 })();
 ;
@@ -1895,7 +1929,7 @@ var __s3mod_Diagnosis_extractor = 1;
 
   window.addEventListener('storage', function (e) {
     if (e.key === 'pccGrabSignal' && e.newValue) {
-      setTimeout(function () { hideBoxBadge(); }, 400);
+      hideBoxBadge();
     }
     // G held on a chart page: the tile row's signal (tmGPress).
     if (e.key === 'tmGPress') { srcTm = !!e.newValue; renderLight(); }
@@ -1997,11 +2031,11 @@ var __s3mod_Diagnosis_extractor = 1;
         bar.parentNode.insertBefore(wrap, bar.nextSibling);
       }
     }
-    // The grab script plants its G badge next to the tile a
-    // beat after the tile appears; sweep for it right away on
-    // a few quick one-shot passes so it never gets seen
-    // sitting there on refresh (v1.37).
-    [0, 120, 300, 700].forEach(function (ms) { setTimeout(hideBoxBadge, ms); });
+    // (The plant-then-hide badge ladder that used to sit
+    // here is gone - Smooth Arrival audit B5: the box is
+    // pre-marked data-g-badge at creation below, so the
+    // grab script never plants a badge for it at all.
+    // Visibility is decided BEFORE planting, not after.)
     if (!document.getElementById('pnDxBtnRow')) {
       var hdrCss = 'font-size:13px;font-weight:600;padding:5px 14px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;color:#334155;cursor:pointer;';
       var row = document.createElement('div');
@@ -2029,6 +2063,11 @@ var __s3mod_Diagnosis_extractor = 1;
     }
     var box = document.createElement('div');
     box.id = 'pnDxBox';
+    // Pre-marked as its own G source (audit B5): Grab-all
+    // skips elements carrying data-g-badge, so no badge is
+    // ever planted beside this tile - it carries its own
+    // G in the button row above.
+    box.setAttribute('data-g-badge', '1');
     box.style.cssText = 'margin:0;padding:14px 16px;background:#fff;border:1px solid #cbd5e1;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);font-size:13px;box-sizing:border-box;overflow-wrap:anywhere;';
     box.innerHTML =
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
@@ -2117,7 +2156,6 @@ var __s3mod_Diagnosis_extractor = 1;
     });
     runDx();
     hideBoxBadge();
-    setTimeout(hideBoxBadge, 600);
   }
 
   function tick(){
@@ -2147,16 +2185,32 @@ var __s3mod_Diagnosis_extractor = 1;
   var lastNotesLen = -1;
   var lastFpDx = '';
 
-  // Scheduling: bounded staggered runs after load + re-run on your clicks.
-  // (Permanent interval removed in the reorganization — no-timers rule.)
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(tick, ms); });
+  // Scheduling (Smooth Arrival, audit B1): the staggered
+  // ladder is gone. A bounded burst (250ms steps, ~8s -
+  // the old ladder's window, covering the panel wait in
+  // insertBox) runs until the box is planted and the
+  // notes fingerprint is stable across two passes; after
+  // that, silence until his click re-arms the burst.
+  var dxTries = 0, dxLastFp = null, dxAgree = 0;
+  function dxBurst() {
+    tick();
+    dxTries++;
+    var tbl3 = notesTable();
+    var fp3 = tbl3 ? tbl3.rows.length + ':' + (tbl3.textContent || '').length : '';
+    if (fp3 && fp3 === dxLastFp && document.getElementById('pnDxBox')) dxAgree++;
+    else dxAgree = 0;
+    dxLastFp = fp3;
+    if (dxAgree >= 1 || dxTries >= 32) return;
+    setTimeout(dxBurst, 250);
+  }
+  dxBurst();
   var pccSchedLast = 0;
   document.addEventListener('click', function (e) {
       if (!e.isTrusted) return;
       var now = Date.now();
       if (now - pccSchedLast < 800) return;
       pccSchedLast = now;
-      setTimeout(tick, 350);
+      setTimeout(function () { dxTries = 0; dxLastFp = null; dxAgree = 0; dxBurst(); }, 350);
   }, true);
 })();
 ;
@@ -2373,9 +2427,25 @@ var __s3mod_Diagnosis_extractor = 1;
     };
   }
 
-  // Scheduling: bounded staggered runs after load + re-run on your clicks.
-  // (Permanent interval removed in the reorganization — no-timers rule.)
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(run, ms); });
+  // Scheduling (Smooth Arrival, audit B1): the staggered
+  // ladder is gone. A bounded burst (250ms steps, ~6s)
+  // runs until the box is planted with its value, stable
+  // across two passes; after that, re-runs on his clicks
+  // only. run() is idempotent - the box is created once
+  // and its text updates in place.
+  var relTries = 0, relLastOut = null, relAgree = 0;
+  function relBurst() {
+    run();
+    relTries++;
+    var btn = document.getElementById('relCopyBtn');
+    var cur = btn ? btn.getAttribute('data-fill-value') : null;
+    if (cur !== null && cur === relLastOut) relAgree++;
+    else relAgree = 0;
+    relLastOut = cur;
+    if (relAgree >= 1 || relTries >= 24) return;
+    setTimeout(relBurst, 250);
+  }
+  relBurst();
   var pccSchedLast = 0;
   document.addEventListener('click', function (e) {
       if (!e.isTrusted) return;
@@ -2516,9 +2586,23 @@ var __s3mod_Diagnosis_extractor = 1;
     fireClick(btn);
   }, true);
 
-  // Scheduling: bounded staggered runs after load + re-run on your clicks.
-  // (Permanent interval removed in the reorganization — no-timers rule.)
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(function () { run(); plantFBadge(); }, ms); });
+  // Scheduling (Smooth Arrival, audit B4): the view
+  // change happens in the FIRST pass that finds the
+  // toggle - the staggered ladder is gone. A bounded
+  // burst (250ms steps, ~6s) retries only while the
+  // React table is still rendering, and stops as soon
+  // as run() is done; the F overlay plants in that same
+  // pass and afterwards only repositions (scroll/resize/
+  // click), never re-plants.
+  var vtsTries = 0;
+  function vtsBurst() {
+    run();
+    plantFBadge();
+    vtsTries++;
+    if (done || vtsTries >= 24) return;
+    setTimeout(vtsBurst, 250);
+  }
+  vtsBurst();
   var pccSchedLast = 0;
   document.addEventListener('click', function (e) {
       if (!e.isTrusted) return;
@@ -2797,13 +2881,33 @@ var __s3mod_Diagnosis_extractor = 1;
     mountToggle();
   }
 
+  // Scheduling (Smooth Arrival, audit B4): the reorder
+  // happens in the FIRST pass only. The permanent
+  // MutationObserver that re-sorted on every PCC
+  // re-render is gone (it also broke the no-observers
+  // standing law): a bounded burst covers the screen's
+  // own late render, stops once the Orders screen has
+  // been seen twice, and after that the pass re-runs
+  // only on his clicks. reorderTable is no-op-safe, so
+  // a repeat pass over sorted rows moves nothing.
   run();
-  let scheduled = false;
-  new MutationObserver(() => {
-    if (scheduled) return;
-    scheduled = true;
-    setTimeout(() => { scheduled = false; run(); }, 300);
-  }).observe(document.body, { childList: true, subtree: true });
+  let poTries = 0, poSeen = 0;
+  function poBurst() {
+    run();
+    poTries++;
+    if (onOrdersScreen()) poSeen++; else poSeen = 0;
+    if (poSeen >= 2 || poTries >= 16) return;
+    setTimeout(poBurst, 250);
+  }
+  setTimeout(poBurst, 250);
+  let poLastClick = 0;
+  document.addEventListener('click', (e) => {
+    if (!e.isTrusted) return;
+    const now = Date.now();
+    if (now - poLastClick < 800) return;
+    poLastClick = now;
+    setTimeout(run, 350);
+  }, true);
 })();
 ;
 
@@ -3105,15 +3209,34 @@ var __s3mod_Diagnosis_extractor = 1;
     requestGrab();
   }, true);
 
-  // Badges render on bounded staggered runs + after his clicks (no timers).
-  [400, 1200, 2500, 4500, 7000, 10000].forEach(function (ms) { setTimeout(addBadges, ms); });
+  // Badges plant in the SAME pass as their Copy buttons
+  // are found (Smooth Arrival, audit B1/B3): the staggered
+  // ladder is gone. A bounded burst (250ms steps, ~8s)
+  // re-checks only while buttons are still appearing and
+  // stops when two consecutive passes badge nothing new;
+  // after that, badges ride his clicks only. addBadges is
+  // idempotent (data-g-badge marks the done ones), so a
+  // badge is planted exactly once, beside its button, in
+  // the pass that first sees the button.
+  var badgeTries = 0, badgeLastCount = -1, badgeAgree = 0;
+  function badgeBurst() {
+    addBadges();
+    badgeTries++;
+    var n = document.querySelectorAll('.pcc-g-badge').length;
+    if (n === badgeLastCount && n > 0) badgeAgree++;
+    else badgeAgree = 0;
+    badgeLastCount = n;
+    if (badgeAgree >= 1 || badgeTries >= 32) return;
+    setTimeout(badgeBurst, 250);
+  }
+  badgeBurst();
   var lastBadgeRun = 0;
   document.addEventListener('click', function (e) {
     if (!e.isTrusted) return;
     var now = Date.now();
     if (now - lastBadgeRun < 1000) return;
     lastBadgeRun = now;
-    setTimeout(addBadges, 350);
+    setTimeout(function () { badgeTries = 0; badgeLastCount = -1; badgeAgree = 0; badgeBurst(); }, 350);
   }, true);
 })();
 ;
