@@ -1540,48 +1540,79 @@
     return '';
   }
 
-  // READMISSION chip beside the G button (his ask, 2026-10-14: he
-  // loves the warning — move it next to G). The flag script keeps
-  // its own box (the consult defaults read that box), and publishes
-  // a note keyed to resident + re-entry date; when the note matches
-  // THIS resident, the same bright-red warning shows here.
+  // READMISSION chip (his ask, 2026-10-14: he loves the
+  // warning). The flag script keeps its own box (the
+  // consult defaults read that box), and publishes a
+  // note keyed to resident + re-entry date; when the note
+  // matches THIS resident, the same bright-red warning
+  // shows here. Placement history: beside the G button
+  // (2026-10-14), then the bar after the band row
+  // (2026-10-22), now the top flag strip (2026-10-22,
+  // below in plantChipSlots).
   // SMOOTH ARRIVAL (audit A4): the two alert chips live
-  // in RESERVED SLOTS in the G button's own cluster. The
-  // slots plant in the same pass as the G button, at a
-  // fixed width that fits the widest chip, and never
-  // appear or disappear for the life of the page - only
-  // their CONTENT settles in or clears, so a chip landing
-  // moves nothing beside it.
+  // in RESERVED SLOTS planted at a fixed width that fits
+  // the widest chip, and never appear or disappear for
+  // the life of the page - only their CONTENT settles in
+  // or clears, so a chip landing moves nothing beside it.
   function plantChipSlots() {
     var g = document.getElementById('tmGBtn');
     if (!g || !g.parentNode) return;
-    // Chip slots sit in the bar AFTER the band row (the
-    // row itself is buttons-then-tiles only, his
-    // 2026-10-22 order). On a page with no band row they
-    // keep their legacy place, right after the G button.
+    // FLAGS AT THE TOP (his ruling, 2026-10-22, capture
+    // TREE-1824): the flag slots leave the buttons bar
+    // and live in a reserved strip on the header's first
+    // line - right under picture -> name -> medical
+    // number, before every other header detail. The
+    // strip is planted at a fixed height inside the
+    // details column, directly after the name block, so
+    // the reading order at the top of the chart is:
+    // picture, name, chart number, flags/warnings.
+    // Order inside the strip: READMISSION / NEW
+    // ADMISSION first, then the HIGH warning.
+    var strip = document.getElementById('tmFlagRow');
+    if (!strip) {
+      var nameBlock = document.querySelector('#residentHeader .residentNameBadgeExpansion');
+      if (nameBlock && nameBlock.parentNode) {
+        strip = document.createElement('div');
+        strip.id = 'tmFlagRow';
+        strip.style.cssText = 'display:flex;align-items:center;height:38px;overflow:hidden;';
+        nameBlock.parentNode.insertBefore(strip, nameBlock.nextSibling);
+      }
+    }
+    // Legacy fallback: a page with no name block keeps
+    // the slots in the bar after the band row, as before.
     var barEl = document.getElementById('residentHeaderButtons');
     var rowEl = document.getElementById(ROW_ID);
     var afterRow = !!(barEl && rowEl && rowEl.parentNode === barEl);
     function plantSlot(el) {
+      if (strip) { strip.appendChild(el); return; }
       if (afterRow) barEl.insertBefore(el, rowEl.nextSibling);
       else g.parentNode.insertBefore(el, g.nextSibling);
     }
-    if (!document.getElementById('tmHighSlot')) {
-      var hs = document.createElement('span');
-      hs.id = 'tmHighSlot';
-      // Fixed height, overflow clipped (Ear O2): the slot
-      // reserves the chip's full space from the start, so
-      // a chip landing - however long its text - can never
-      // grow the header bar.
-      hs.style.cssText = 'display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;';
-      plantSlot(hs);
+    // Slots planted by an older pass (in the bar) move
+    // up into the strip; slots already home stay put.
+    function homeSlot(id) {
+      var el = document.getElementById(id);
+      if (!el) {
+        el = document.createElement('span');
+        el.id = id;
+        // Fixed height, overflow clipped (Ear O2): the
+        // slot reserves the chip's full space from the
+        // start, so a chip landing - however long its
+        // text - can never grow the strip.
+        el.style.cssText = 'display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;flex:none;';
+        plantSlot(el);
+        return el;
+      }
+      if (strip && el.parentNode !== strip) strip.appendChild(el);
+      return el;
     }
-    if (!document.getElementById('tmReadmitSlot')) {
-      var rs = document.createElement('span');
-      rs.id = 'tmReadmitSlot';
-      rs.style.cssText = 'display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;';
-      plantSlot(rs);
-    }
+    var rsEl = homeSlot('tmReadmitSlot');
+    var hsEl = homeSlot('tmHighSlot');
+    // Strip order is readmission first, then HIGH: if
+    // the HIGH slot ever sits ahead of it, one append
+    // puts HIGH last and the pair is ordered again.
+    if (strip && rsEl.parentNode === strip && hsEl.parentNode === strip &&
+        strip.children.length >= 2 && strip.children[0] === hsEl) strip.appendChild(hsEl);
   }
   function renderReadmitChip() {
     plantChipSlots();
@@ -1638,7 +1669,7 @@
     else if (g) g.parentNode.insertBefore(chip, g.nextSibling);
   }
 
-  // HIGH-flag chip beside the G button - same alert as the
+  // HIGH-flag chip in the top flag strip - same alert as the
   // readmission chip, same place, same bright red (his call,
   // 2026-10-14: 'have it alert just like the readmission' instead
   // of a tile). The Dashboard script publishes tmHighFlags keyed
