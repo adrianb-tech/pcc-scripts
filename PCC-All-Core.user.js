@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.9.2
+// @version      2.10.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -10825,9 +10825,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			var admM = (d.admission || "").match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
 			var admKind = admM && admM[3] ? admM[3].toLowerCase() : "";
-			mkSpec(1, "admission", admKind ? "Admission (" + admKind + ")" : "Admission (re-entry)", admM ? admM[1] : d.admission || "", {});
+			mkSpec(1, "admission", admKind ? "Admission (" + admKind + ")" : "Admission (re-entry)", admM ? admM[1] : d.admission || "", {
+				band: 1,
+				bandW: 166,
+				pad: "6px 12px",
+				size: 15
+			});
 			mkSpec(1, "agesex", "Age / Sex", d.ageSex || "", {
-				pad: "12px 13px 14px",
+				band: 1,
+				bandW: 88,
+				pad: "6px 12px",
+				size: 15,
 				warn: !!(tw && tw.age),
 				click: {
 					label: "Age/Sex",
@@ -10838,8 +10846,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					value: d.ageSex || ""
 				}
 			});
-			mkSpec(1, "room", "Room", d.room || "", {});
+			mkSpec(1, "room", "Room", d.room || "", {
+				band: 1,
+				bandW: 82,
+				pad: "6px 12px",
+				size: 15
+			});
 			mkSpec(1, "allergies", "Allergies", d.allergies || "", {
+				band: 1,
+				bandW: 300,
+				pad: "6px 12px",
+				size: 13,
 				natW: true,
 				maxW: 300,
 				weight: 600,
@@ -10856,10 +10873,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			});
 			mkSpec(1, "weight", "Weight", d.weight || "", {
+				band: 1,
+				bandW: 86,
+				pad: "6px 12px",
+				size: 15,
 				nav: true,
 				color: d.weightRed ? "#a33327" : void 0
 			});
 			mkSpec(1, "bims", "BIMS", d.bims || "", {
+				band: 1,
+				bandW: 176,
+				pad: "6px 12px",
+				size: 14,
 				natW: true,
 				nowrap: true,
 				fit: true,
@@ -10872,11 +10897,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "BIMS",
 					value: d.bims || ""
 				}
-			}, null, d.stampBims);
+			});
 			mkSpec(1, "rel", "Relationships", d.rel || "", {
+				band: 1,
+				bandW: 196,
+				pad: "6px 12px",
+				size: 15,
 				natW: true,
 				maxW: 280,
-				minW: 168,
 				fit: true,
 				warn: !!(tw && tw.rel),
 				click: {
@@ -10887,9 +10915,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					label: "Relationships",
 					value: d.rel || ""
 				}
-			}, null, d.stampRel);
+			});
 			var medsChip = String(d.meds === "- none" ? 0 : d.meds ? d.meds.split("\n").length : 0);
-			if (d.medsFill !== null && d.medsFill !== void 0) mkSpec(1, "meds", "Psych meds", d.meds || "", {
+			if (d.medsFill !== null && d.medsFill !== void 0) mkSpec(2, "meds", "Psych meds", d.meds || "", {
 				cols: true,
 				wide: true,
 				multi: true,
@@ -10906,7 +10934,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					value: d.medsFill
 				}
 			}, medsChip, d.stampMeds);
-			else mkSpec(1, "meds", "Psych meds", d.meds || "", {
+			else mkSpec(2, "meds", "Psych meds", d.meds || "", {
 				cols: true,
 				wide: true,
 				multi: true,
@@ -11026,23 +11054,27 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (!bar || !bar.parentNode) return;
 				var row = document.getElementById(ROW_ID);
 				var row2 = document.getElementById("tmCardsRow2");
-				if (row && row2) return;
 				if (!row) {
 					row = document.createElement("div");
 					row.id = ROW_ID;
-					row.style.cssText = "display:flex;gap:10px;flex-wrap:nowrap;margin:12px 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
-					bar.parentNode.insertBefore(row, bar.nextSibling);
 				}
+				if (row.parentNode !== bar) bar.appendChild(row);
+				row.style.cssText = "display:flex;gap:8px;flex-wrap:nowrap;margin:0;align-items:center;min-width:0;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+				bar.style.display = "flex";
+				bar.style.alignItems = "center";
+				bar.style.flexWrap = "nowrap";
+				bar.style.gap = "10px";
 				if (!row2) {
 					row2 = document.createElement("div");
 					row2.id = "tmCardsRow2";
 					row2.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin:0 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
-					bar.parentNode.insertBefore(row2, row.nextSibling);
 				}
+				if (row2.parentNode !== bar.parentNode || bar.nextSibling !== row2) bar.parentNode.insertBefore(row2, bar.nextSibling);
 			} catch (e) {}
 		}
 		var __bandSwept = false;
 		var __settleObserved = false;
+		var BAND_H = 72;
 		var ROW_KEYS = {
 			1: [
 				"admission",
@@ -11051,10 +11083,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				"allergies",
 				"weight",
 				"bims",
-				"rel",
-				"meds"
+				"rel"
 			],
 			2: [
+				"meds",
 				"summary",
 				"words",
 				"dx",
@@ -11196,6 +11228,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			specs.forEach(function(sp) {
 				if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
 				if (!tileReady(sp, fallback)) return;
+				if (sp.opts && sp.opts.band) {
+					var bel = createTile(Object.assign({}, sp, { opts: Object.assign({}, sp.opts, {
+						frozenW: sp.opts.bandW,
+						frozenH: BAND_H
+					}) }));
+					bel.setAttribute("data-tm-frozen", "1");
+					__tileReg[sp.key].sig = specSig(sp);
+					var br1 = document.getElementById(ROW_ID);
+					var br2 = document.getElementById("tmCardsRow2");
+					if (br1 && br2) insertTileInOrder(br1, bel, sp);
+					scheduleFit(sp.key, bel);
+					return;
+				}
 				__tileMeasuring[sp.key] = true;
 				measureTile(sp, function(size) {
 					delete __tileMeasuring[sp.key];
