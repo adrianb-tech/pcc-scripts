@@ -8,8 +8,18 @@
   'use strict';
 
   function allergySet(s) {
-    return s.split(',').map(function (x) { return x.trim().toLowerCase(); })
-      .filter(Boolean).sort().join('|');
+    return s.split(',').map(function (x) {
+      var t = x.trim().toLowerCase();
+      // PCN is penicillin (his correction, 2026-10-22):
+      // his note writes 'PCN', the chart writes
+      // 'Penicillins' - the same allergy, and the tile
+      // must not shine red over the abbreviation. The
+      // chart side already shortens penicillin to PCN
+      // in its own copy paths; the comparator now
+      // canonicalizes both spellings to one token.
+      if (/penicillin/.test(t) || /\bpcn\b/.test(t)) return 'pcn';
+      return t;
+    }).filter(Boolean).sort().join('|');
   }
 
 
