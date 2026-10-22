@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.0
+// @version      2.10.1
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11584,17 +11584,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		function plantChipSlots() {
 			var g = document.getElementById("tmGBtn");
 			if (!g || !g.parentNode) return;
+			var barEl = document.getElementById("residentHeaderButtons");
+			var rowEl = document.getElementById(ROW_ID);
+			var afterRow = !!(barEl && rowEl && rowEl.parentNode === barEl);
+			function plantSlot(el) {
+				if (afterRow) barEl.insertBefore(el, rowEl.nextSibling);
+				else g.parentNode.insertBefore(el, g.nextSibling);
+			}
 			if (!document.getElementById("tmHighSlot")) {
 				var hs = document.createElement("span");
 				hs.id = "tmHighSlot";
 				hs.style.cssText = "display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;";
-				g.parentNode.insertBefore(hs, g.nextSibling);
+				plantSlot(hs);
 			}
 			if (!document.getElementById("tmReadmitSlot")) {
 				var rs = document.createElement("span");
 				rs.id = "tmReadmitSlot";
 				rs.style.cssText = "display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;";
-				g.parentNode.insertBefore(rs, g.nextSibling);
+				plantSlot(rs);
 			}
 		}
 		function renderReadmitChip() {
@@ -11689,6 +11696,25 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		function run() {
 			var bar = document.getElementById("residentHeaderButtons");
 			if (!bar) return;
+			plantBand();
+			var btnHost = document.getElementById(ROW_ID) || bar;
+			function plantBtn(el) {
+				if (btnHost === bar) {
+					bar.appendChild(el);
+					return;
+				}
+				var ft = btnHost.querySelector("tm-tile");
+				if (ft) btnHost.insertBefore(el, ft);
+				else btnHost.appendChild(el);
+			}
+			if (btnHost !== bar) [
+				BTN_ID,
+				"tmSBtn",
+				"tmGBtn"
+			].forEach(function(id) {
+				var el = document.getElementById(id);
+				if (el && el.parentNode !== btnHost) plantBtn(el);
+			});
 			if (!document.getElementById(BTN_ID)) {
 				var b = document.createElement("button");
 				b.type = "button";
@@ -11699,9 +11725,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					shown = !shown;
 					apply();
 				});
-				bar.appendChild(b);
+				plantBtn(b);
 			}
-			var more = document.getElementById(BTN_ID);
+			document.getElementById(BTN_ID);
 			if (!document.getElementById("tmSBtn")) {
 				var s = document.createElement("button");
 				s.type = "button";
@@ -11710,7 +11736,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				s.textContent = "S";
 				s.title = "Copy name + room (same as the S key)";
 				s.addEventListener("click", triggerS);
-				bar.insertBefore(s, more.nextSibling);
+				plantBtn(s);
 			}
 			if (!document.getElementById("tmGBtn")) {
 				var g = document.createElement("button");
@@ -11722,8 +11748,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				g.addEventListener("mousedown", hlAllTiles);
 				g.title = "Grab all — queue everything on screen (same as the G key)";
 				g.addEventListener("click", triggerG);
-				var sBtn = document.getElementById("tmSBtn");
-				bar.insertBefore(g, sBtn ? sBtn.nextSibling : more.nextSibling);
+				plantBtn(g);
 			}
 			plantChipSlots();
 			if (!document.getElementById("tmGBtnStyle")) {
