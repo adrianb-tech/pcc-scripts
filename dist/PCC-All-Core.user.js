@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.5
+// @version      2.10.6
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -7848,14 +7848,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		var LAB_BOX_CSS = "flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #1d4ed8;background:#eff6ff;overflow-wrap:anywhere;";
 		var WARN_BOX_CSS = "flex:0 0 calc(50% - 4px);width:calc(50% - 4px);box-sizing:border-box;padding:6px 10px;font-size:13px;border:1px solid #991b1b;background:#fef2f2;overflow-wrap:anywhere;";
-		function watchCollapse(doc, box, label) {
+		function watchCollapse(doc, box, label, namesOverride) {
 			if (!box || box.querySelector(".tmWatchBody")) return;
 			var body = doc.createElement("div");
 			body.className = "tmWatchBody";
 			while (box.firstChild) body.appendChild(box.firstChild);
 			body.style.display = "none";
-			var names = [];
-			body.querySelectorAll("b, strong").forEach(function(b) {
+			var names = namesOverride ? namesOverride.slice() : [];
+			if (!namesOverride) body.querySelectorAll("b, strong").forEach(function(b) {
 				var w = (b.textContent || "").trim().split(/\s+/)[0].replace(/[^A-Za-z\-]/g, "");
 				if (w && w.length > 2 && names.indexOf(w) === -1 && names.length < 6) names.push(w);
 			});
@@ -7875,6 +7875,41 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				refitFrame(doc);
 			};
 			box.appendChild(bar);
+			box.appendChild(body);
+		}
+		function psychLabNames(groups) {
+			if (!groups || !groups.length) return null;
+			try {
+				var seen = {}, out = [];
+				buildLabsData(groups).items.forEach(function(o) {
+					if (!o.psych || seen[o.name]) return;
+					seen[o.name] = 1;
+					out.push(o.name);
+				});
+				return out;
+			} catch (e) {
+				return null;
+			}
+		}
+		function watchFlagsFlow(doc, box) {
+			if (!box || box.querySelector(".tmWatchBody")) return;
+			var body = doc.createElement("div");
+			body.className = "tmWatchBody";
+			while (box.firstChild) body.appendChild(box.firstChild);
+			body.querySelectorAll(".pcc-flag").forEach(function(f) {
+				f.style.display = "inline-block";
+				f.style.margin = "2px 14px 2px 0";
+				f.style.verticalAlign = "top";
+			});
+			body.style.cssText = "display:block;max-height:26px;overflow:hidden;";
+			box.onmouseenter = function() {
+				body.style.maxHeight = "none";
+				refitFrame(doc);
+			};
+			box.onmouseleave = function() {
+				body.style.maxHeight = "26px";
+				refitFrame(doc);
+			};
 			box.appendChild(body);
 		}
 		function applyMedsView(doc, groups) {
@@ -7906,8 +7941,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						b.style.marginBottom = "8px";
 						b.style.display = "block";
 					});
-					watchCollapse(doc, labs, "Labs to monitor");
+					watchCollapse(doc, labs, "Labs to monitor", psychLabNames(groups));
 					watchCollapse(doc, warn, "Black box");
+					watchFlagsFlow(doc, flags);
 				}
 				if (topRow) topRow.style.display = "none";
 				if (labsRow) labsRow.style.display = "none";
