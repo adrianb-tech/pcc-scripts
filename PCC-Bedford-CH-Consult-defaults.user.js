@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Every facility — Bedford + Crown Heights — Consult defaults
 // @namespace    mica.pcc
-// @version      1.17
+// @version      1.18
 // @description  Bedford + Crown Heights: readies the Consult-Psychiatry 1.0 form to adrian's standard state, and autofills the New-form popup. Every target is aimed by its real field name from the form's own markup (captured 2026-10-14). Runs ONCE, ~1s after the form loads — PCC's show/hide rules only register real clicks made after its own setup finishes.
 // @match        https://*.pointclickcare.com/care/chart/mds/mdssection.jsp*
 // @match        https://*.pointclickcare.com/care/chart/assess/newassess.jsp*
@@ -185,11 +185,38 @@
     // actual readmission test (his report, 2026-10-14 15:33: a plain
     // re-entry got flipped to Initial). The alert box is
     // #tmReadmitBox with big text READMISSION.
+    // v1.18: search the opener's WHOLE frame tree, not just the
+    // opener document — BP 1.37's fix (h144), mirrored. The flag
+    // plants its hidden box in whichever document holds the
+    // resident header, and in the framed layout that can be a
+    // frame the opener document doesn't contain; 1.17 read only
+    // that one document, so a framed plant read as no readmission
+    // and the copied form kept Type 'Follow Up'. The alert test
+    // itself is unchanged: the flag's render() sets the box's
+    // firstChild text to 'READMISSION' exactly when it sets alert
+    // mode (and to '' in ok mode), so the text test and BP's
+    // __mode test agree on every state the flag can produce.
     try {
-      var od = window.opener && window.opener.document;
-      if (!od) return false;
-      var box = od.getElementById('tmReadmitBox');
-      return !!(box && box.firstChild && /READMISSION/.test(box.firstChild.textContent || ''));
+      if (!window.opener) return false;
+      var docs = [];
+      var seen = [];
+      function collect(win) {
+        try {
+          if (!win || seen.indexOf(win) !== -1) return;
+          seen.push(win);
+          if (win.document) docs.push(win.document);
+          for (var f = 0; f < win.frames.length; f++) collect(win.frames[f]);
+        } catch (e3) {}
+      }
+      collect(window.opener);
+      try { collect(window.opener.top); } catch (e4) {}
+      for (var d = 0; d < docs.length; d++) {
+        try {
+          var box = docs[d].getElementById('tmReadmitBox');
+          if (box && box.firstChild && /READMISSION/.test(box.firstChild.textContent || '')) return true;
+        } catch (e2) {}
+      }
+      return false;
     } catch (e) { return false; }
   }
   function runCopyType() {
