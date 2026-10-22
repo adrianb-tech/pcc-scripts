@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.1
+// @version      2.10.2
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -6923,22 +6923,35 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			groups.forEach(function(g) {
 				var t = g.rows[0].innerText;
 				var name = shortName(g);
+				var isPsych = medTierOf(t) <= 1;
 				LAB_MONITORING.forEach(function(m) {
 					if (m.rx.test(t)) {
 						if (!out.some(function(o) {
 							return o.name === name && o.labs === m.labs;
 						})) out.push({
 							name,
-							labs: m.labs
+							labs: m.labs,
+							psych: isPsych
 						});
 					}
 				});
 			});
+			out = out.map(function(o, i) {
+				return {
+					o,
+					i
+				};
+			}).sort(function(a, b) {
+				return (b.o.psych ? 1 : 0) - (a.o.psych ? 1 : 0) || a.i - b.i;
+			}).map(function(x) {
+				return x.o;
+			});
+			var lines = ["Labs to monitor:"].concat(out.map(function(o) {
+				return "- " + o.name + ": " + o.labs;
+			}));
 			return {
 				items: out,
-				lines: ["Labs to monitor:"].concat(out.map(function(o) {
-					return "- " + o.name + ": " + o.labs;
-				}))
+				lines
 			};
 		}
 		function buildLabsHtml(data) {
@@ -8058,16 +8071,35 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				table.parentNode.insertBefore(panel, table);
 			}
 			panel.style.cssText = "background:#fff;border:1px solid #d6d0bd;border-radius:6px;margin:0 0 6px 0;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+			try {
+				flagAll(groups || []);
+				(groups || []).forEach(function(g) {
+					g.__warnBg = "";
+					if (g.reasons && g.reasons.length) g.__warnBg = colorFor(g.reasons.reduce(function(acc, r) {
+						var s = severityFor(r);
+						var rank = {
+							HIGH: 0,
+							MEDIUM: 1,
+							LOW: 2
+						};
+						return rank[s] < rank[acc] ? s : acc;
+					}, "LOW")).bg;
+				});
+			} catch (e) {}
+			function hl(g, lineHtml) {
+				var bg = g.__warnBg;
+				return bg ? "<span style=\"background:" + bg + ";border-radius:3px;padding:0 3px;\">" + lineHtml + "</span>" : lineHtml;
+			}
 			var psych = [], pain = [], others = [];
 			(groups || []).forEach(function(g) {
-				if (g.tier <= 1) psych.push(orderLine(g));
-				else if (g.tier === 3) pain.push(oneLiner(g));
-				else others.push(oneLiner(g));
+				if (g.tier <= 1) psych.push(hl(g, orderLine(g)));
+				else if (g.tier === 3) pain.push(hl(g, oneLiner(g)));
+				else others.push(hl(g, oneLiner(g)));
 			});
 			var html = "<div style=\"padding:8px 10px;font-size:13px;line-height:1.6;\">";
-			if (psych.length) html += "<div style=\"border:2px solid #2563eb;border-radius:4px;padding:6px 9px;margin-bottom:8px;\">" + psych.join("<br>") + "</div>";
+			html += "<div style=\"border:2px solid #2563eb;border-radius:4px;padding:6px 9px;margin-bottom:8px;\">" + (psych.length ? psych.join("<br>") : "- no psych meds") + "</div>";
 			if (others.length) html += "<div style=\"color:#44403c;\">" + others.join(" · ") + "</div>";
-			if (pain.length) html += "<div style=\"color:#7c2d12;border:2px solid #ea580c;border-radius:4px;padding:5px 9px;margin-top:8px;\">Pain: " + pain.join(" · ") + "</div>";
+			html += "<div style=\"color:#7c2d12;border:2px solid #ea580c;border-radius:4px;padding:5px 9px;margin-top:8px;\">" + (pain.length ? "Pain: " + pain.join(" · ") : "- no pain medications") + "</div>";
 			html += "<div id=\"tmMedsFullBar\" style=\"margin-top:7px;color:#334155;cursor:pointer;font-weight:600;\">▸ show full order text (" + (groups ? groups.length : 0) + " orders)</div>";
 			html += "</div>";
 			panel.innerHTML = html;
