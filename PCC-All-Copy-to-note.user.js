@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.15
+// @version      1.16
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -100,8 +100,17 @@
   }
 
   function allergySet(s) {
-    return s.split(',').map(function (x) { return x.trim().toLowerCase(); })
-      .filter(Boolean).sort().join('|');
+    return s.split(',').map(function (x) {
+      var t = x.trim().toLowerCase();
+      // PCN is penicillin (his correction, 2026-10-22):
+      // his note writes 'PCN', the chart writes
+      // 'Penicillins' - the same allergy. Canonicalize
+      // both spellings to one token so the fill leaves
+      // his line alone and the tile stays clear (the
+      // Core verdicts module carries the same rule).
+      if (/penicillin/.test(t) || /\bpcn\b/.test(t)) return 'pcn';
+      return t;
+    }).filter(Boolean).sort().join('|');
   }
 
   function applyAllergies(txt, val) {
