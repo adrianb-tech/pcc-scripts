@@ -483,13 +483,18 @@
     ['chlormethiazole|heminevrin','Heminevrin']
   ]);
 
+  // Indication short forms. NOTE (2026-10-22, his
+  // correction on the Haldol line): schizoaffective
+  // disorder prints as 'schizophrenia' - his word for
+  // the line he copies; the old 'SAD' short form is
+  // retired on his say-so. One-word change to reverse.
   var IND_NORM = {
     'depression':'depression', 'major depressive disorder':'depression', 'major depression':'depression',
     'recurrent depression':'depression', 'sleep disorder':'insomnia', 'sleep':'insomnia', 'insomnia':'insomnia',
     'parancia':'paranoia', 'paranoia':'paranoia', 'anxiety':'anxiety', 'anxiety disorder':'anxiety',
     'generalized anxiety disorder':'anxiety', 'axiety':'anxiety', 'axiety disorder':'anxiety',
     'psychosis':'psychosis', 'psychotic disorder':'psychosis', 'schizophrenia':'schizophrenia',
-    'schizoaffective disorder':'SAD', 'bipolar':'bipolar', 'bipolar disorder':'bipolar',
+    'schizoaffective disorder':'schizophrenia', 'bipolar':'bipolar', 'bipolar disorder':'bipolar',
     'bipolar i disorder':'bipolar', 'bipolar ii disorder':'bipolar', 'bipolar affective disorder':'bipolar',
     'mood disorder':'mood', 'adhd':'ADHD', 'extrapyramidal and movement disorder':'EPS', 'extrapyramidal disorder':'EPS',
     'convulsions':'seizures', 'unspecified convulsions':'seizures',
@@ -545,7 +550,7 @@
     var l = t.toLowerCase();
     // A NEGATED PRN is not a PRN order (v2.34, his
     // Klonopin report): the sig says 'every morning and
-    // at bedtime ... it is not PRN' - the bare word PRN
+    // at bed\s?time ... it is not PRN' - the bare word PRN
     // used to trigger here AND in the suffix test, and
     // the tile printed 'PRN PRN' for a standing q12h
     // order. Strip the negation before testing, and let
@@ -553,20 +558,20 @@
     // mention (a true standing+PRN sig still gets its
     // ' PRN' suffix from buildMedList's isPrn test).
     var lNoNeg = l.replace(/\b(?:it\s+is\s+)?not\s+(?:a\s+)?prn\b/g, '').replace(/\bno\s+prn\b/g, '');
-    var hasStanding = /\bmorning\b|\bbedtime\b|\bnight\b|\bevening\b|\bdaily\b|\btimes a day\b|\bevery\s|\bq\d|\bbid\b|\btid\b|\bqid\b|\bqhs\b|\bqam\b|\bqpm\b|\bweekly\b|\bmonthly\b/.test(l);
+    var hasStanding = /\bmorning\b|\bbed\s?time\b|\bnight\b|\bevening\b|\bdaily\b|\btimes a day\b|\bevery\s|\bq\d|\bbid\b|\btid\b|\bqid\b|\bqhs\b|\bqam\b|\bqpm\b|\bweekly\b|\bmonthly\b/.test(l);
     if (!hasStanding && /\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(lNoNeg)) return 'PRN';
     if (/\bbefore meals?\b|\bante cibum\b|\ba\.c\.?|\bac\b/.test(l)) return 'AC';
     if (/\bafter meals?\b|\bpost cibum\b|\bp\.c\.?|\bpc\b/.test(l)) return 'PC';
     // Morning + night in ONE sig = twice daily (his ruling, 2026-10-14:
-    // "every morning and at bedtime ... means it is q12h"). PCC phrases
+    // "every morning and at bed\s?time ... means it is q12h"). PCC phrases
     // it many ways — morning and night, morning and evening, every day
     // and every night — so judge the PAIR, not the phrase. Without
     // this, the bedtime rule below steals the whole sig as QHS and the
     // morning dose vanishes (his Depakote: '250mg QHS' for a q12h order).
     var hasAM = /\bmorning\b|\bqam\b|\bevery day\b|\bdaily\b/.test(l);
-    var hasPM = /\bbedtime\b|\bnight\b|\bevening\b|\bqhs\b/.test(l);
+    var hasPM = /\bbed\s?time\b|\bnight\b|\bevening\b|\bqhs\b/.test(l);
     if (hasAM && hasPM && !/\bonce\b/.test(l)) return 'BID';
-    if (/\bbedtime\b|\bat night\b|\bnightly\b|\bevery night\b|\bone time a night\b|\b1 time a night\b|\bonce nightly\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return 'QHS';
+    if (/\bbed\s?time\b|\bat night\b|\bnightly\b|\bevery night\b|\bone time a night\b|\b1 time a night\b|\bonce nightly\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return 'QHS';
     if (/\bevery other day\b|\bqod\b/.test(l)) return 'QOD';
     if (/\btwo times a day\b|\btwice a day\b|\btwice daily\b|\bb\.i\.d\.?|\bbid\b|\b2 times a day\b/.test(l)) return 'BID';
     if (/\bthree times a day\b|\bthrice\b|\bt\.i\.d\.?|\btid\b|\b3 times a day\b/.test(l)) return 'TID';
@@ -608,7 +613,7 @@
     raw = raw.replace(/\s*\([^)]*\)\s*$/, '');
     raw = raw.replace(/,.*$/, '');
     raw = raw.replace(/\s*\(\s*[A-Z]\d{2}(?:\.[0-9A-Z]{1,4})?\s*\)/g, '');            // ICD code in parentheses
-    raw = raw.replace(/\s+(?:in the (?:morning|afternoon|evening)|at bedtime|at night)\b.*$/i, '');   // trailing timing words
+    raw = raw.replace(/\s+(?:in the (?:morning|afternoon|evening)|at bed\s?time|at night)\b.*$/i, '');   // trailing timing words
     raw = raw.replace(/\s+without\s+behaviou?ral\b.*$/i, '');                          // "without behavioral disturbance"
     raw = raw.replace(/^for\s+/i, '');                                              // double-"for" sigs: "for for anxiety" capture starts "for anxiety"
     raw = raw.replace(/^\s*(?:other|unspecified|acute|chronic|mild|moderate|severe)\s+/i, '');
@@ -661,23 +666,44 @@
         cnum = m[1]; cunit = m[2].toLowerCase(); cden = m[3] ? m[3] : 1;
       }
 
-      var dnum = null, dunit = null;
-      if ((m = instr.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i))) { dnum = +m[1]; dunit = m[2].toLowerCase(); }
-      else if ((m = instr.match(/\b(?:Give|Inject|Take|Administer|Infuse|Instill)\s+(\d+(?:\.\d+)?)\s*(mg|milligrams?|mcg|micrograms?|g|grams?)\b/i))) { dnum = +m[1]; dunit = normUnit(m[2]); }
-      else if (ustr !== null && (m = instr.match(/\b(?:Give|Take)\s+(\d+\s*\/\s*\d+|[½¼¾]|\d*\.?\d+)\s*(?:tablets?|capsules?|tabs?|caps?)\b/i))) { var q = parseQty(m[1]); if (q !== null) { dnum = q * (+ustr); dunit = uunit; } }
-      else if (cnum !== null && (m = instr.match(/\b(?:Give|Inject|Instill|Infuse)\s+(\d+(?:\.\d+)?)\s*(?:ml|milliliters?|cc)\b/i))) { dnum = (+m[1]) * ((+cnum) / (+cden)); dunit = cunit; }
-      else if (ustr !== null) { dnum = +ustr; dunit = uunit; }
-
-      var dstr = (dnum !== null) ? fmtNum(dnum) + dunit : '';
       var rt = routeOf(instr);
       var disp = med.name + ((isLiquid(hdr) && rt === '') ? ' liquid' : '');
-      var fr = freqOf(instr);
-      if (fr === 'ONCE') return; // one-time/STAT order — not a standing med, never listed
+      // The indication belongs to the ORDER, not to an
+      // administration: read it once from the whole sig.
+      // Per-segment reads disagreed on his Haldol order -
+      // the bedtime segment's '...D/O AT BED TIME Give
+      // with...' tail survived as its own indication, the
+      // segment formed a second group, and the drug
+      // printed twice.
       var ind = indicationOf(instr, med.ind);
       if (FORCED_IND.hasOwnProperty(med.name)) ind = FORCED_IND[med.name];
-      var raw = instr.replace(/\s+/g, ' ').trim();
-
-      rows.push({ name: med.name, disp: disp, dnum: dnum, dunit: dunit, dstr: dstr, rt: rt, fr: fr, ind: ind, tier: med.tier, raw: raw, comboDose: comboDose });
+      // SEGMENTS (his Haldol correction, 2026-10-22):
+      // one order can carry TWO administrations in a
+      // single sig - 'Give 2 tablet ... one time a day
+      // ... AND Give 1 tablet ... at bed\s?time ... total
+      // of 25mg'. Parsed whole, the bedtime rule stole
+      // the frequency and the total-of shortcut stole
+      // the dose, and the tile printed '25mg QHS' -
+      // the morning 10mg vanished. Split at a second
+      // administration verb and parse each segment as
+      // its own row: same drug/route/indication group,
+      // one bucket per timing, and the stated-total
+      // rule in the bucket keeps the shared QHS total
+      // from double-counting.
+      var segs = instr.split(/\s+AND\s+(?=(?:Give|Inject|Take|Administer|Infuse|Instill|Place|Apply)\b)/i);
+      segs.forEach(function (seg) {
+        var sdnum = null, sdunit = null, sm;
+        if ((sm = seg.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i))) { sdnum = +sm[1]; sdunit = sm[2].toLowerCase(); }
+        else if ((sm = seg.match(/\b(?:Give|Inject|Take|Administer|Infuse|Instill)\s+(\d+(?:\.\d+)?)\s*(mg|milligrams?|mcg|micrograms?|g|grams?)\b/i))) { sdnum = +sm[1]; sdunit = normUnit(sm[2]); }
+        else if (ustr !== null && (sm = seg.match(/\b(?:Give|Take)\s+(\d+\s*\/\s*\d+|[½¼¾]|\d*\.?\d+)\s*(?:tablets?|capsules?|tabs?|caps?)\b/i))) { var q = parseQty(sm[1]); if (q !== null) { sdnum = q * (+ustr); sdunit = uunit; } }
+        else if (cnum !== null && (sm = seg.match(/\b(?:Give|Inject|Instill|Infuse)\s+(\d+(?:\.\d+)?)\s*(?:ml|milliliters?|cc)\b/i))) { sdnum = (+sm[1]) * ((+cnum) / (+cden)); sdunit = cunit; }
+        else if (ustr !== null) { sdnum = +ustr; sdunit = uunit; }
+        var sdstr = (sdnum !== null) ? fmtNum(sdnum) + sdunit : '';
+        var sfr = freqOf(seg);
+        if (sfr === 'ONCE') return; // one-time/STAT segment — not a standing administration
+        var sraw = seg.replace(/\s+/g, ' ').trim();
+        rows.push({ name: med.name, disp: disp, dnum: sdnum, dunit: sdunit, dstr: sdstr, rt: rt, fr: sfr, ind: ind, tier: med.tier, raw: sraw, comboDose: comboDose });
+      });
     });
 
     function bucketOf(fr) { return (fr === 'QD' || fr === 'QAM' || fr === 'QPM') ? 'QD' : fr; }
@@ -2054,7 +2080,7 @@
     if (/two times a day/.test(s)) base = 'BID';
     else if (/three times a day/.test(s)) base = 'TID';
     else if (/four times a day/.test(s)) base = 'QID';
-    else if (/at bedtime/.test(s)) base = 'QHS';
+    else if (/at bed\s?time/.test(s)) base = 'QHS';
     else if (/every other day/.test(s)) base = 'QOD';
     else { var h = s.match(/every (\d+) hours?/); if (h) base = 'q' + h[1] + 'h'; }
     if (!base && /one time a day|once daily|one time each day/.test(s)) base = 'daily';
