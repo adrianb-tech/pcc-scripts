@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.4
+// @version      2.10.5
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11670,25 +11670,42 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		function plantChipSlots() {
 			var g = document.getElementById("tmGBtn");
 			if (!g || !g.parentNode) return;
+			var strip = document.getElementById("tmFlagRow");
+			if (!strip) {
+				var nameBlock = document.querySelector("#residentHeader .residentNameBadgeExpansion");
+				if (nameBlock && nameBlock.parentNode) {
+					strip = document.createElement("div");
+					strip.id = "tmFlagRow";
+					strip.style.cssText = "display:flex;align-items:center;height:38px;overflow:hidden;";
+					nameBlock.parentNode.insertBefore(strip, nameBlock.nextSibling);
+				}
+			}
 			var barEl = document.getElementById("residentHeaderButtons");
 			var rowEl = document.getElementById(ROW_ID);
 			var afterRow = !!(barEl && rowEl && rowEl.parentNode === barEl);
 			function plantSlot(el) {
+				if (strip) {
+					strip.appendChild(el);
+					return;
+				}
 				if (afterRow) barEl.insertBefore(el, rowEl.nextSibling);
 				else g.parentNode.insertBefore(el, g.nextSibling);
 			}
-			if (!document.getElementById("tmHighSlot")) {
-				var hs = document.createElement("span");
-				hs.id = "tmHighSlot";
-				hs.style.cssText = "display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;";
-				plantSlot(hs);
+			function homeSlot(id) {
+				var el = document.getElementById(id);
+				if (!el) {
+					el = document.createElement("span");
+					el.id = id;
+					el.style.cssText = "display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;flex:none;";
+					plantSlot(el);
+					return el;
+				}
+				if (strip && el.parentNode !== strip) strip.appendChild(el);
+				return el;
 			}
-			if (!document.getElementById("tmReadmitSlot")) {
-				var rs = document.createElement("span");
-				rs.id = "tmReadmitSlot";
-				rs.style.cssText = "display:inline-block;width:210px;height:38px;overflow:hidden;vertical-align:middle;";
-				plantSlot(rs);
-			}
+			var rsEl = homeSlot("tmReadmitSlot");
+			var hsEl = homeSlot("tmHighSlot");
+			if (strip && rsEl.parentNode === strip && hsEl.parentNode === strip && strip.children.length >= 2 && strip.children[0] === hsEl) strip.appendChild(hsEl);
 		}
 		function renderReadmitChip() {
 			plantChipSlots();
