@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.6
+// @version      2.10.7
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -6538,7 +6538,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			"psychosis": "psychosis",
 			"psychotic disorder": "psychosis",
 			"schizophrenia": "schizophrenia",
-			"schizoaffective disorder": "SAD",
+			"schizoaffective disorder": "schizophrenia",
 			"bipolar": "bipolar",
 			"bipolar disorder": "bipolar",
 			"bipolar i disorder": "bipolar",
@@ -6608,13 +6608,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (/\bweekly\b/i.test(t)) return "weekly";
 			var l = t.toLowerCase();
 			var lNoNeg = l.replace(/\b(?:it\s+is\s+)?not\s+(?:a\s+)?prn\b/g, "").replace(/\bno\s+prn\b/g, "");
-			if (!/\bmorning\b|\bbedtime\b|\bnight\b|\bevening\b|\bdaily\b|\btimes a day\b|\bevery\s|\bq\d|\bbid\b|\btid\b|\bqid\b|\bqhs\b|\bqam\b|\bqpm\b|\bweekly\b|\bmonthly\b/.test(l) && /\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(lNoNeg)) return "PRN";
+			if (!/\bmorning\b|\bbed\s?time\b|\bnight\b|\bevening\b|\bdaily\b|\btimes a day\b|\bevery\s|\bq\d|\bbid\b|\btid\b|\bqid\b|\bqhs\b|\bqam\b|\bqpm\b|\bweekly\b|\bmonthly\b/.test(l) && /\bas needed\b|\bp\.r\.n\.?\b|\bprn\b/.test(lNoNeg)) return "PRN";
 			if (/\bbefore meals?\b|\bante cibum\b|\ba\.c\.?|\bac\b/.test(l)) return "AC";
 			if (/\bafter meals?\b|\bpost cibum\b|\bp\.c\.?|\bpc\b/.test(l)) return "PC";
 			var hasAM = /\bmorning\b|\bqam\b|\bevery day\b|\bdaily\b/.test(l);
-			var hasPM = /\bbedtime\b|\bnight\b|\bevening\b|\bqhs\b/.test(l);
+			var hasPM = /\bbed\s?time\b|\bnight\b|\bevening\b|\bqhs\b/.test(l);
 			if (hasAM && hasPM && !/\bonce\b/.test(l)) return "BID";
-			if (/\bbedtime\b|\bat night\b|\bnightly\b|\bevery night\b|\bone time a night\b|\b1 time a night\b|\bonce nightly\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return "QHS";
+			if (/\bbed\s?time\b|\bat night\b|\bnightly\b|\bevery night\b|\bone time a night\b|\b1 time a night\b|\bonce nightly\b|\bbefore bed\b|\bin the evening\b|\bhora somni\b|\bh\.s\.?|\bhs\b|\bqhs\b/.test(l)) return "QHS";
 			if (/\bevery other day\b|\bqod\b/.test(l)) return "QOD";
 			if (/\btwo times a day\b|\btwice a day\b|\btwice daily\b|\bb\.i\.d\.?|\bbid\b|\b2 times a day\b/.test(l)) return "BID";
 			if (/\bthree times a day\b|\bthrice\b|\bt\.i\.d\.?|\btid\b|\b3 times a day\b/.test(l)) return "TID";
@@ -6652,7 +6652,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			raw = raw.replace(/\s*\([^)]*\)\s*$/, "");
 			raw = raw.replace(/,.*$/, "");
 			raw = raw.replace(/\s*\(\s*[A-Z]\d{2}(?:\.[0-9A-Z]{1,4})?\s*\)/g, "");
-			raw = raw.replace(/\s+(?:in the (?:morning|afternoon|evening)|at bedtime|at night)\b.*$/i, "");
+			raw = raw.replace(/\s+(?:in the (?:morning|afternoon|evening)|at bed\s?time|at night)\b.*$/i, "");
 			raw = raw.replace(/\s+without\s+behaviou?ral\b.*$/i, "");
 			raw = raw.replace(/^for\s+/i, "");
 			raw = raw.replace(/^\s*(?:other|unspecified|acute|chronic|mild|moderate|severe)\s+/i, "");
@@ -6695,46 +6695,48 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					cunit = m[2].toLowerCase();
 					cden = m[3] ? m[3] : 1;
 				}
-				var dnum = null, dunit = null;
-				if (m = instr.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i)) {
-					dnum = +m[1];
-					dunit = m[2].toLowerCase();
-				} else if (m = instr.match(/\b(?:Give|Inject|Take|Administer|Infuse|Instill)\s+(\d+(?:\.\d+)?)\s*(mg|milligrams?|mcg|micrograms?|g|grams?)\b/i)) {
-					dnum = +m[1];
-					dunit = normUnit(m[2]);
-				} else if (ustr !== null && (m = instr.match(/\b(?:Give|Take)\s+(\d+\s*\/\s*\d+|[½¼¾]|\d*\.?\d+)\s*(?:tablets?|capsules?|tabs?|caps?)\b/i))) {
-					var q = parseQty(m[1]);
-					if (q !== null) {
-						dnum = q * +ustr;
-						dunit = uunit;
-					}
-				} else if (cnum !== null && (m = instr.match(/\b(?:Give|Inject|Instill|Infuse)\s+(\d+(?:\.\d+)?)\s*(?:ml|milliliters?|cc)\b/i))) {
-					dnum = +m[1] * (+cnum / +cden);
-					dunit = cunit;
-				} else if (ustr !== null) {
-					dnum = +ustr;
-					dunit = uunit;
-				}
-				var dstr = dnum !== null ? fmtNum(dnum) + dunit : "";
 				var rt = routeOf(instr);
 				var disp = med.name + (isLiquid(hdr) && rt === "" ? " liquid" : "");
-				var fr = freqOf(instr);
-				if (fr === "ONCE") return;
 				var ind = indicationOf(instr, med.ind);
 				if (FORCED_IND.hasOwnProperty(med.name)) ind = FORCED_IND[med.name];
-				var raw = instr.replace(/\s+/g, " ").trim();
-				rows.push({
-					name: med.name,
-					disp,
-					dnum,
-					dunit,
-					dstr,
-					rt,
-					fr,
-					ind,
-					tier: med.tier,
-					raw,
-					comboDose
+				instr.split(/\s+AND\s+(?=(?:Give|Inject|Take|Administer|Infuse|Instill|Place|Apply)\b)/i).forEach(function(seg) {
+					var sdnum = null, sdunit = null, sm;
+					if (sm = seg.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i)) {
+						sdnum = +sm[1];
+						sdunit = sm[2].toLowerCase();
+					} else if (sm = seg.match(/\b(?:Give|Inject|Take|Administer|Infuse|Instill)\s+(\d+(?:\.\d+)?)\s*(mg|milligrams?|mcg|micrograms?|g|grams?)\b/i)) {
+						sdnum = +sm[1];
+						sdunit = normUnit(sm[2]);
+					} else if (ustr !== null && (sm = seg.match(/\b(?:Give|Take)\s+(\d+\s*\/\s*\d+|[½¼¾]|\d*\.?\d+)\s*(?:tablets?|capsules?|tabs?|caps?)\b/i))) {
+						var q = parseQty(sm[1]);
+						if (q !== null) {
+							sdnum = q * +ustr;
+							sdunit = uunit;
+						}
+					} else if (cnum !== null && (sm = seg.match(/\b(?:Give|Inject|Instill|Infuse)\s+(\d+(?:\.\d+)?)\s*(?:ml|milliliters?|cc)\b/i))) {
+						sdnum = +sm[1] * (+cnum / +cden);
+						sdunit = cunit;
+					} else if (ustr !== null) {
+						sdnum = +ustr;
+						sdunit = uunit;
+					}
+					var sdstr = sdnum !== null ? fmtNum(sdnum) + sdunit : "";
+					var sfr = freqOf(seg);
+					if (sfr === "ONCE") return;
+					var sraw = seg.replace(/\s+/g, " ").trim();
+					rows.push({
+						name: med.name,
+						disp,
+						dnum: sdnum,
+						dunit: sdunit,
+						dstr: sdstr,
+						rt,
+						fr: sfr,
+						ind,
+						tier: med.tier,
+						raw: sraw,
+						comboDose
+					});
 				});
 			});
 			function bucketOf(fr) {
@@ -8067,7 +8069,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (/two times a day/.test(s)) base = "BID";
 			else if (/three times a day/.test(s)) base = "TID";
 			else if (/four times a day/.test(s)) base = "QID";
-			else if (/at bedtime/.test(s)) base = "QHS";
+			else if (/at bed\s?time/.test(s)) base = "QHS";
 			else if (/every other day/.test(s)) base = "QOD";
 			else {
 				var h = s.match(/every (\d+) hours?/);
@@ -11974,7 +11976,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		"use strict";
 		function allergySet(s) {
 			return s.split(",").map(function(x) {
-				return x.trim().toLowerCase();
+				var t = x.trim().toLowerCase();
+				if (/penicillin/.test(t) || /\bpcn\b/.test(t)) return "pcn";
+				return t;
 			}).filter(Boolean).sort().join("|");
 		}
 		var MED_PAIRS = [
