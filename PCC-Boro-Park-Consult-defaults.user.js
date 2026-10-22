@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.37
+// @version 1.38
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @name         Boro Park — Consult form defaults
@@ -271,6 +271,8 @@
     // "Reasons for Assessment" popup:
     // - New Psych Consult (Assessment dropdown = "Psych: Consult") -> Type = Admission
     // - READMISSION flag present in opener (re-admitted after last psych form) -> Type = Admission
+    // - QUARTERLY (his rule, 2026-10-22): last psych note 10+ weeks
+    //   ago AND last re-entry before it -> Type = Quarterly
     // - Follow-up / anything else -> Type = Other
     function applyPopupDefaults() {
         if (userTouched) return;
@@ -328,6 +330,32 @@
         } catch(e){}
 
         var target = (isPsychConsult || isReadmission) ? 'Admission' : 'Other';
+        if (target === 'Other') {
+            // Quarterly check (his rule, 2026-10-22). The
+            // dates ride the Readmission flag's verdict
+            // record: verdict 'ok' means the last re-entry
+            // came BEFORE the last psych form ('readmit'
+            // and 'new' never qualify), and lastForm is
+            // that form's date. Guards: the verdict must
+            // name THIS resident when an id can be read
+            // on this page, and must be fresh (<24h) - a
+            // stale verdict from an earlier chart never
+            // retypes this one.
+            try {
+                var v = JSON.parse(localStorage.getItem('tmReadmitVerdict') || 'null');
+                if (v && v.verdict === 'ok' && v.lastForm && v.ts && (Date.now() - v.ts) < 24 * 3600 * 1000) {
+                    var rid = '';
+                    try { rid = (snapshotResidentId() || '').replace(/\D/g, ''); } catch (e5) {}
+                    if (!v.id || !rid || String(v.id) === rid) {
+                        var pm = String(v.lastForm).match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                        if (pm) {
+                            var lfDate = new Date(+pm[3], +pm[1] - 1, +pm[2]);
+                            if ((Date.now() - lfDate.getTime()) >= 70 * 24 * 3600 * 1000) target = 'Quarterly';
+                        }
+                    }
+                }
+            } catch (e6) {}
+        }
         var opts = typeSel.options;
         var re = new RegExp('^' + target, 'i');
         for (var j = 0; j < opts.length; j++) {
