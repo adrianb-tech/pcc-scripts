@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.2
+// @version      2.10.3
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -10320,6 +10320,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}));
 		}
 		function triggerG() {
+			queueHiddenTileFills();
 			var badge = document.querySelector(".pcc-g-badge");
 			if (badge) {
 				badge.click();
@@ -11099,10 +11100,51 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (!row2) {
 					row2 = document.createElement("div");
 					row2.id = "tmCardsRow2";
-					row2.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin:0 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
 				}
-				if (row2.parentNode !== bar.parentNode || bar.nextSibling !== row2) bar.parentNode.insertBefore(row2, bar.nextSibling);
+				if (isDashDoc()) {
+					row2.style.cssText = "display:flex;flex-wrap:wrap;gap:10px;margin:0 0 4px;align-items:flex-start;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+					var anchor = dashViewAnchor() || bar;
+					if (row2.parentNode !== anchor.parentNode || anchor.nextSibling !== row2) anchor.parentNode.insertBefore(row2, anchor.nextSibling);
+				} else {
+					row2.style.cssText = "display:none;";
+					if (row2.parentNode !== bar.parentNode || bar.nextSibling !== row2) bar.parentNode.insertBefore(row2, bar.nextSibling);
+				}
 			} catch (e) {}
+		}
+		function isDashDoc() {
+			try {
+				return /cp_residentdashboard/i.test(location.pathname || "");
+			} catch (e) {
+				return false;
+			}
+		}
+		function dashViewAnchor() {
+			var pv = document.getElementById("idPrintableViewBtn");
+			if (!pv) {
+				var cands = document.querySelectorAll("input, button, a");
+				for (var i = 0; i < cands.length; i++) if ((cands[i].value || cands[i].textContent || "").trim() === "Printable View") {
+					pv = cands[i];
+					break;
+				}
+			}
+			if (!pv || !pv.parentNode) return null;
+			return (pv.closest ? pv.closest("table") : null) || pv.parentNode;
+		}
+		function queueHiddenTileFills() {
+			if (isDashDoc()) return;
+			[
+				"meds",
+				"summary",
+				"dx"
+			].forEach(function(key) {
+				var reg = __tileReg[key];
+				var el = reg && reg.el;
+				if (!el) return;
+				var label = el.getAttribute("data-fill-label");
+				var value = el.getAttribute("data-fill-value");
+				if (!label || !value || value === "N/A") return;
+				queueCopy(label, value);
+			});
 		}
 		var __bandSwept = false;
 		var __settleObserved = false;
@@ -11121,8 +11163,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				"meds",
 				"summary",
 				"words",
-				"dx",
-				"beh"
+				"beh",
+				"dx"
 			]
 		};
 		function stopLanded(k) {
@@ -11838,6 +11880,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			try {
 				localStorage.setItem("tmGPress", String(Date.now()));
 			} catch (err) {}
+			queueHiddenTileFills();
 			hlAllTiles();
 		});
 		document.addEventListener("keyup", function(e) {
