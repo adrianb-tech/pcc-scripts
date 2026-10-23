@@ -37,11 +37,46 @@
   var MDACK_RE = /MD:\s*Psychiatry\s+Consult\s+Ack/i;
   var DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
   var SCORE_RE = /^\d{1,2}(\.\d+)?$/;
-  function parseAssessments(doc, G) {
+  // The BIMS points in ONE assessments list doc - the
+  // Score-column core, shared by parseAssessments (the
+  // base/rendered list) and the chain's search across
+  // form types (gatherer merges these point by point).
+  // Null when the doc has no Score column at all.
+  function bimsPointsFromList(doc) {
     var heads = doc.querySelectorAll('th, td');
     var hasScore = false;
     for (var i = 0; i < heads.length; i++) if (/^Score$/i.test(ctxt(heads[i]))) { hasScore = true; break; }
-    if (!hasScore) {
+    if (!hasScore) return null;
+    var points = [], rowsSeen = 0;
+    var rows = doc.querySelectorAll('tr');
+    for (var r = 0; r < rows.length; r++) {
+      var row = rows[r];
+      if (!row.cells || row.cells.length < 6 || row.querySelector('tr')) continue;
+      var t = Array.prototype.map.call(row.cells, ctxt);
+      var dateStr = firstDate(t);
+      if (!dateStr) continue;
+      var rowText = t.join(' | ');
+      if (MDACK_RE.test(rowText) || PSYCH_RE.test(rowText)) continue;
+      var score = t.find(function (c) { return SCORE_RE.test(c); });
+      if (score === undefined) continue;
+      if (!t.some(function (c) { return BIMS_RE.test(c); })) continue;
+      rowsSeen++;
+      var n = parseFloat(score);
+      // 99 is a real BIMS score - the stop code
+      // (interview unable to be completed). The old
+      // 0-15 range silently discarded every 99 row,
+      // so a resident whose newest BIMS was a 99 kept
+      // an ancient score on the tile (his live Bedford
+      // case, 2026-10-23: chart 99 on 9/18/2026, tile
+      // showed 3 on 8/21/22 - and G transferred the 3).
+      if ((n >= 0 && n <= 15) || n === 99) points.push({ date: dateStr, score: n });
+    }
+    points.sort(function (a, b2) { return new Date(b2.date) - new Date(a.date); });
+    return { points: points, rowsSeen: rowsSeen };
+  }
+  function parseAssessments(doc, G) {
+    var bp = bimsPointsFromList(doc);
+    if (!bp) {
       // Diagnostic (v2.0.5): name the miss on the stop, as
       // with dashmeds - fetched list vs reader, settled by
       // the next capture instead of another theory. Yields
@@ -52,7 +87,8 @@
       try { if (G.packet.stops.bims.status !== 'landed' && !/^mds chain:/.test(G.packet.stops.bims.why || '')) { G.packet.stops.bims.why = 'no Score column in fetched list'; G.publish(); } } catch (e) {}
       return;
     }
-    var bims = [], visits = [], mdAck = '', bimsRowsSeen = 0;
+    var bims = bp.points, bimsRowsSeen = bp.rowsSeen;
+    var visits = [], mdAck = '';
     var rows = doc.querySelectorAll('tr');
     for (var r = 0; r < rows.length; r++) {
       var row = rows[r];
@@ -61,21 +97,8 @@
       var dateStr = firstDate(t);
       if (!dateStr) continue;
       var rowText = t.join(' | ');
-      var score = t.find(function (c) { return SCORE_RE.test(c); });
       if (MDACK_RE.test(rowText)) { if (!mdAck) mdAck = dateStr; }
       else if (PSYCH_RE.test(rowText)) { visits.push(dateStr); }
-      else if (t.some(function (c) { return BIMS_RE.test(c); }) && score !== undefined) {
-        bimsRowsSeen++;
-        var n = parseFloat(score);
-        // 99 is a real BIMS score - the stop code
-        // (interview unable to be completed). The old
-        // 0-15 range silently discarded every 99 row,
-        // so a resident whose newest BIMS was a 99 kept
-        // an ancient score on the tile (his live Bedford
-        // case, 2026-10-23: chart 99 on 9/18/2026, tile
-        // showed 3 on 8/21/22 - and G transferred the 3).
-        if ((n >= 0 && n <= 15) || n === 99) bims.push({ date: dateStr, score: n });
-      }
     }
     if (!bims.length) {
       try { if (G.packet.stops.bims.status !== 'landed' && !/^mds chain:/.test(G.packet.stops.bims.why || '')) { G.packet.stops.bims.why = 'Score column present; BIMS-like rows matched=' + bimsRowsSeen + ' (0 = the fetched list holds no BIMS rows)'; G.publish(); } } catch (e) {}
@@ -201,19 +224,50 @@
   // any type with BIMS in its name. Current versions first,
   // retired last, capped at 3 - ids read from the page
   // itself, never hardcoded (they differ per facility).
+  // SEARCH ALL THE FORMS (his direction, 2026-10-23):
+  // facilities rename and re-version the BIMS forms
+  // constantly - at Bedford the dedicated BIMS form
+  // exists ONLY as retired versions (V4/V6/V9/V10) and
+  // there is no 'Social Service Assessment' at all, so
+  // the old net (that exact phrase or 'BIMS', cap 3)
+  // missed carriers by construction. The family net is
+  // now the concept words, current first, retired after
+  // (newest version first - the newest BIMS usually sits
+  // on the highest retired version), cap 10 - and when
+  // the family still finds nothing, the gatherer sweeps
+  // EVERY type's list (allTypeIds), because the row - a
+  // scored BIMS row - is the evidence, not the title.
+  var BIMS_TYPE_RE = /BIMS|Brief Interview|Mental Status|Cognitive|Social Service|MDS/i;
   function findBimsTypeIds(doc) {
     var sel = doc.querySelector('select[name="ESOLstdassessid"]');
     if (!sel) return [];
-    var cur = [], ret = [];
+    var found = [];
     var opts = sel.querySelectorAll('option');
     for (var i = 0; i < opts.length; i++) {
       var v = opts[i].getAttribute('value') || '';
       var label = (opts[i].textContent || '').replace(/\s+/g, ' ').trim();
       if (!/^\d+$/.test(v)) continue;
-      if (!(/Social Service Assessment/i.test(label) || /BIMS/i.test(label))) continue;
-      if (/retired/i.test(label)) ret.push(v); else cur.push(v);
+      if (!BIMS_TYPE_RE.test(label)) continue;
+      var vm = label.match(/V\s*(\d+)\s*(\(Retired\))?\s*$/i) || label.match(/V\s*(\d+)/i);
+      found.push({ id: v, retired: /retired/i.test(label), ver: vm ? parseInt(vm[1], 10) : 0, ord: i });
     }
-    return cur.concat(ret).slice(0, 3);
+    found.sort(function (a, b) {
+      if (a.retired !== b.retired) return a.retired ? 1 : -1;
+      if (a.ver !== b.ver) return b.ver - a.ver;
+      return a.ord - b.ord;
+    });
+    return found.slice(0, 10).map(function (f) { return f.id; });
+  }
+  function allTypeIds(doc) {
+    var sel = doc.querySelector('select[name="ESOLstdassessid"]');
+    if (!sel) return [];
+    var out = [];
+    var opts = sel.querySelectorAll('option');
+    for (var i = 0; i < opts.length; i++) {
+      var v = opts[i].getAttribute('value') || '';
+      if (/^\d+$/.test(v)) out.push(v);
+    }
+    return out;
   }
   // Union-merge one dated point into the bims stop's series
   // (the landHisNotes discipline: a sighting completes the
@@ -625,6 +679,8 @@
     cnrItemSum: cnrItemSum,
     findBimsViewLinks: findBimsViewLinks,
     findBimsTypeIds: findBimsTypeIds,
+    allTypeIds: allTypeIds,
+    bimsPointsFromList: bimsPointsFromList,
     mergeBimsPoint: mergeBimsPoint
   };
 })();
