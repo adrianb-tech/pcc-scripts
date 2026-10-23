@@ -1213,7 +1213,10 @@
   // facility-proof, since the name and report differ by
   // facility but the Profile button always knows.
   // The header first line's name seat: the VISIBLE name
-  // element ('Last, First (123456)'), climbed to the
+  // element ('Last, First (123456)' — or '(222 17)';
+  // chart numbers can carry spaces, so the pattern
+  // accepts any digit-bearing token in the parens),
+  // climbed to the
   // child of the header's flex row that holds it.
   // Shared by the Face Sheet button and the More/S/G
   // first-line seating (his rulings, 2026-10-19 +
@@ -1225,13 +1228,24 @@
       var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
       if (tx.length > 70 || tx.length < 5) continue;
       if (/^clinical\s/i.test(tx)) continue;
-      if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
+      if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z0-9 ]*\d[A-Za-z0-9 ]*\s*\)/.test(tx)) continue;
       var r = els[i].getBoundingClientRect();
       if (!r || r.width < 50) continue; // visible copies only
       nameEl = els[i];
       break;
     }
-    if (!nameEl) return null;
+    if (!nameEl) {
+      // Fallback seat (TREE-1743, 2026-10-23): this
+      // resident's chart number is '222 17' - a SPACE
+      // inside the parens defeated the pattern above,
+      // no Face Sheet planted and More/S/G fell to the
+      // end of the buttons bar. The name block the flag
+      // strip already anchors on is the same first
+      // line: seat after it whenever the pattern fails.
+      var nb = document.querySelector('#residentHeader .residentNameBadgeExpansion');
+      if (nb && nb.parentNode) return { host: nb.parentNode, seat: nb };
+      return null;
+    }
     var seat = nameEl, hops = 0;
     while (seat.parentNode && hops < 4) {
       var p = seat.parentNode;
