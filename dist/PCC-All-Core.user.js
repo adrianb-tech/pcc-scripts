@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.12
+// @version      2.10.13
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11155,6 +11155,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						ageSex: d.ageSex || null,
 						allergies: d.allergies || null,
 						facCH: isCrownHeightsHere(),
+						facBedford: isBedfordHere(),
 						meds: d.medsFill !== null && d.medsFill !== void 0 ? d.medsFill : d.meds || null,
 						rel: d.rel || null,
 						bims: d.bims || null,
@@ -11994,6 +11995,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (feedRel) return feedRel;
 			return scopedFeed("tmRelFor:");
 		}
+		function facilityNameHere(re) {
+			try {
+				var els = document.querySelectorAll("select, button, a, span, div, td");
+				for (var i = 0; i < els.length; i++) {
+					var tx = (els[i].textContent || "").trim();
+					if (tx.length > 90 || tx.length < 6) continue;
+					if (re.test(tx)) return true;
+				}
+			} catch (e) {}
+			return false;
+		}
+		function isBedfordHere() {
+			return facilityNameHere(/bedford/i);
+		}
 		function isCrownHeightsHere() {
 			try {
 				var els = document.querySelectorAll("select, button, a, span, div, td");
@@ -12409,7 +12424,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var qa = String(chart.ageSex).match(/\d{1,3}/);
 				v.age = !hm || !qa || hm[1] !== qa[0];
 			}
-			if (chart.allergies && !chart.facCH) {
+			if (chart.allergies && !chart.facCH && !chart.facBedford) {
 				var am = txt.match(/^[ \t]*Allergies[ \t]*:?[ \t]*(.*)$/m);
 				if (!am || !am[1].trim()) v.allergies = true;
 				else {
@@ -12469,7 +12484,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (y < 100) y += 2e3;
 				return new Date(y, +p[0] - 1, +p[1]);
 			};
-			var noteLatest = null;
+			var noteLatest = null, noteLatestVal = null;
 			var blines = txt.split("\n");
 			var bScoreRe = /^\s*\d{1,2}\s+on\s+\d{1,2}\/\d{1,2}\/\d{2,4}\s*$/;
 			var bXxRe = /^\s*(?:\d{1,2}|xx)\s+on\s+xx\s*$/i;
@@ -12488,12 +12503,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var re2 = /(\d{1,2})\s+on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/g, mm;
 				while (mm = re2.exec(scan)) {
 					var dt = parseD(mm[2]);
-					if (!noteLatest || dt > noteLatest) noteLatest = dt;
+					if (!noteLatest || dt > noteLatest) {
+						noteLatest = dt;
+						noteLatestVal = +mm[1];
+					}
 				}
 			}
 			var sixAgo = new Date();
 			sixAgo.setMonth(sixAgo.getMonth() - 6);
-			v.bims = !noteLatest || noteLatest < sixAgo;
+			var chartBimsVal = null;
+			if (chart.bims) {
+				var cbm = String(chart.bims).match(/^\s*(\d{1,2})\b/);
+				if (cbm) chartBimsVal = +cbm[1];
+			}
+			var noteStop = noteLatestVal === 0 || noteLatestVal === 99;
+			var chartStop = chartBimsVal === 0 || chartBimsVal === 99;
+			if (noteStop && (chartStop || chartBimsVal === null)) v.bims = false;
+			else if (chartStop) v.bims = true;
+			else v.bims = !noteLatest || noteLatest < sixAgo;
 			if (!v.bims && chart.readmit && chart.bims && chart.bimsPrev) {
 				var cn = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
 				var cp = String(chart.bimsPrev).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
@@ -12550,6 +12577,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						return out;
 					};
 					var nSet = relSet(cm[1]), cSet = relSet(chart.rel), rDiff = false, rk;
+					var cHasOther = false;
+					for (rk in cSet) if (rk !== "self") {
+						cHasOther = true;
+						break;
+					}
+					if (cHasOther) {
+						delete nSet.self;
+						delete cSet.self;
+					}
 					for (rk in cSet) if (!nSet[rk]) {
 						rDiff = true;
 						break;
