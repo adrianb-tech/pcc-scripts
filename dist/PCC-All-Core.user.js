@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.18
+// @version      2.10.19
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11327,14 +11327,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			mkSpec(1, "admission", "Admission", "Re-entry|" + (d.admReentry || "—") + "\nInitial|" + (d.admInitial || "—") + "\nDischarge|" + (d.admDischarge || "—"), {
 				band: 1,
-				bandW: 160,
+				bandW: 148,
 				pad: "6px 12px",
 				size: 12.5,
 				rows: true
 			});
 			mkSpec(1, "agesex", "Age / Sex", d.ageSex || "", {
 				band: 1,
-				bandW: 80,
+				bandW: 72,
 				pad: "6px 12px",
 				size: 15,
 				warn: !!(tw && tw.age),
@@ -11349,7 +11349,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "room", "Room", d.room || "", {
 				band: 1,
-				bandW: 76,
+				bandW: 68,
 				pad: "6px 12px",
 				size: 15
 			});
@@ -11375,7 +11375,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "weight", "Weight", d.weight || "", {
 				band: 1,
-				bandW: 100,
+				bandW: 88,
 				pad: "6px 12px",
 				size: 15,
 				nav: true,
@@ -11385,7 +11385,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "bims", "BIMS", d.bims || "", {
 				band: 1,
-				bandW: 140,
+				bandW: 128,
 				pad: "6px 12px",
 				size: 14,
 				natW: true,
@@ -11883,6 +11883,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var ns = findNameSeat();
 				if (!ns) return;
 				var seat = ns.seat, host = ns.host;
+				var wrap1 = document.getElementById("tmFirstLineBtns");
+				if (wrap1 && wrap1.parentNode === host) seat = wrap1;
 				var btn = document.getElementById("tmFaceBtn");
 				if (!btn) {
 					btn = document.createElement("button");
@@ -12301,15 +12303,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			plantBand();
 			function firstLineHost() {
 				var host = document.getElementById("tmFirstLineBtns");
-				if (host) return host;
+				if (host) {
+					var face0 = document.getElementById("tmFaceBtn");
+					if (face0 && face0.parentNode === host.parentNode && face0.compareDocumentPosition(host) & 4) host.parentNode.insertBefore(host, face0);
+					return host;
+				}
 				host = document.createElement("span");
 				host.id = "tmFirstLineBtns";
 				host.style.cssText = "display:inline-flex;align-items:center;gap:8px;margin-left:12px;vertical-align:middle;flex:none;";
-				var face = document.getElementById("tmFaceBtn");
-				if (face && face.parentNode) {
-					face.parentNode.insertBefore(host, face.nextSibling);
-					return host;
-				}
 				var ns = findNameSeat();
 				if (ns) {
 					ns.host.insertBefore(host, ns.seat.nextSibling);
