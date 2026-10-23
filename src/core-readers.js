@@ -373,9 +373,21 @@
   // and never lands at all while a carrier element
   // exists (its value is still on its way).
   var relationsWeak = false;
+  // SELF (his rule, 2026-10-23): 'self' is extracted
+  // only when it is the ONLY contact. When anyone else
+  // is named, the word 'self' never enters the summary
+  // - not on the tile, not in the G fill, not in the
+  // verdict compare. Applied at every landing funnel.
+  function dropSelfUnlessAlone(summary) {
+    var parts = String(summary || '').split(/,\s*/).filter(function (p) { return !!p.trim(); });
+    if (parts.length < 2) return summary;
+    var rest = parts.filter(function (p) { return !/^self$/i.test(p.trim()); });
+    if (rest.length && rest.length !== parts.length) return rest.join(', ');
+    return summary;
+  }
   function landRelations(summary, G) {
     var cur = G.packet.stops.relations;
-    summary = G.norm(summary).slice(0, 300);
+    summary = dropSelfUnlessAlone(G.norm(summary).slice(0, 300));
     // The section's own heading is not a fact: a value that
     // is only the label (plus dashes/colons) never lands.
     if (/^relationships\b[\s:—–-]*$/i.test(summary)) return;
@@ -569,7 +581,7 @@
     if (val && !/^[—–-]+$/.test(G.norm(val)) && !/^N\/?A$/i.test(G.norm(val))) {
       if (G.packet.stops.relations.status !== 'landed') {
         relationsWeak = true;
-        G.land('relations', { source: 'Profile', at: G.nowT(), strength: 'weak', summary: G.norm(val).slice(0, 300) });
+        G.land('relations', { source: 'Profile', at: G.nowT(), strength: 'weak', summary: dropSelfUnlessAlone(G.norm(val).slice(0, 300)) });
       }
     }
   }
