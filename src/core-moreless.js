@@ -721,12 +721,19 @@
     // stamp stays in the packet) - a stamp line would
     // break the uniform height. Psych meds is NOT a band
     // tile (his ruling): it presents with the row-2 block.
-    mkSpec(1, 'admission', 'Admission', admRows, { band: 1, bandW: 166, pad: '6px 12px', size: 12.5, rows: true });
-    mkSpec(1, 'agesex', 'Age / Sex', d.ageSex || '', { band: 1, bandW: 88, pad: '6px 12px', size: 15, warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex || '' }, fill: { label: 'Age/Sex', value: d.ageSex || '' } });
-    mkSpec(1, 'room', 'Room', d.room || '', { band: 1, bandW: 82, pad: '6px 12px', size: 15 });
+    // Band widths set to his fit specs (2026-10-23):
+    // Admission fits its widest row (DISCHARGE +
+    // 12/31/2026), Age/Sex fits '100F' under its label,
+    // Room fits X000X (E404A), BIMS fits '15 on
+    // 12/31/26' (fit:true shrinks the font if a longer
+    // form ever lands). Allergies / Weight /
+    // Relationships keep their widths by his ruling.
+    mkSpec(1, 'admission', 'Admission', admRows, { band: 1, bandW: 160, pad: '6px 12px', size: 12.5, rows: true });
+    mkSpec(1, 'agesex', 'Age / Sex', d.ageSex || '', { band: 1, bandW: 80, pad: '6px 12px', size: 15, warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex || '' }, fill: { label: 'Age/Sex', value: d.ageSex || '' } });
+    mkSpec(1, 'room', 'Room', d.room || '', { band: 1, bandW: 76, pad: '6px 12px', size: 15 });
     mkSpec(1, 'allergies', 'Allergies', d.allergies || '', { band: 1, bandW: 300, pad: '6px 12px', size: 13, natW: true, maxW: 300, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies || '' }, fill: { label: 'Allergies', value: d.allergies || '' } });
     mkSpec(1, 'weight', 'Weight', d.weight || '', { band: 1, bandW: 100, pad: '6px 12px', size: 15, nav: true, nowrap: true, fit: true, color: d.weightRed ? '#a33327' : undefined });
-    mkSpec(1, 'bims', 'BIMS', d.bims || '', { band: 1, bandW: 176, pad: '6px 12px', size: 14, natW: true, nowrap: true, fit: true, warn: !!(tw && tw.bims), click: { label: 'BIMS', value: d.bims || '' }, fill: { label: 'BIMS', value: d.bims || '' } });
+    mkSpec(1, 'bims', 'BIMS', d.bims || '', { band: 1, bandW: 140, pad: '6px 12px', size: 14, natW: true, nowrap: true, fit: true, warn: !!(tw && tw.bims), click: { label: 'BIMS', value: d.bims || '' }, fill: { label: 'BIMS', value: d.bims || '' } });
     mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 196, pad: '6px 12px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
     var medsChip = String(d.meds === '- none' ? 0 : (d.meds ? d.meds.split('\n').length : 0));
     if (d.medsFill !== null && d.medsFill !== undefined) {
@@ -1205,6 +1212,45 @@
   // report URL out of the Profile page's own button -
   // facility-proof, since the name and report differ by
   // facility but the Profile button always knows.
+  // The header first line's name seat: the VISIBLE name
+  // element ('Last, First (123456)'), climbed to the
+  // child of the header's flex row that holds it.
+  // Shared by the Face Sheet button and the More/S/G
+  // first-line seating (his rulings, 2026-10-19 +
+  // 2026-10-23). Returns { host, seat } or null.
+  function findNameSeat() {
+    var nameEl = null;
+    var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
+    for (var i = 0; i < els.length; i++) {
+      var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (tx.length > 70 || tx.length < 5) continue;
+      if (/^clinical\s/i.test(tx)) continue;
+      if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
+      var r = els[i].getBoundingClientRect();
+      if (!r || r.width < 50) continue; // visible copies only
+      nameEl = els[i];
+      break;
+    }
+    if (!nameEl) return null;
+    var seat = nameEl, hops = 0;
+    while (seat.parentNode && hops < 4) {
+      var p = seat.parentNode;
+      if (!p || p.nodeType !== 1 || p.tagName === 'BODY' || p.tagName === 'HTML') break;
+      var disp = '';
+      try { disp = getComputedStyle(p).display; } catch (e3) {}
+      if (disp === 'flex' || disp === 'inline-flex') break; // seat is the flex child holding the name
+      seat = p; hops++;
+    }
+    // If the climb found no flex row, seat stays at the
+    // deepest element whose parent is a real container -
+    // insert after the highest climbed element that
+    // still has an element parent, else after the name.
+    while (seat && seat !== nameEl && (!seat.parentNode || seat.parentNode.nodeType !== 1)) seat = seat.firstElementChild || nameEl;
+    var host = seat.parentNode;
+    if (!host) { seat = nameEl; host = nameEl.parentNode; }
+    if (!host) return null;
+    return { host: host, seat: seat };
+  }
   var faceUrlCache = '';
   function addFaceSheetButton(bar, row) {
     try {
@@ -1218,37 +1264,9 @@
       // element chosen is the VISIBLE one; insertion climbs
       // to the header row's flex container and seats the
       // button right after the child holding the name.
-      var nameEl = null;
-      var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
-      for (var i = 0; i < els.length; i++) {
-        var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
-        if (tx.length > 70 || tx.length < 5) continue;
-        if (/^clinical\s/i.test(tx)) continue;
-        if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
-        var r = els[i].getBoundingClientRect();
-        if (!r || r.width < 50) continue; // visible copies only
-        nameEl = els[i];
-        break;
-      }
-      if (!nameEl) return;
-      var seat = nameEl, hops = 0;
-      while (seat.parentNode && hops < 4) {
-        var p = seat.parentNode;
-        if (!p || p.nodeType !== 1 || p.tagName === 'BODY' || p.tagName === 'HTML') break;
-        var disp = '';
-        try { disp = getComputedStyle(p).display; } catch (e3) {}
-        if (disp === 'flex' || disp === 'inline-flex') break; // seat is the flex child holding the name
-        seat = p; hops++;
-      }
-      // If the climb found no flex row, seat stays at the
-      // deepest element whose parent is a real container:
-      // walk back down is unnecessary - insert after the
-      // highest climbed element that still has an element
-      // parent, else after the name itself.
-      while (seat && seat !== nameEl && (!seat.parentNode || seat.parentNode.nodeType !== 1)) seat = seat.firstElementChild || nameEl;
-      var host = seat.parentNode;
-      if (!host) { seat = nameEl; host = nameEl.parentNode; }
-      if (!host) return;
+      var ns = findNameSeat();
+      if (!ns) return;
+      var seat = ns.seat, host = ns.host;
       var btn = document.getElementById('tmFaceBtn');
       if (!btn) {
         btn = document.createElement('button');
@@ -1746,29 +1764,37 @@
   function run() {
     var bar = document.getElementById('residentHeaderButtons');
     if (!bar) return;
-    plantBand(); // the row must exist before the buttons plant into it
-    // Button order (his ruling, 2026-10-22): More, S, G
-    // FIRST on the left, then all the tiles in the row.
-    // The buttons plant as the band row's first children
-    // (before Admission); on a page with no band row
-    // they fall back to the bar itself, as before.
-    var btnHost = document.getElementById(ROW_ID) || bar;
-    // Buttons always land ahead of the tiles: if a tile
-    // somehow presented first, a button is inserted
-    // before the first tile, never appended after them.
-    // Buttons found outside the row (an older plant) are
-    // moved into the same lead position, in order.
+    plantBand(); // tiles first; the buttons no longer live in the row
+    // FIRST LINE (his ruling, 2026-10-23): More, S, G
+    // leave the band row and sit on the header's first
+    // line - immediately after the Face Sheet button on
+    // the Dash, or after the name block on the tabs
+    // where the Face Sheet does not live (it stays
+    // Dash-only, also his ruling). One wrapper seats
+    // once and holds their order: More, S, G.
+    function firstLineHost() {
+      var host = document.getElementById('tmFirstLineBtns');
+      if (host) return host;
+      host = document.createElement('span');
+      host.id = 'tmFirstLineBtns';
+      host.style.cssText = 'display:inline-flex;align-items:center;gap:8px;margin-left:12px;vertical-align:middle;flex:none;';
+      var face = document.getElementById('tmFaceBtn');
+      if (face && face.parentNode) { face.parentNode.insertBefore(host, face.nextSibling); return host; }
+      var ns = findNameSeat();
+      if (ns) { ns.host.insertBefore(host, ns.seat.nextSibling); return host; }
+      return null;
+    }
     function plantBtn(el) {
-      if (btnHost === bar) { bar.appendChild(el); return; }
-      var ft = btnHost.querySelector('tm-tile');
-      if (ft) btnHost.insertBefore(el, ft); else btnHost.appendChild(el);
+      var host = firstLineHost();
+      if (host) { host.appendChild(el); return; }
+      bar.appendChild(el); // no first line found: the bar, as before
     }
-    if (btnHost !== bar) {
-      [BTN_ID, 'tmSBtn', 'tmGBtn'].forEach(function (id) {
-        var el = document.getElementById(id);
-        if (el && el.parentNode !== btnHost) plantBtn(el);
-      });
-    }
+    // Buttons planted by an older version (in the band
+    // row) move up to the first line, in order.
+    [BTN_ID, 'tmSBtn', 'tmGBtn'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && el.parentNode && el.parentNode.id !== 'tmFirstLineBtns') plantBtn(el);
+    });
     if (!document.getElementById(BTN_ID)) {
       var b = document.createElement('button');
       b.type = 'button';
