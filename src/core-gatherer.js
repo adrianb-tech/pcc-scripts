@@ -437,6 +437,7 @@
     // Each reader self-selects: it lands only when its
     // markers are present, so these calls no-op elsewhere.
     try { parseAssessments(document); } catch (e) {}
+    try { readMdsSectionPage(document); } catch (e) {}
     try { parseOpenedConsult(document); } catch (e) {}
     try { parseLabReport(document); } catch (e) {}
     try { parseProfile(document); } catch (e) {}
@@ -479,6 +480,98 @@
   function parseProfile(doc) { var r = window.__tmReaders; if (r && r.parseProfile) { curStrength = strengthFor('profile', doc); return r.parseProfile(doc, gatherCtx()); } }
   function parseResults(doc) { var r = window.__tmReaders; if (r && r.parseResults) { curStrength = strengthFor('results', doc); return r.parseResults(doc, gatherCtx()); } }
   function parseOrders(doc) { var r = window.__tmReaders; if (r && r.parseOrders) { curStrength = strengthFor('orders', doc); return r.parseOrders(doc, gatherCtx()); } }
+
+  // ---------- BIMS via the MDS page (2026-10-23) ----------
+  // The chart-open chain: the already-fetched Assessments
+  // list names the newest BIMS-carrying assessment; follow
+  // its own view link verbatim (tokens are per-context -
+  // never synthesize one), hop the mds.jsp shell at Boro
+  // Park via its verbatim Cust_B section link, and read the
+  // score off the section page's header (readers'
+  // parseMdsHeader, proven on his captures by h183), cross-
+  // checked against the conducted item sum wherever the
+  // form carries one. A disagreement fails closed. When the
+  // chain cannot start or finish, the census lands on the
+  // stop's why (counts only - the masked diagnostic that
+  // settles whether the FETCHED list exposes view links).
+  function stampBimsWhy(s) { try { packet.stops.bims.why = s; publish(); } catch (e) {} }
+  function landSectionParse(doc, fallbackDate, strength) {
+    var r = window.__tmReaders; if (!r || !r.parseMdsHeader) return false;
+    var hdr = r.parseMdsHeader(doc);
+    if (!hdr) return false;
+    var bp = r.parseBpBimsItems(doc);
+    if (bp && bp.score !== hdr.score) { stampBimsWhy('mds chain: header ' + hdr.score + ' != BP items ' + bp.score); return false; }
+    var cn = r.cnrItemSum(doc);
+    if (cn !== null && cn !== undefined && cn !== hdr.score) { stampBimsWhy('mds chain: header ' + hdr.score + ' != CNR items ' + cn); return false; }
+    var date = hdr.date || fallbackDate;
+    if (!date) return false;
+    r.mergeBimsPoint(gatherCtx(), { date: date, score: hdr.score }, strength);
+    return true;
+  }
+  function sectionLinkOf(doc) {
+    var as = doc.querySelectorAll('a[href*="mdssection.jsp"]');
+    var custB = null, all = [];
+    for (var i = 0; i < as.length; i++) {
+      // The verbatim attribute, never the resolved property,
+      // and never a javascript: wrapper - a list doc's view
+      // links wear their section URL inside such a wrapper,
+      // and following one as if it were a section link lands
+      // the wrong assessment (h184's first run proved it).
+      var h = as[i].getAttribute('href') || '';
+      if (/^javascript:/i.test(h)) continue;
+      all.push(h);
+      if (/ESOLsectioncode=Cust_B/.test(h)) custB = h;
+    }
+    return custB || (all.length === 1 ? all[0] : null);
+  }
+  var bimsChainRan = false;
+  function chainBimsFromList(listDoc) {
+    if (bimsChainRan || stopped) return; bimsChainRan = true;
+    var r = window.__tmReaders; if (!r || !r.findBimsViewLinks) return;
+    var strength = curStrength;
+    var found = r.findBimsViewLinks(listDoc);
+    var links = found.links.slice(0, 3);
+    if (!links.length) {
+      stampBimsWhy('mds chain: rows=' + found.census.rows + ' carriers=' + found.census.carriers + ' anchors=' + found.census.anchors);
+      return;
+    }
+    var i = 0;
+    (function next() {
+      if (stopped) return;
+      if (i >= links.length) { stampBimsWhy('mds chain: carriers tried=' + links.length + ', none parsed'); return; }
+      var cand = links[i++];
+      fetchDoc(cand.href).then(function (doc2) {
+        if (stopped) return;
+        // Land ONLY from a section doc. A view link that
+        // names mdssection.jsp directly (CNR/Saints) IS the
+        // section - land from it, cross-checks and all. A
+        // link that names the mds.jsp SHELL (Boro Park) is
+        // never landed from: the shell prints the same
+        // header total but carries no items, so landing
+        // there would skip the conducted-gate cross-check
+        // entirely - Ear's V2 probe landed a doctored shell
+        // total (11.0) verbatim and unchecked. Hop first,
+        // via the shell's verbatim section link.
+        if (/mdssection\.jsp/i.test(cand.href) && landSectionParse(doc2, cand.date, strength)) return;
+        var sec = sectionLinkOf(doc2);
+        if (!sec) { next(); return; }
+        fetchDoc(sec).then(function (doc3) {
+          if (!stopped && !landSectionParse(doc3, cand.date, strength)) next();
+        }).catch(function () { next(); });
+      }).catch(function () { next(); });
+    })();
+  }
+  function parseAssessmentsThenChain(doc) {
+    parseAssessments(doc);
+    chainBimsFromList(doc);
+  }
+  // Standing on an MDS section page (he opened one): read
+  // its header natively, same cross-checks, same merge.
+  function readMdsSectionPage(doc) {
+    if (!/mdssection\.jsp/i.test(location.href)) return;
+    curStrength = strengthFor('assess', doc);
+    landSectionParse(doc, null, curStrength);
+  }
 
   // ---------- fetch engine ----------
   function discoverUrls() {
@@ -696,7 +789,13 @@
     // rendered list itself, read by the resident reader
     // when he stands on it (road A; graduated on the
     // TREE-1536__1/1537 list fixtures, harness h139).
-    add('assess', allTypesUrl(urls.assess), parseAssessments, ['ownnotes']);
+    add('assess', allTypesUrl(urls.assess), parseAssessmentsThenChain, ['ownnotes']);
+    // The BIMS chain also rides its own list fetch when
+    // ownnotes already landed (persisted) but bims never
+    // has - the usual case for a resident whose list he
+    // has never stood on. chainBimsFromList runs at most
+    // once per page, so the two jobs never double-chain.
+    add('assessbims', allTypesUrl(urls.assess), chainBimsFromList, ['bims']);
     add('profile', urls.profile, parseProfile, ['relations']);
     add('results', urls.results, parseResults, ['labs']);
     add('orders', urls.orders, parseOrders, ['orders']);
