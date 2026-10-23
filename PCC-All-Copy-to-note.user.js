@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.16
+// @version      1.17
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -440,9 +440,9 @@
     // un-prove it (his rule, 2026-10-19): instances in
     // other windows never erase the form window's proof.
     if (weHoldOpen) { try { localStorage.removeItem('tmNoteOpen'); } catch (e) {} weHoldOpen = false; }
-    if (!tileWarnPublished) return;
-    tileWarnPublished = false; tileWarnLast = '';
-    try { localStorage.removeItem('tmTileWarn'); } catch (e) {}
+    // tmTileWarn is CORE's record now (v1.17, 2026-10-23):
+    // this script no longer writes or clears it - see
+    // publishTileWarn below for why.
   }
   function publishTileWarn() {
     var chart = null;
@@ -458,25 +458,25 @@
     if (!chart || !field) { clearTileWarn(); return; }
     var txt = field.value || '';
     if (!looksLikeHisNote(txt)) { clearTileWarn(); return; }
-    var mf = findMedsField(field);
-    var v = tileVerdicts(txt, mf ? (mf.value || '') : null, chart);
-    var s = JSON.stringify(v);
-    // Write on change, and re-write every ~20s as a heartbeat
-    // while the form stays open: the tile row ignores verdicts
-    // older than 2 minutes, so a form closed without a clean
-    // clear can never leave a tile stuck red.
-    if (s !== tileWarnLast || Date.now() - tileWarnTs > 20000) {
-      tileWarnLast = s;
-      tileWarnTs = Date.now();
-      try { localStorage.setItem('tmTileWarn', JSON.stringify({ age: v.age, allergies: v.allergies, meds: v.meds, rel: v.rel, key: (chart && chart.key) || null, ts: tileWarnTs })); } catch (e) {}
-    }
+    // ONE VERDICT PUBLISHER (v1.17, 2026-10-23): this
+    // script used to write tmTileWarn with its own verdict
+    // copy - an older engine that knows nothing of the
+    // facility allergies rules (Crown Heights / Bedford),
+    // the self rule, the BIMS stop rules, or the bims/dx
+    // flags at all. Core's engine writes the same record
+    // from the same form. The two overwrote each other on
+    // their own cadences, so tiles flickered red-off-red
+    // (his live Bedford report: allergies red, then off,
+    // then red). Core is the single publisher now; this
+    // function keeps only its other job - the tmNoteOpen
+    // open-proof heartbeat below.
     tileWarnPublished = true;
     // Open-proof (v1.11): while his note is provably open
     // in THIS document, stamp tmNoteOpen and keep a
     // bounded 15s heartbeat chain alive. The chain lives
     // only while the note field exists - when the form
     // closes, the next pass fails the field check, clears
-    // both records, and the chain stops. The dashboard
+    // the open-proof, and the chain stops. The dashboard
     // row paints red only while a fresh open-proof
     // exists: no open note, no red tiles - ever.
     try { localStorage.setItem('tmNoteOpen', JSON.stringify({ ts: Date.now() })); } catch (e) {}
