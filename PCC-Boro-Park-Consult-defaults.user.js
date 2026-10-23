@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version 1.38
+// @version 1.39
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Consult-defaults.user.js
 // @name         Boro Park — Consult form defaults
@@ -268,6 +268,57 @@
         }
     }
 
+    // The D (ported from Bedford + Crown Heights defaults
+    // 1.18, his ask 2026-10-23 — it works there and he wants
+    // it at every facility): a "D" badge on the popup's
+    // Save button, and the D key clicks Save. Same
+    // discipline as the original: D is live only until he
+    // types or clicks into a field — the moment he edits
+    // anything, D goes dead there, so it can never fight
+    // him over the date field. Planted from
+    // applyPopupDefaults once the popup's identity is
+    // proven (Reasons + Type texts, Boro Park gate above).
+    var dPlanted = false;
+    function popupSaveButton() {
+        var ins = document.querySelectorAll('input[type="button"], input[type="submit"]');
+        for (var i = 0; i < ins.length; i++) if ((ins[i].value || '') === 'Save') return ins[i];
+        return null;
+    }
+    function fireSaveClick(el) {
+        ['mousedown', 'mouseup', 'click'].forEach(function (type) {
+            el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+        });
+    }
+    function plantD() {
+        if (dPlanted) return;
+        var btn = popupSaveButton();
+        if (!btn) return;
+        var badge = document.createElement('span');
+        badge.textContent = 'D';
+        badge.style.cssText = 'display:inline-block;margin-left:6px;padding:1px 7px;' +
+            'background:#2f6f4f;color:#fff;border-radius:6px;vertical-align:middle;' +
+            'font:600 12px -apple-system,Helvetica,Arial,sans-serif;';
+        btn.parentNode.insertBefore(badge, btn.nextSibling);
+        dPlanted = true;
+        var heIsEditing = false;
+        document.addEventListener('input', function () { heIsEditing = true; }, true);
+        document.addEventListener('mousedown', function (ev) {
+            var tg = ev.target;
+            if (tg && (tg.tagName === 'TEXTAREA' || (tg.tagName === 'INPUT' && (tg.type === 'text' || tg.type === 'password')))) heIsEditing = true;
+        }, true);
+        document.addEventListener('keydown', function (e) {
+            if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+            if (e.key !== 'd' && e.key !== 'D') return;
+            if (heIsEditing) return;
+            var b = popupSaveButton();
+            if (!b) return;
+            e.preventDefault();
+            var a = document.activeElement;
+            if (a && a.blur) { try { a.blur(); } catch (err) {} }
+            fireSaveClick(b);
+        });
+    }
+
     // "Reasons for Assessment" popup:
     // - New Psych Consult (Assessment dropdown = "Psych: Consult") -> Type = Admission
     // - READMISSION flag present in opener (re-admitted after last psych form) -> Type = Admission
@@ -296,6 +347,7 @@
             if (/Admission/i.test(selText) && /Other/i.test(selText) && !typeSel) typeSel = sel;
         }
         if (!typeSel) return;
+        plantD();
 
         // Check for the actual READMISSION flag element (id tmReadmitBox, mode alert)
         // in the opener — not just the word, which can appear elsewhere.
