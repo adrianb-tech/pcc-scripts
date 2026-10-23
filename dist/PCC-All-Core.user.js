@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.10
+// @version      2.10.11
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9350,18 +9350,49 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			return custB || (all.length === 1 ? all[0] : null);
 		}
 		var bimsChainRan = false;
-		function chainBimsFromList(listDoc) {
+		function chainBimsFromList(listDoc, listUrl) {
 			if (bimsChainRan || stopped) return;
 			bimsChainRan = true;
 			var r = window.__tmReaders;
 			if (!r || !r.findBimsViewLinks) return;
 			var strength = curStrength;
 			var found = r.findBimsViewLinks(listDoc);
-			var links = found.links.slice(0, 3);
-			if (!links.length) {
-				stampBimsWhy("mds chain: rows=" + found.census.rows + " carriers=" + found.census.carriers + " anchors=" + found.census.anchors);
+			if (found.links.length) {
+				tryChainLinks(found.links, strength);
 				return;
 			}
+			var census = found.census;
+			var typeIds = r.findBimsTypeIds ? r.findBimsTypeIds(listDoc) : [];
+			var ti = 0;
+			(function tryType() {
+				if (stopped) return;
+				if (ti >= typeIds.length) {
+					stampBimsWhy("mds chain: rows=" + census.rows + " carriers=" + census.carriers + " types=" + ti + " anchors=" + census.anchors);
+					return;
+				}
+				var url = listUrlWithType(listUrl, typeIds[ti++]);
+				if (!url) {
+					tryType();
+					return;
+				}
+				fetchDoc(url).then(function(tdoc) {
+					if (stopped) return;
+					var tf = r.findBimsViewLinks(tdoc);
+					census.rows += tf.census.rows;
+					census.carriers += tf.census.carriers;
+					census.anchors += tf.census.anchors;
+					if (tf.links.length) {
+						tryChainLinks(tf.links, strength);
+						return;
+					}
+					tryType();
+				}).catch(function() {
+					tryType();
+				});
+			})();
+		}
+		function tryChainLinks(foundLinks, strength) {
+			var links = foundLinks.slice(0, 3);
 			var i = 0;
 			(function next() {
 				if (stopped) return;
@@ -9388,9 +9419,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				});
 			})();
 		}
-		function parseAssessmentsThenChain(doc) {
+		function parseAssessmentsThenChain(doc, listUrl) {
 			parseAssessments(doc);
-			chainBimsFromList(doc);
+			chainBimsFromList(doc, listUrl);
 		}
 		function readMdsSectionPage(doc) {
 			if (!/mdssection\.jsp/i.test(location.href)) return;
@@ -9608,6 +9639,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return setParam(setParam(u, "ESOLstdassessid", "-1"), "ESOLstatusFilter", "");
 		}
+		function listUrlWithType(u, id) {
+			if (!u) return u;
+			var re = /([?&])ESOLstdassessid=[^&]*/;
+			if (re.test(u)) return u.replace(re, "$1ESOLstdassessid=" + id);
+			return u + (u.indexOf("?") === -1 ? "?" : "&") + "ESOLstdassessid=" + id;
+		}
 		function gatherFetches() {
 			refreshKey();
 			if (stopped) return;
@@ -9630,8 +9667,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					noteFetch(key, url, null, e);
 				}));
 			}
-			add("assess", allTypesUrl(urls.assess), parseAssessmentsThenChain, ["ownnotes"]);
-			add("assessbims", allTypesUrl(urls.assess), chainBimsFromList, ["bims"]);
+			var assessListUrl = allTypesUrl(urls.assess);
+			add("assess", assessListUrl, function(doc) {
+				parseAssessmentsThenChain(doc, assessListUrl);
+			}, ["ownnotes"]);
+			add("assessbims", assessListUrl, function(doc) {
+				chainBimsFromList(doc, assessListUrl);
+			}, ["bims"]);
 			add("profile", urls.profile, parseProfile, ["relations"]);
 			add("results", urls.results, parseResults, ["labs"]);
 			add("orders", urls.orders, parseOrders, ["orders"]);
@@ -9984,6 +10026,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				links,
 				census
 			};
+		}
+		function findBimsTypeIds(doc) {
+			var sel = doc.querySelector("select[name=\"ESOLstdassessid\"]");
+			if (!sel) return [];
+			var cur = [], ret = [];
+			var opts = sel.querySelectorAll("option");
+			for (var i = 0; i < opts.length; i++) {
+				var v = opts[i].getAttribute("value") || "";
+				var label = (opts[i].textContent || "").replace(/\s+/g, " ").trim();
+				if (!/^\d+$/.test(v)) continue;
+				if (!(/Social Service Assessment/i.test(label) || /BIMS/i.test(label))) continue;
+				if (/retired/i.test(label)) ret.push(v);
+				else cur.push(v);
+			}
+			return cur.concat(ret).slice(0, 3);
 		}
 		function mergeBimsPoint(G, point, strength) {
 			if (!point || !(point.score >= 0 && point.score <= 15) || !point.date) return;
@@ -10559,6 +10616,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			parseBpBimsItems,
 			cnrItemSum,
 			findBimsViewLinks,
+			findBimsTypeIds,
 			mergeBimsPoint
 		};
 	})();
