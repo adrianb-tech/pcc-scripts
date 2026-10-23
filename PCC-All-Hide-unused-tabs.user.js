@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.13
+// @version 1.14
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -8,13 +8,18 @@
 // @grant        none
 // ==/UserScript==
 
+var __s3mod_Hide_unused_tabs = 1;
 (function () {
   'use strict';
 
-  // Hides the resident-chart tabs Adrian never uses (his list, 2026-10-13):
+  // Hides the resident-chart tabs Adrian never uses (his list, 2026-10-13;
+  // WTS/VITALS and RESULTS joined the set 2026-10-23):
   // CENSUS, PROBLEMS, ALLERGIES, IMMUN, MDS, THERAPY, CARE PLAN, TASKS,
-  // MED DIAG, MISC. A "MORE" button at the end of the tab bar brings them
-  // back on demand (LESS hides them again).
+  // MED DIAG, MISC, WTS/VITALS, RESULTS. The MORE/LESS toggle sits IN the
+  // row, immediately after PROG NOTES - one spot in both states, so he
+  // can open and close rapidly (his spec, 2026-10-23). MORE brings the
+  // hidden set back to the toggle's right, in his order: WTS/VITALS,
+  // RESULTS, MED DIAG, MISC, then the rest in PCC's original order.
   //
   // v1.2 fix: v1.1 matched the first element with each name ANYWHERE on the
   // page — "ALLERGIES" hit the header label instead of the tab, and MDS hit
@@ -27,7 +32,7 @@
   // Bounded staggered runs + click re-runs (no permanent timers).
 
   var HIDE = ['CENSUS', 'PROBLEMS', 'ALLERGIES', 'IMMUN', 'MDS', 'THERAPY', 'CARE PLAN', 'TASKS',
-    'MED DIAG', 'MISC'];
+    'MED DIAG', 'MISC', 'WTS/VITALS', 'RESULTS'];
   var ALL_TABS = ['DASH', 'PROFILE', 'CENSUS', 'MED DIAG', 'PROBLEMS', 'ALLERGIES', 'IMMUN',
     'ORDERS', 'WTS/VITALS', 'RESULTS', 'MDS', 'FORMS', 'ASSMNTS', 'THERAPY', 'PROG NOTES', 'CARE PLAN',
     'TASKS', 'MISC'];
@@ -43,12 +48,15 @@
   // the overflow tabs under MORE are plain small white tiles; the
   // MORE/LESS toggle is a tile too.
   var MAINS = {
-    'DASH': '#2563eb', 'FORMS': '#d97706',
+    'DASH': '#2563eb', 'PROFILE': '#7c3aed', 'FORMS': '#d97706',
     'ASSMNTS': '#d97706', 'PROG NOTES': '#059669'
   };
-  // His call (2026-10-19): PROFILE leaves the big colored
-  // mains and joins the red second tier, like ORDERS.
-  var SECOND = { 'PROFILE': 1, 'ORDERS': 1, 'WTS/VITALS': 1, 'RESULTS': 1, 'MED DIAG': 1, 'MISC': 1 };
+  // PROFILE's color history: a violet MAIN at v1.11; moved to the
+  // red second tier 2026-10-19 (his call then); RESTORED as a main
+  // with its own violet 2026-10-23 (his call now: 'Dash, Profile,
+  // Forms, Prog Notes should all be their own color'). The four
+  // working mains each carry their own color again.
+  var SECOND = { 'ORDERS': 1, 'WTS/VITALS': 1, 'RESULTS': 1, 'MED DIAG': 1, 'MISC': 1 };
 
   function setKids(el, color, size) {
     var kids = el.querySelectorAll('*');
@@ -137,9 +145,10 @@
   }
   var MORE_TILE_CSS = 'cursor:pointer;padding:10px 14px;border:1.5px dashed #b6c2cf;border-radius:12px;' +
     'background:#ffffff;color:#5b6b7d;font:700 13.5px -apple-system,Helvetica,Arial,sans-serif;white-space:nowrap;';
-  // When MORE is open, these overflow tabs come FIRST (his order,
-  // 2026-10-13) — the rest follow in PCC's original relative order.
-  var EXPAND_FIRST = ['MED DIAG', 'MISC'];
+  // When MORE is open, these overflow tabs come FIRST, right of the
+  // toggle (his order, 2026-10-23) — the rest follow in PCC's
+  // original relative order.
+  var EXPAND_FIRST = ['WTS/VITALS', 'RESULTS', 'MED DIAG', 'MISC'];
 
   var tabsHidden = true;   // his default: hidden
   var origOrder = [];      // PCC's own tab order, captured on first sight
@@ -251,54 +260,73 @@
 
     order.forEach(function (name) { paintTab(tabs[name], name, name === cur); });
 
-    // Layout (v1.8, his request): MORE appends the hidden tabs TO THE
-    // RIGHT — the tabs from the collapsed bar never move or reshuffle.
-    // LESS restores PCC's original order. Moves are idempotent and run on
-    // every pass, so late PCC re-renders settle into the same layout.
+    // Layout (2026-10-23, his spec - supersedes the v1.8 end-of-bar
+    // layout): the toggle lives IN the row, immediately after PROG
+    // NOTES, in both states - one spot, so he can open and close
+    // rapidly. Closed: the main row in PCC's order, the toggle after
+    // Prog Notes, then nothing. Open: the MORE set lines up to the
+    // toggle's RIGHT in his order (EXPAND_FIRST, then the rest in
+    // PCC order). Moves are idempotent and run on every pass.
     if (!origOrder.length) origOrder = order.slice();
-    function placeRight(el) {
-      var p = el.parentElement;
-      if (!p) return;
-      var b = document.getElementById('pccMoreTabsBtn');
-      var hold = null;
-      if (b) {
-        if (b.parentElement && b.parentElement.parentElement === p) hold = b.parentElement;
-        else if (b.parentElement === p) hold = b;
-      }
-      if (hold) p.insertBefore(el, hold); else p.appendChild(el);
+    var anchorName = tabs['PROG NOTES'] ? 'PROG NOTES'
+      : (tabs['FORMS'] ? 'FORMS' : (tabs['ASSMNTS'] ? 'ASSMNTS' : order[order.length - 1]));
+    var anchor = tabs[anchorName];
+    function placeAfter(ref, el) {
+      if (!ref || !el || el === ref) return;
+      var p = ref.parentElement;
+      if (!p || el.parentElement !== p) return;
+      p.insertBefore(el, ref.nextSibling);
     }
-    if (tabsHidden) {
-      origOrder.forEach(function (name) { if (tabs[name]) placeRight(tabs[name]); });
-    } else {
+
+    // MORE / LESS button - ensured first, so the layout below can
+    // seat it (and the opened set) around it.
+    var btn = document.getElementById('pccMoreTabsBtn');
+    var holder = btn ? btn.parentElement : null;
+    if (!btn) {
+      if (!anchor || !anchor.parentElement) return true;
+      if (anchor.tagName === 'TD') holder = document.createElement('td');
+      else if (anchor.tagName === 'LI') holder = document.createElement('li');
+      else holder = document.createElement('span');
+      btn = document.createElement('button');
+      btn.id = 'pccMoreTabsBtn';
+      btn.type = 'button';
+      btn.addEventListener('click', function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        tabsHidden = !tabsHidden;
+        run();
+      });
+      holder.appendChild(btn);
+      anchor.parentElement.insertBefore(holder, anchor.nextSibling);
+    }
+    btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾';
+    btn.style.cssText = MORE_TILE_CSS;
+
+    // Tabs back into PCC's own relative order, then the toggle
+    // seats right after the anchor.
+    var prev = null;
+    origOrder.forEach(function (name) {
+      var el = tabs[name];
+      if (!el) return;
+      if (prev) placeAfter(prev, el);
+      prev = el;
+    });
+    if (anchor && holder) placeAfter(anchor, holder);
+
+    if (!tabsHidden) {
       var expandList = EXPAND_FIRST.concat(origOrder.filter(function (name) {
         return HIDE.indexOf(name) !== -1 && EXPAND_FIRST.indexOf(name) === -1;
       }));
-      expandList.forEach(function (name) { if (tabs[name]) placeRight(tabs[name]); });
+      var ref = holder || anchor;
+      expandList.forEach(function (name) {
+        var el = tabs[name];
+        if (el && ref) { placeAfter(ref, el); ref = el; }
+      });
+    } else if (cur && HIDE.indexOf(cur) !== -1 && tabs[cur]) {
+      // The tab he is ON stays visible in the closed bar - right
+      // after the toggle, like the opened set it belongs to.
+      placeAfter(holder || anchor, tabs[cur]);
     }
-
-    // MORE / LESS button at the end of the bar.
-    var btn = document.getElementById('pccMoreTabsBtn');
-    if (btn) { btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾'; btn.style.cssText = MORE_TILE_CSS; return true; }
-    var last = tabs[order[order.length - 1]];
-    var parent = last && last.parentElement;
-    if (!parent) return true;
-    var holder;
-    if (last.tagName === 'TD') holder = document.createElement('td');
-    else if (last.tagName === 'LI') holder = document.createElement('li');
-    else holder = document.createElement('span');
-    btn = document.createElement('button');
-    btn.id = 'pccMoreTabsBtn';
-    btn.type = 'button';
-    btn.textContent = tabsHidden ? 'MORE ▸' : 'LESS ▾';
-    btn.style.cssText = MORE_TILE_CSS;
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      tabsHidden = !tabsHidden;
-      run();
-    });
-    holder.appendChild(btn);
-    parent.appendChild(holder);
     return true;
   }
 
