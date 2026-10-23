@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Layout styles
-// @version      1.1
+// @version      1.2
 // @description  His Stylus styles, recreated, plus the fixed frame: the resident header field is one fixed height on every tab, so the tab bar never moves.
 // @match        *://*.pointclickcare.com/*
 // @run-at       document-start
@@ -51,14 +51,19 @@
     // tiles plant. A floor, never a ceiling: content
     // taller than the floor still grows the field (no
     // clipping, ever) - the floor only pads shorter
-    // pages up to the common height. 452 is the first
-    // calibration (photo row + band + row 2 + extended
-    // row at their fullest common size); it is the one
-    // knob if a tab still sits lower or the white runs
-    // long. In force from first paint (this script
-    // runs at document-start).
+    // pages up to the common height. The height is
+    // MEASURED, not estimated: 1.1's 452 floor left a
+    // white gap under the tiles on his Prog Notes
+    // screenshot; the gap measures 195 CSS px against
+    // the 72px band as the scale (image 3150x1810,
+    // retina 2x), so the field's true content height
+    // is 452 - 195 = 257. It is the one knob: if a
+    // tab still sits lower, that page's natural height
+    // is the new candidate; if the white runs long,
+    // it comes down. In force from first paint (this
+    // script runs at document-start).
     '#residentHeader {\n' +
-    '  min-height: 452px !important;\n' +
+    '  min-height: 257px !important;\n' +
     '}';
   var st = document.createElement('style');
   st.id = 'tmLayoutStyles';
