@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.13
+// @version      2.10.14
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -6676,6 +6676,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var key = raw.toLowerCase().replace(/\bd\/o\b/g, "disorder");
 			if (IND_NORM.hasOwnProperty(key)) return IND_NORM[key];
 			var primary = key.split(/\s+(?:for|and)\s+/)[0].replace(/^\s+|\s+$/g, "");
+			if (/^(?:the\s+)?(?:resident|residents|patient|patients)$/.test(primary)) return def;
+			primary = primary.replace(/^(?:the\s+)?(?:resident|patient)\s+(?:with\s+)?/, "");
+			if (!primary) return def;
 			return IND_NORM.hasOwnProperty(primary) ? IND_NORM[primary] : primary;
 		}
 		function headerText(g) {
@@ -12511,15 +12514,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			var sixAgo = new Date();
 			sixAgo.setMonth(sixAgo.getMonth() - 6);
-			var chartBimsVal = null;
+			var chartBimsVal = null, chartBimsDate = null;
 			if (chart.bims) {
 				var cbm = String(chart.bims).match(/^\s*(\d{1,2})\b/);
 				if (cbm) chartBimsVal = +cbm[1];
+				var cbd = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+				if (cbd) chartBimsDate = parseD(cbd[1]);
 			}
 			var noteStop = noteLatestVal === 0 || noteLatestVal === 99;
 			var chartStop = chartBimsVal === 0 || chartBimsVal === 99;
-			if (noteStop && (chartStop || chartBimsVal === null)) v.bims = false;
+			if (noteLatest && chartBimsDate && noteLatest >= chartBimsDate) v.bims = false;
 			else if (chartStop) v.bims = true;
+			else if (noteStop && chartBimsVal === null) v.bims = false;
 			else v.bims = !noteLatest || noteLatest < sixAgo;
 			if (!v.bims && chart.readmit && chart.bims && chart.bimsPrev) {
 				var cn = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
