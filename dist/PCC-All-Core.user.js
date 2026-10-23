@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.8
+// @version      2.10.10
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9219,6 +9219,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				parseAssessments(document);
 			} catch (e) {}
 			try {
+				readMdsSectionPage(document);
+			} catch (e) {}
+			try {
 				parseOpenedConsult(document);
 			} catch (e) {}
 			try {
@@ -9305,6 +9308,94 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				curStrength = strengthFor("orders", doc);
 				return r.parseOrders(doc, gatherCtx());
 			}
+		}
+		function stampBimsWhy(s) {
+			try {
+				packet.stops.bims.why = s;
+				publish();
+			} catch (e) {}
+		}
+		function landSectionParse(doc, fallbackDate, strength) {
+			var r = window.__tmReaders;
+			if (!r || !r.parseMdsHeader) return false;
+			var hdr = r.parseMdsHeader(doc);
+			if (!hdr) return false;
+			var bp = r.parseBpBimsItems(doc);
+			if (bp && bp.score !== hdr.score) {
+				stampBimsWhy("mds chain: header " + hdr.score + " != BP items " + bp.score);
+				return false;
+			}
+			var cn = r.cnrItemSum(doc);
+			if (cn !== null && cn !== void 0 && cn !== hdr.score) {
+				stampBimsWhy("mds chain: header " + hdr.score + " != CNR items " + cn);
+				return false;
+			}
+			var date = hdr.date || fallbackDate;
+			if (!date) return false;
+			r.mergeBimsPoint(gatherCtx(), {
+				date,
+				score: hdr.score
+			}, strength);
+			return true;
+		}
+		function sectionLinkOf(doc) {
+			var as = doc.querySelectorAll("a[href*=\"mdssection.jsp\"]");
+			var custB = null, all = [];
+			for (var i = 0; i < as.length; i++) {
+				var h = as[i].getAttribute("href") || "";
+				if (/^javascript:/i.test(h)) continue;
+				all.push(h);
+				if (/ESOLsectioncode=Cust_B/.test(h)) custB = h;
+			}
+			return custB || (all.length === 1 ? all[0] : null);
+		}
+		var bimsChainRan = false;
+		function chainBimsFromList(listDoc) {
+			if (bimsChainRan || stopped) return;
+			bimsChainRan = true;
+			var r = window.__tmReaders;
+			if (!r || !r.findBimsViewLinks) return;
+			var strength = curStrength;
+			var found = r.findBimsViewLinks(listDoc);
+			var links = found.links.slice(0, 3);
+			if (!links.length) {
+				stampBimsWhy("mds chain: rows=" + found.census.rows + " carriers=" + found.census.carriers + " anchors=" + found.census.anchors);
+				return;
+			}
+			var i = 0;
+			(function next() {
+				if (stopped) return;
+				if (i >= links.length) {
+					stampBimsWhy("mds chain: carriers tried=" + links.length + ", none parsed");
+					return;
+				}
+				var cand = links[i++];
+				fetchDoc(cand.href).then(function(doc2) {
+					if (stopped) return;
+					if (/mdssection\.jsp/i.test(cand.href) && landSectionParse(doc2, cand.date, strength)) return;
+					var sec = sectionLinkOf(doc2);
+					if (!sec) {
+						next();
+						return;
+					}
+					fetchDoc(sec).then(function(doc3) {
+						if (!stopped && !landSectionParse(doc3, cand.date, strength)) next();
+					}).catch(function() {
+						next();
+					});
+				}).catch(function() {
+					next();
+				});
+			})();
+		}
+		function parseAssessmentsThenChain(doc) {
+			parseAssessments(doc);
+			chainBimsFromList(doc);
+		}
+		function readMdsSectionPage(doc) {
+			if (!/mdssection\.jsp/i.test(location.href)) return;
+			curStrength = strengthFor("assess", doc);
+			landSectionParse(doc, null, curStrength);
 		}
 		function discoverUrls() {
 			var want = [
@@ -9539,7 +9630,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					noteFetch(key, url, null, e);
 				}));
 			}
-			add("assess", allTypesUrl(urls.assess), parseAssessments, ["ownnotes"]);
+			add("assess", allTypesUrl(urls.assess), parseAssessmentsThenChain, ["ownnotes"]);
+			add("assessbims", allTypesUrl(urls.assess), chainBimsFromList, ["bims"]);
 			add("profile", urls.profile, parseProfile, ["relations"]);
 			add("results", urls.results, parseResults, ["labs"]);
 			add("orders", urls.orders, parseOrders, ["orders"]);
@@ -9733,8 +9825,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			if (!hasScore) {
 				try {
-					G.packet.stops.bims.why = "no Score column in fetched list";
-					G.publish();
+					if (G.packet.stops.bims.status !== "landed" && !/^mds chain:/.test(G.packet.stops.bims.why || "")) {
+						G.packet.stops.bims.why = "no Score column in fetched list";
+						G.publish();
+					}
 				} catch (e) {}
 				return;
 			}
@@ -9765,8 +9859,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			}
 			if (!bims.length) try {
-				G.packet.stops.bims.why = "Score column present; BIMS-like rows matched=" + bimsRowsSeen + " (0 = the fetched list holds no BIMS rows)";
-				G.publish();
+				if (G.packet.stops.bims.status !== "landed" && !/^mds chain:/.test(G.packet.stops.bims.why || "")) {
+					G.packet.stops.bims.why = "Score column present; BIMS-like rows matched=" + bimsRowsSeen + " (0 = the fetched list holds no BIMS rows)";
+					G.publish();
+				}
 			} catch (e) {}
 			if (bims.length) {
 				bims.sort(function(a, b2) {
@@ -9792,6 +9888,137 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					full: false
 				};
 			}), G);
+		}
+		function checkedValue(doc, name) {
+			var els = doc.querySelectorAll("input[type=\"radio\"][name=\"" + name + "\"]");
+			for (var i = 0; i < els.length; i++) if (els[i].checked) return els[i].getAttribute("value");
+			return null;
+		}
+		function parseMdsHeader(doc) {
+			var score = null;
+			var as = doc.querySelectorAll("a[href*=\"launchDetailedScores\"]");
+			for (var i = 0; i < as.length; i++) {
+				var t = (as[i].textContent || "").trim();
+				if (/^\d+(\.\d+)?$/.test(t)) score = parseFloat(t);
+			}
+			if (score === null || !(score >= 0 && score <= 15)) return null;
+			var ad = doc.getElementById("assessDate");
+			var m = ad && /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(ad.textContent || "");
+			if (!m) return null;
+			return {
+				score,
+				date: parseInt(m[1], 10) + "/" + parseInt(m[2], 10) + "/" + m[3]
+			};
+		}
+		function parseBpBimsItems(doc) {
+			if (checkedValue(doc, "Cust_B_BIMS_A") !== "1") return null;
+			var sum = 0;
+			for (var n = 1; n <= 7; n++) {
+				var v = checkedValue(doc, "Cust_B_BIMS_" + n);
+				if (v === null || !/^\d+$/.test(v)) return null;
+				sum += parseInt(v, 10);
+			}
+			return { score: sum };
+		}
+		function cnrItemSum(doc) {
+			if (checkedValue(doc, "Cust_Ins_1") !== "1") return null;
+			var items = [
+				"Cust_A_1",
+				"Cust_B_1a",
+				"Cust_B_2a",
+				"Cust_B_3a",
+				"Cust_C_1",
+				"Cust_C_2",
+				"Cust_C_3"
+			];
+			var sum = 0;
+			for (var i = 0; i < items.length; i++) {
+				var v = checkedValue(doc, items[i]);
+				if (v === null || !/^\d+$/.test(v)) return null;
+				sum += parseInt(v, 10);
+			}
+			return sum;
+		}
+		function findBimsViewLinks(doc) {
+			var census = {
+				rows: 0,
+				carriers: 0,
+				anchors: 0
+			};
+			var links = [];
+			var rows = doc.querySelectorAll("tr");
+			for (var r = 0; r < rows.length; r++) {
+				var row = rows[r];
+				if (!row.cells || row.cells.length < 5 || row.querySelector("tr")) continue;
+				census.rows++;
+				var t = Array.prototype.map.call(row.cells, ctxt);
+				var dateStr = firstDate(t);
+				if (!dateStr) continue;
+				var rowText = t.join(" | ");
+				if (PSYCH_RE.test(rowText) || MDACK_RE.test(rowText)) continue;
+				if (!(/BIMS/i.test(rowText) || /Social Service Assessment/i.test(rowText))) continue;
+				census.carriers++;
+				var href = "";
+				var as = row.querySelectorAll("a[href]");
+				for (var i = 0; i < as.length; i++) {
+					var h = as[i].getAttribute("href") || "";
+					var m = /checkForLockPriorToView\('([^']+)'\)/.exec(h);
+					if (m) {
+						href = m[1];
+						break;
+					}
+					if (!href && /(mds\.jsp|mdssection\.jsp)/.test(h)) href = h;
+				}
+				if (href) {
+					census.anchors++;
+					links.push({
+						date: dateStr,
+						href
+					});
+				}
+			}
+			links.sort(function(a, b) {
+				return new Date(b.date) - new Date(a.date);
+			});
+			return {
+				links,
+				census
+			};
+		}
+		function mergeBimsPoint(G, point, strength) {
+			if (!point || !(point.score >= 0 && point.score <= 15) || !point.date) return;
+			var cur = G.packet.stops.bims;
+			var inc = strength || G.strength || "copy";
+			if (!cur || cur.status !== "landed" || !cur.series) {
+				G.land("bims", {
+					source: "Assessments",
+					at: G.nowT(),
+					strength: inc,
+					facts: { latest: point.score + " on " + point.date },
+					series: [point],
+					summary: "BIMS " + point.score + " on " + point.date + " · 1 scored"
+				});
+				return;
+			}
+			var series = cur.series.slice();
+			var seen = false;
+			for (var i = 0; i < series.length; i++) if (series[i].date === point.date) {
+				seen = true;
+				break;
+			}
+			if (!seen) series.push(point);
+			series.sort(function(a, b) {
+				return new Date(b.date) - new Date(a.date);
+			});
+			series = series.slice(0, 24);
+			var top = series[0];
+			cur.series = series;
+			cur.facts = { latest: top.score + " on " + top.date };
+			cur.summary = "BIMS " + top.score + " on " + top.date + " · " + series.length + " scored";
+			cur.at = G.nowT();
+			delete cur.why;
+			G.publish();
+			G.saveStored();
 		}
 		function landHisNotes(entries, G) {
 			var cur = G.packet.stops.hisnotes;
@@ -10327,7 +10554,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			parseLabReport,
 			parseProfile,
 			parseResults,
-			parseOrders
+			parseOrders,
+			parseMdsHeader,
+			parseBpBimsItems,
+			cnrItemSum,
+			findBimsViewLinks,
+			mergeBimsPoint
 		};
 	})();
 	(function() {
