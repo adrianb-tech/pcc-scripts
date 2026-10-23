@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.16
+// @version      2.10.17
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -10250,9 +10250,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (radio && evalNames[radio.value]) entry.evalType = evalNames[radio.value];
 			landHisNotes([entry], G);
 		}
+		function dropSelfUnlessAlone(summary) {
+			var parts = String(summary || "").split(/,\s*/).filter(function(p) {
+				return !!p.trim();
+			});
+			if (parts.length < 2) return summary;
+			var rest = parts.filter(function(p) {
+				return !/^self$/i.test(p.trim());
+			});
+			if (rest.length && rest.length !== parts.length) return rest.join(", ");
+			return summary;
+		}
 		function landRelations(summary, G) {
 			var cur = G.packet.stops.relations;
-			summary = G.norm(summary).slice(0, 300);
+			summary = dropSelfUnlessAlone(G.norm(summary).slice(0, 300));
 			if (/^relationships\b[\s:—–-]*$/i.test(summary)) return;
 			if (cur.status !== "landed") {
 				G.land("relations", {
@@ -10578,7 +10589,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					source: "Profile",
 					at: G.nowT(),
 					strength: "weak",
-					summary: G.norm(val).slice(0, 300)
+					summary: dropSelfUnlessAlone(G.norm(val).slice(0, 300))
 				});
 			}
 		}
@@ -11316,14 +11327,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			mkSpec(1, "admission", "Admission", "Re-entry|" + (d.admReentry || "—") + "\nInitial|" + (d.admInitial || "—") + "\nDischarge|" + (d.admDischarge || "—"), {
 				band: 1,
-				bandW: 166,
+				bandW: 160,
 				pad: "6px 12px",
 				size: 12.5,
 				rows: true
 			});
 			mkSpec(1, "agesex", "Age / Sex", d.ageSex || "", {
 				band: 1,
-				bandW: 88,
+				bandW: 80,
 				pad: "6px 12px",
 				size: 15,
 				warn: !!(tw && tw.age),
@@ -11338,7 +11349,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "room", "Room", d.room || "", {
 				band: 1,
-				bandW: 82,
+				bandW: 76,
 				pad: "6px 12px",
 				size: 15
 			});
@@ -11374,7 +11385,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "bims", "BIMS", d.bims || "", {
 				band: 1,
-				bandW: 176,
+				bandW: 140,
 				pad: "6px 12px",
 				size: 14,
 				natW: true,
@@ -11820,42 +11831,51 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				applyTile(reg.el, sp);
 			});
 		}
+		function findNameSeat() {
+			var nameEl = null;
+			var els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
+			for (var i = 0; i < els.length; i++) {
+				var tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
+				if (tx.length > 70 || tx.length < 5) continue;
+				if (/^clinical\s/i.test(tx)) continue;
+				if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
+				var r = els[i].getBoundingClientRect();
+				if (!r || r.width < 50) continue;
+				nameEl = els[i];
+				break;
+			}
+			if (!nameEl) return null;
+			var seat = nameEl, hops = 0;
+			while (seat.parentNode && hops < 4) {
+				var p = seat.parentNode;
+				if (!p || p.nodeType !== 1 || p.tagName === "BODY" || p.tagName === "HTML") break;
+				var disp = "";
+				try {
+					disp = getComputedStyle(p).display;
+				} catch (e3) {}
+				if (disp === "flex" || disp === "inline-flex") break;
+				seat = p;
+				hops++;
+			}
+			while (seat && seat !== nameEl && (!seat.parentNode || seat.parentNode.nodeType !== 1)) seat = seat.firstElementChild || nameEl;
+			var host = seat.parentNode;
+			if (!host) {
+				seat = nameEl;
+				host = nameEl.parentNode;
+			}
+			if (!host) return null;
+			return {
+				host,
+				seat
+			};
+		}
 		var faceUrlCache = "";
 		function addFaceSheetButton(bar, row) {
 			try {
 				if (location.pathname.indexOf("cp_residentdashboard") === -1) return;
-				var nameEl = null;
-				var els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
-				for (var i = 0; i < els.length; i++) {
-					var tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
-					if (tx.length > 70 || tx.length < 5) continue;
-					if (/^clinical\s/i.test(tx)) continue;
-					if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
-					var r = els[i].getBoundingClientRect();
-					if (!r || r.width < 50) continue;
-					nameEl = els[i];
-					break;
-				}
-				if (!nameEl) return;
-				var seat = nameEl, hops = 0;
-				while (seat.parentNode && hops < 4) {
-					var p = seat.parentNode;
-					if (!p || p.nodeType !== 1 || p.tagName === "BODY" || p.tagName === "HTML") break;
-					var disp = "";
-					try {
-						disp = getComputedStyle(p).display;
-					} catch (e3) {}
-					if (disp === "flex" || disp === "inline-flex") break;
-					seat = p;
-					hops++;
-				}
-				while (seat && seat !== nameEl && (!seat.parentNode || seat.parentNode.nodeType !== 1)) seat = seat.firstElementChild || nameEl;
-				var host = seat.parentNode;
-				if (!host) {
-					seat = nameEl;
-					host = nameEl.parentNode;
-				}
-				if (!host) return;
+				var ns = findNameSeat();
+				if (!ns) return;
+				var seat = ns.seat, host = ns.host;
 				var btn = document.getElementById("tmFaceBtn");
 				if (!btn) {
 					btn = document.createElement("button");
@@ -12272,23 +12292,39 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var bar = document.getElementById("residentHeaderButtons");
 			if (!bar) return;
 			plantBand();
-			var btnHost = document.getElementById(ROW_ID) || bar;
+			function firstLineHost() {
+				var host = document.getElementById("tmFirstLineBtns");
+				if (host) return host;
+				host = document.createElement("span");
+				host.id = "tmFirstLineBtns";
+				host.style.cssText = "display:inline-flex;align-items:center;gap:8px;margin-left:12px;vertical-align:middle;flex:none;";
+				var face = document.getElementById("tmFaceBtn");
+				if (face && face.parentNode) {
+					face.parentNode.insertBefore(host, face.nextSibling);
+					return host;
+				}
+				var ns = findNameSeat();
+				if (ns) {
+					ns.host.insertBefore(host, ns.seat.nextSibling);
+					return host;
+				}
+				return null;
+			}
 			function plantBtn(el) {
-				if (btnHost === bar) {
-					bar.appendChild(el);
+				var host = firstLineHost();
+				if (host) {
+					host.appendChild(el);
 					return;
 				}
-				var ft = btnHost.querySelector("tm-tile");
-				if (ft) btnHost.insertBefore(el, ft);
-				else btnHost.appendChild(el);
+				bar.appendChild(el);
 			}
-			if (btnHost !== bar) [
+			[
 				BTN_ID,
 				"tmSBtn",
 				"tmGBtn"
 			].forEach(function(id) {
 				var el = document.getElementById(id);
-				if (el && el.parentNode !== btnHost) plantBtn(el);
+				if (el && el.parentNode && el.parentNode.id !== "tmFirstLineBtns") plantBtn(el);
 			});
 			if (!document.getElementById(BTN_ID)) {
 				var b = document.createElement("button");
