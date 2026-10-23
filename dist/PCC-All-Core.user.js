@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.7
+// @version      2.10.8
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5751,6 +5751,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
 			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
 			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
+			if (o.rows) {
+				const rowLines = String(this.value || "").split("\n").filter((ln) => ln.length);
+				return b`<div data-tm-card style=${cardCss} title=${clickable ? "Click to copy" : ""} @mousedown=${this.onMouseDown} @click=${this.onClick}>
+      <div style="margin-top:2px;">${rowLines.map((ln, i) => {
+					const cut = ln.indexOf("|");
+					const lab = cut >= 0 ? ln.slice(0, cut) : ln;
+					const val = cut >= 0 ? ln.slice(cut + 1) : "";
+					return b`<div class="tmAdmRow" style="display:flex;align-items:baseline;gap:8px;line-height:1.5;">
+          <span class="tmAdmLab" ?data-tm-label=${i === 0} style="flex:none;width:66px;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8494a7;">${lab}</span>
+          <span class="tmAdmVal" style="font-size:12.5px;font-weight:700;color:${val === "—" ? "#b6c2d2" : "#131c2b"};">${val}</span>
+        </div>`;
+				})}</div>
+    </div>`;
+			}
 			let valuePart;
 			if (!this.value) valuePart = b`<div style=${"margin-top:9px;" + fontCss + "color:#b6c2d2;"}>—</div>`;
 			else if (o.cols) {
@@ -9078,11 +9092,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					if (fa) out.allergies = fa;
 				}
 				var a1 = t.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-				if (a1) out.admission = a1[1];
-				else {
-					var a2 = t.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-					if (a2) out.admission = a2[1];
+				if (a1) {
+					out.admission = a1[1];
+					out.admReentry = a1[1];
 				}
+				var a2 = t.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+				if (a2) {
+					out.admInitial = a2[1];
+					if (!out.admission) out.admission = a2[1];
+				}
+				var a3 = t.match(/Discharge Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+				if (a3) out.admDischarge = a3[1];
 				var wb = weightBlock(doc);
 				if (wb) {
 					out.weight = wb.value;
@@ -10437,11 +10457,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					if (f) out.allergies = f;
 				}
 				var a1 = txt.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-				if (a1) out.admission = a1[1] + " (re-entry)";
-				else {
-					var a2 = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-					if (a2) out.admission = a2[1] + " (initial)";
+				if (a1) {
+					out.admission = a1[1] + " (re-entry)";
+					out.admReentry = a1[1];
 				}
+				var a2 = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+				if (a2) {
+					out.admInitial = a2[1];
+					if (!out.admission) out.admission = a2[1] + " (initial)";
+				}
+				var a3 = txt.match(/Discharge Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+				if (a3) out.admDischarge = a3[1];
 			} catch (e) {}
 			return out;
 		}
@@ -10895,13 +10921,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					stamp: stamp || ""
 				});
 			}
-			var admM = (d.admission || "").match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
-			var admKind = admM && admM[3] ? admM[3].toLowerCase() : "";
-			mkSpec(1, "admission", admKind ? "Admission (" + admKind + ")" : "Admission (re-entry)", admM ? admM[1] : d.admission || "", {
+			mkSpec(1, "admission", "Admission", "Re-entry|" + (d.admReentry || "—") + "\nInitial|" + (d.admInitial || "—") + "\nDischarge|" + (d.admDischarge || "—"), {
 				band: 1,
 				bandW: 166,
 				pad: "6px 12px",
-				size: 15
+				size: 12.5,
+				rows: true
 			});
 			mkSpec(1, "agesex", "Age / Sex", d.ageSex || "", {
 				band: 1,
