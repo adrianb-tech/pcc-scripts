@@ -182,6 +182,32 @@
     links.sort(function (a, b) { return new Date(b.date) - new Date(a.date); });
     return { links: links, census: census };
   }
+  // Which assessment TYPES on this list page can carry a
+  // BIMS? The list is per-type: cp_assessment.jsp serves one
+  // ESOLstdassessid at a time, and the background fetch of
+  // the chart's list URL returns the tab's own type (his
+  // Psych: Consults) - the 'All' value (-1) is NOT honored
+  // there (live census 2026-10-23: rows=16 carriers=0 on a
+  // resident whose SS rows exist). The list page's own type
+  // select names every type the facility runs; the BIMS
+  // carriers are the Social Service Assessment types and
+  // any type with BIMS in its name. Current versions first,
+  // retired last, capped at 3 - ids read from the page
+  // itself, never hardcoded (they differ per facility).
+  function findBimsTypeIds(doc) {
+    var sel = doc.querySelector('select[name="ESOLstdassessid"]');
+    if (!sel) return [];
+    var cur = [], ret = [];
+    var opts = sel.querySelectorAll('option');
+    for (var i = 0; i < opts.length; i++) {
+      var v = opts[i].getAttribute('value') || '';
+      var label = (opts[i].textContent || '').replace(/\s+/g, ' ').trim();
+      if (!/^\d+$/.test(v)) continue;
+      if (!(/Social Service Assessment/i.test(label) || /BIMS/i.test(label))) continue;
+      if (/retired/i.test(label)) ret.push(v); else cur.push(v);
+    }
+    return cur.concat(ret).slice(0, 3);
+  }
   // Union-merge one dated point into the bims stop's series
   // (the landHisNotes discipline: a sighting completes the
   // record, never rivals it). An existing point for the same
@@ -588,6 +614,7 @@
     parseBpBimsItems: parseBpBimsItems,
     cnrItemSum: cnrItemSum,
     findBimsViewLinks: findBimsViewLinks,
+    findBimsTypeIds: findBimsTypeIds,
     mergeBimsPoint: mergeBimsPoint
   };
 })();
