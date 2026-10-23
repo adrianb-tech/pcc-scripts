@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PCC - Layout styles
-// @version      1.0
-// @description  His Stylus styles, recreated: wide self-growing note fields; meds/dx tables unclipped, header un-stuck.
+// @version      1.1
+// @description  His Stylus styles, recreated, plus the fixed frame: the resident header field is one fixed height on every tab, so the tab bar never moves.
 // @match        *://*.pointclickcare.com/*
 // @run-at       document-start
 // @grant        none
@@ -41,6 +41,24 @@
     '.scrollTable thead.fixedHeader,\n' +
     '#fixedHeader {\n' +
     '  position: static !important;\n' +
+    '}\n' +
+    // THE FIXED FRAME (his ruling, 2026-10-23): the
+    // whole top field - picture row, tile band, the
+    // row-2 tiles where a page carries them, the
+    // extended row - is one fixed height on every tab
+    // page, so the tab bar below it starts at the same
+    // place on every tab and never drops when the
+    // tiles plant. A floor, never a ceiling: content
+    // taller than the floor still grows the field (no
+    // clipping, ever) - the floor only pads shorter
+    // pages up to the common height. 452 is the first
+    // calibration (photo row + band + row 2 + extended
+    // row at their fullest common size); it is the one
+    // knob if a tab still sits lower or the white runs
+    // long. In force from first paint (this script
+    // runs at document-start).
+    '#residentHeader {\n' +
+    '  min-height: 452px !important;\n' +
     '}';
   var st = document.createElement('style');
   st.id = 'tmLayoutStyles';
