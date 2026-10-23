@@ -91,15 +91,16 @@
       var qa = String(chart.ageSex).match(/\d{1,3}/);
       v.age = !hm || !qa || hm[1] !== qa[0];
     }
-    // Crown Heights (his absolute rule, 2026-10-22):
-    // the Allergies tile NEVER paints red at CH - the
-    // CH consult form carries no allergies slot, so the
-    // note can never hold the line this verdict demands,
-    // and a permanent red there is noise, not signal.
-    // The chart record carries facCH from the chart
-    // page (moreless publishes it); when it is set, the
-    // allergies verdict is not computed at all.
-    if (chart.allergies && !chart.facCH) {
+    // Crown Heights + Bedford (his absolute rule,
+    // 2026-10-22, extended to Bedford 2026-10-23): the
+    // Allergies tile NEVER paints red at either facility
+    // - their notes never have to carry the allergies
+    // line, so a permanent red there is noise, not
+    // signal. The chart record carries facCH / facBedford
+    // from the chart page (moreless publishes them);
+    // when either is set, the allergies verdict is not
+    // computed at all.
+    if (chart.allergies && !chart.facCH && !chart.facBedford) {
       var am = txt.match(/^[ \t]*Allergies[ \t]*:?[ \t]*(.*)$/m);
       if (!am || !am[1].trim()) v.allergies = true;
       else {
@@ -170,7 +171,7 @@
         var p = String(ds).split('/'); var y = +p[2]; if (y < 100) y += 2000;
         return new Date(y, +p[0] - 1, +p[1]);
       };
-      var noteLatest = null;
+      var noteLatest = null, noteLatestVal = null;
       var blines = txt.split('\n');
       // The scan window is the note's whole BIMS
       // section: the BIMS line, the line under it, and
@@ -192,11 +193,28 @@
         var re2 = /(\d{1,2})\s+on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/g, mm;
         while ((mm = re2.exec(scan))) {
           var dt = parseD(mm[2]);
-          if (!noteLatest || dt > noteLatest) noteLatest = dt;
+          if (!noteLatest || dt > noteLatest) { noteLatest = dt; noteLatestVal = +mm[1]; }
         }
       }
       var sixAgo = new Date(); sixAgo.setMonth(sixAgo.getMonth() - 6);
-      v.bims = !noteLatest || noteLatest < sixAgo;
+      // STOP SCORES (his rule, 2026-10-23): 0 and 99 mean
+      // he stops testing the BIMS. When the note's newest
+      // score is a stop score and the chart is stopped
+      // too (or carries no score at all), the tile is
+      // NOT red however old that score is - an old stop
+      // is a finished stop, and there are many. When the
+      // CHART's newest is a stop score but the note's
+      // newest is still 1+, the stop has not transferred
+      // into the note yet: red until a 0/99 lands in the
+      // note (he must have one there before he stops
+      // monitoring). Otherwise the freshness rule stands.
+      var chartBimsVal = null;
+      if (chart.bims) { var cbm = String(chart.bims).match(/^\s*(\d{1,2})\b/); if (cbm) chartBimsVal = +cbm[1]; }
+      var noteStop = (noteLatestVal === 0 || noteLatestVal === 99);
+      var chartStop = (chartBimsVal === 0 || chartBimsVal === 99);
+      if (noteStop && (chartStop || chartBimsVal === null)) v.bims = false;
+      else if (chartStop) v.bims = true;
+      else v.bims = !noteLatest || noteLatest < sixAgo;
       if (!v.bims && chart.readmit && chart.bims && chart.bimsPrev) {
         var cn = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
         var cp = String(chart.bimsPrev).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
@@ -255,6 +273,14 @@
           return out;
         };
         var nSet = relSet(cm[1]), cSet = relSet(chart.rel), rDiff = false, rk;
+        // SELF (his rule, 2026-10-23): 'self' is a required
+        // relationship only when it is the ONLY one. When
+        // the chart names anyone else, self is excused on
+        // BOTH sides of the compare - missing from the note
+        // is fine, present in the note is fine.
+        var cHasOther = false;
+        for (rk in cSet) { if (rk !== 'self') { cHasOther = true; break; } }
+        if (cHasOther) { delete nSet.self; delete cSet.self; }
         for (rk in cSet) { if (!nSet[rk]) { rDiff = true; break; } }
         if (!rDiff) { for (rk in nSet) { if (!cSet[rk]) { rDiff = true; break; } } }
         v.rel = rDiff;
