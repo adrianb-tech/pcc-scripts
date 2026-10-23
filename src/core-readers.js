@@ -67,7 +67,14 @@
       else if (t.some(function (c) { return BIMS_RE.test(c); }) && score !== undefined) {
         bimsRowsSeen++;
         var n = parseFloat(score);
-        if (n >= 0 && n <= 15) bims.push({ date: dateStr, score: n });
+        // 99 is a real BIMS score - the stop code
+        // (interview unable to be completed). The old
+        // 0-15 range silently discarded every 99 row,
+        // so a resident whose newest BIMS was a 99 kept
+        // an ancient score on the tile (his live Bedford
+        // case, 2026-10-23: chart 99 on 9/18/2026, tile
+        // showed 3 on 8/21/22 - and G transferred the 3).
+        if ((n >= 0 && n <= 15) || n === 99) bims.push({ date: dateStr, score: n });
       }
     }
     if (!bims.length) {
@@ -112,7 +119,7 @@
       var t = (as[i].textContent || '').trim();
       if (/^\d+(\.\d+)?$/.test(t)) score = parseFloat(t);
     }
-    if (score === null || !(score >= 0 && score <= 15)) return null;
+    if (score === null || !((score >= 0 && score <= 15) || score === 99)) return null;
     var ad = doc.getElementById('assessDate');
     var m = ad && /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(ad.textContent || '');
     if (!m) return null;
@@ -214,7 +221,10 @@
   // date stands - the native list read for that date is
   // authoritative over a fetched duplicate.
   function mergeBimsPoint(G, point, strength) {
-    if (!point || !(point.score >= 0 && point.score <= 15) || !point.date) return;
+    // 99 (the stop code) is a valid point - see the list
+    // reader's note. Without it here, even a correctly
+    // parsed 99 died at the merge.
+    if (!point || !((point.score >= 0 && point.score <= 15) || point.score === 99) || !point.date) return;
     var cur = G.packet.stops.bims;
     var inc = strength || G.strength || 'copy';
     if (!cur || cur.status !== 'landed' || !cur.series) {
