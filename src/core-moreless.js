@@ -646,7 +646,7 @@
       if (window.__tmChartLast !== chartVals || Date.now() - (window.__tmChartTs || 0) > 20000) {
         window.__tmChartLast = chartVals;
         window.__tmChartTs = Date.now();
-        localStorage.setItem('tmTileChart', JSON.stringify({ ageSex: d.ageSex || null, allergies: d.allergies || null, facCH: isCrownHeightsHere(), meds: (d.medsFill !== null && d.medsFill !== undefined) ? d.medsFill : (d.meds || null), rel: d.rel || null, bims: d.bims || null, bimsPrev: (function () { try { var sr = lastStops && lastStops.bims && lastStops.bims.series; if (sr && sr[1]) { var q = new Date(sr[1].date); if (!isNaN(q.getTime())) return sr[1].score + ' on ' + (q.getMonth() + 1) + '/' + q.getDate() + '/' + String(q.getFullYear()).slice(2); } } catch (e) {} return null; })(), readmit: (function () { try { var bx = document.getElementById('tmReadmitBox'); return !!(bx && bx.__mode === 'alert'); } catch (e) { return false; } })(), dx: d.dx || null, key: chartNumMatch() || null, ts: window.__tmChartTs }));
+        localStorage.setItem('tmTileChart', JSON.stringify({ ageSex: d.ageSex || null, allergies: d.allergies || null, facCH: isCrownHeightsHere(), facBedford: isBedfordHere(), meds: (d.medsFill !== null && d.medsFill !== undefined) ? d.medsFill : (d.meds || null), rel: d.rel || null, bims: d.bims || null, bimsPrev: (function () { try { var sr = lastStops && lastStops.bims && lastStops.bims.series; if (sr && sr[1]) { var q = new Date(sr[1].date); if (!isNaN(q.getTime())) return sr[1].score + ' on ' + (q.getMonth() + 1) + '/' + q.getDate() + '/' + String(q.getFullYear()).slice(2); } } catch (e) {} return null; })(), readmit: (function () { try { var bx = document.getElementById('tmReadmitBox'); return !!(bx && bx.__mode === 'alert'); } catch (e) { return false; } })(), dx: d.dx || null, key: chartNumMatch() || null, ts: window.__tmChartTs }));
       }
     } catch (e) {}
     var tw = null;
@@ -1525,6 +1525,19 @@
   // carrying the facility name. Published on the chart
   // record (facCH) so the verdict engine, which runs
   // in the form window, can honor the rule there.
+  // Bedford joined the rule 2026-10-23 (facBedford).
+  function facilityNameHere(re) {
+    try {
+      var els = document.querySelectorAll('select, button, a, span, div, td');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').trim();
+        if (tx.length > 90 || tx.length < 6) continue;
+        if (re.test(tx)) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
+  function isBedfordHere() { return facilityNameHere(/bedford/i); }
   function isCrownHeightsHere() {
     try {
       var els = document.querySelectorAll('select, button, a, span, div, td');
