@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Grab all (G)
-// @version      1.2
+// @version      1.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @match        https://*.pointclickcare.com/*
@@ -70,7 +70,37 @@
     return false;
   }
 
+  // RED-ONLY G (his rule, 2026-10-23): G transfers a
+  // tile's information only when that tile is RED for
+  // the open note - red is the one signal that his note
+  // disagrees with, or is missing, the chart's current
+  // value. The accident that proved the need: G moved a
+  // stale BIMS score his note was never flagged for.
+  // The verdict is Core's published record (tmTileWarn),
+  // trusted only under the tile painter's own gates: the
+  // chart record beside it must be fresh and the two
+  // records must name the same resident, the verdict
+  // must be fresh, and the note must be provably open
+  // (tmNoteOpen). No valid verdict = G queues nothing.
+  var WARN_FIELD = { 'Age/Sex': 'age', 'Allergies': 'allergies', 'Psych meds': 'meds', 'Diagnoses': 'dx', 'BIMS': 'bims', 'Relationships': 'rel' };
+  function liveVerdict() {
+    try {
+      var chart = JSON.parse(localStorage.getItem('tmTileChart') || 'null');
+      var warn = JSON.parse(localStorage.getItem('tmTileWarn') || 'null');
+      var open = JSON.parse(localStorage.getItem('tmNoteOpen') || 'null');
+      if (!chart || !warn || !open) return null;
+      if (!chart.key || warn.key !== chart.key) return null;
+      var now = Date.now();
+      if (!chart.ts || now - chart.ts > 45000) return null;
+      if (!warn.ts || now - warn.ts > 120000) return null;
+      if (!open.ts || now - open.ts > 75000) return null;
+      return warn;
+    } catch (e) { return null; }
+  }
+
   function grabAll() {    var btns = document.querySelectorAll('.pcc-fill-copy');
+    var warn = liveVerdict();
+    if (!warn) { showBadge(['No verdict yet — open the note; G fills red tiles only']); return; }
     var queued = [];
     for (var i = 0; i < btns.length; i++) {
       var b = btns[i];
@@ -79,10 +109,12 @@
       var value = b.getAttribute('data-fill-value');
       if (value === 'N/A') continue;                                  // nothing real to queue
       if (label === 'Allergies' && value && /^NKA\b/i.test(value)) continue;  // NKA stays unqueued
+      var field = WARN_FIELD[label];
+      if (!field || !warn[field]) continue;            // red-only: not red, not transferred
       fireClick(b);
       if (label && queued.indexOf(label) === -1) queued.push(label);
     }
-    if (!queued.length) return;
+    if (!queued.length) { showBadge(['Nothing red to fill']); return; }
     queued.sort(function (x, y) { return ORDER.indexOf(x) - ORDER.indexOf(y); });
     showBadge(queued);
   }
@@ -142,14 +174,33 @@
     requestGrab();
   }, true);
 
-  // Badges render on bounded staggered runs + after his clicks (no timers).
-  [400, 1200, 2500, 4500, 7000, 10000].forEach(function (ms) { setTimeout(addBadges, ms); });
+  // Badges plant in the SAME pass as their Copy buttons
+  // are found (Smooth Arrival, audit B1/B3): the staggered
+  // ladder is gone. A bounded burst (250ms steps, ~8s)
+  // re-checks only while buttons are still appearing and
+  // stops when two consecutive passes badge nothing new;
+  // after that, badges ride his clicks only. addBadges is
+  // idempotent (data-g-badge marks the done ones), so a
+  // badge is planted exactly once, beside its button, in
+  // the pass that first sees the button.
+  var badgeTries = 0, badgeLastCount = -1, badgeAgree = 0;
+  function badgeBurst() {
+    addBadges();
+    badgeTries++;
+    var n = document.querySelectorAll('.pcc-g-badge').length;
+    if (n === badgeLastCount && n > 0) badgeAgree++;
+    else badgeAgree = 0;
+    badgeLastCount = n;
+    if (badgeAgree >= 1 || badgeTries >= 32) return;
+    setTimeout(badgeBurst, 250);
+  }
+  badgeBurst();
   var lastBadgeRun = 0;
   document.addEventListener('click', function (e) {
     if (!e.isTrusted) return;
     var now = Date.now();
     if (now - lastBadgeRun < 1000) return;
     lastBadgeRun = now;
-    setTimeout(addBadges, 350);
+    setTimeout(function () { badgeTries = 0; badgeLastCount = -1; badgeAgree = 0; badgeBurst(); }, 350);
   }, true);
 })();
