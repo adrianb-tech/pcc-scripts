@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.17
+// @version      2.10.18
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11838,13 +11838,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
 				if (tx.length > 70 || tx.length < 5) continue;
 				if (/^clinical\s/i.test(tx)) continue;
-				if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z]{0,5}\d{3,}\s*\)/.test(tx)) continue;
+				if (!/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*[A-Za-z0-9 ]*\d[A-Za-z0-9 ]*\s*\)/.test(tx)) continue;
 				var r = els[i].getBoundingClientRect();
 				if (!r || r.width < 50) continue;
 				nameEl = els[i];
 				break;
 			}
-			if (!nameEl) return null;
+			if (!nameEl) {
+				var nb = document.querySelector("#residentHeader .residentNameBadgeExpansion");
+				if (nb && nb.parentNode) return {
+					host: nb.parentNode,
+					seat: nb
+				};
+				return null;
+			}
 			var seat = nameEl, hops = 0;
 			while (seat.parentNode && hops < 4) {
 				var p = seat.parentNode;
