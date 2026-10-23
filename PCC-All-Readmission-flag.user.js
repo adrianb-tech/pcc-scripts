@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.12
+// @version 1.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -181,8 +181,17 @@
   }
 
   var flagPublished = false;
+  var publishedAlert = false;
   function publishVerdict(verdict, reStr, lastFormStr){
+    // Change-gated (v1.13): the same verdict is written
+    // once; a DIFFERENT stable verdict always writes -
+    // that is what lets a wrong early read correct
+    // itself while the burst keeps verifying (below).
+    var key = verdict + '|' + reStr + '|' + (lastFormStr || '');
+    if (publishVerdict._key === key) return false;
+    publishVerdict._key = key;
     flagPublished = true;
+    if (verdict === 'readmit') publishedAlert = true;
     // One verdict record, keyed to this resident + this
     // re-entry date, read on every tab (v1.7, his ask):
     // the tag everywhere must be the verdict the Forms
@@ -190,6 +199,7 @@
     try {
       localStorage.setItem('tmReadmitVerdict', JSON.stringify({ id: chartId(), reentry: reStr, verdict: verdict, lastForm: lastFormStr || '', ts: Date.now() }));
     } catch (e) {}
+    return true;
   }
   function dropNote(){
     try { localStorage.removeItem('tmReadmitNote'); } catch (e) {}
@@ -202,15 +212,23 @@
   // line but no psych rows yet and publish 'new' (Core
   // then painted the NEW ADMISSION chip - the green he
   // saw), or catch a bogus half-loaded 'latest' and
-  // publish 'ok'. Worse, the first publish stops the
-  // burst, so the wrong verdict stuck. Now a verdict
-  // publishes only when the same branch + dates survive
-  // two consecutive passes spanning at least a second -
-  // long enough for the grid's staged rows to land.
-  function stable(key){
+  // publish 'ok'. Now a verdict publishes only when the
+  // same branch + dates survive two consecutive passes
+  // spanning a minimum window. SELF-CORRECTION (v1.13,
+  // his second live report the same day: the chip said
+  // NEW over a Forms list FULL of his psych forms): the
+  // burst no longer stops at the first 'new'/'ok'
+  // publish - it keeps verifying for its whole window,
+  // and when the grid's real rows land and the stable
+  // read changes, the corrected verdict republishes.
+  // 'new' is the dangerous branch (it is a claim that
+  // NO psych forms exist), so its window is 3s; a
+  // readmission ALERT still stops the burst - it is
+  // date-proven and terminal.
+  function stable(key, spanMs){
     var now = Date.now();
     if (update._cand !== key) { update._cand = key; update._candSince = now; return false; }
-    return !!(update._candSince && now - update._candSince >= 1000);
+    return !!(update._candSince && now - update._candSince >= (spanMs || 1000));
   }
   function update(){
     var re = reentryDate();
@@ -223,7 +241,7 @@
       // readmission (his rule, 2026-10-19). v1.6 cleared
       // the box but left a stale tmReadmitNote behind, so
       // the warning kept showing on every other tab.
-      if (!stable('new|' + re.str)) return;
+      if (!stable('new|' + re.str, 3000)) return;
       dropNote();
       publishVerdict('new', re.str, '');
       if (SHOW_OK) render(re.node, 'ok', '', 'readmission check: no psych form in this list');
@@ -236,12 +254,12 @@
       // can show a bogus old 'latest' date on an early
       // pass. Publish only when two passes agree.
       if (!stable('readmit|' + re.str + '|' + lf.s)) return;
-      publishVerdict('readmit', re.str, lf.s);
+      var wrote = publishVerdict('readmit', re.str, lf.s);
       render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
       // Publish the verdict so the tile-row script can show the same
       // warning beside the G button in the header bar (his ask,
       // 2026-10-14). Keyed to this resident + this re-entry date.
-      try {
+      if (wrote) try {
         localStorage.setItem('tmReadmitNote', JSON.stringify({ id: chartId(), date: re.str, ts: Date.now() }));
       } catch (e) {}
     } else {
@@ -272,7 +290,10 @@
   function flagBurst(){
     update();
     flagTries++;
-    if (flagPublished || flagTries >= 28) return;
+    // v1.13: only a published ALERT ends the burst
+    // early. 'new'/'ok' keep being re-verified for the
+    // whole window so a staged grid can correct them.
+    if (publishedAlert || flagTries >= 28) return;
     var lf2 = lastPsychForm();
     if (!lf2.tableFound && !reentryDate()) { flagNoList++; if (flagNoList >= 4) return; }
     else flagNoList = 0;
