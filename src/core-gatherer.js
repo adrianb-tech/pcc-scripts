@@ -499,10 +499,18 @@
     var r = window.__tmReaders; if (!r || !r.parseMdsHeader) return false;
     var hdr = r.parseMdsHeader(doc);
     if (!hdr) return false;
-    var bp = r.parseBpBimsItems(doc);
-    if (bp && bp.score !== hdr.score) { stampBimsWhy('mds chain: header ' + hdr.score + ' != BP items ' + bp.score); return false; }
-    var cn = r.cnrItemSum(doc);
-    if (cn !== null && cn !== undefined && cn !== hdr.score) { stampBimsWhy('mds chain: header ' + hdr.score + ' != CNR items ' + cn); return false; }
+    // A 99 header is the stop code (interview unable to
+    // be completed): there is no conducted item sum to
+    // cross-check it against - the items were never
+    // completed - so the sum checks apply only to real
+    // totals (0-15). Without this, every legitimate 99
+    // failed the chain closed.
+    if (hdr.score !== 99) {
+      var bp = r.parseBpBimsItems(doc);
+      if (bp && bp.score !== hdr.score) { stampBimsWhy('mds chain: header ' + hdr.score + ' != BP items ' + bp.score); return false; }
+      var cn = r.cnrItemSum(doc);
+      if (cn !== null && cn !== undefined && cn !== hdr.score) { stampBimsWhy('mds chain: header ' + hdr.score + ' != CNR items ' + cn); return false; }
+    }
     var date = hdr.date || fallbackDate;
     if (!date) return false;
     r.mergeBimsPoint(gatherCtx(), { date: date, score: hdr.score }, strength);
