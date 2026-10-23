@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.11
+// @version      2.10.12
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11261,10 +11261,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "weight", "Weight", d.weight || "", {
 				band: 1,
-				bandW: 86,
+				bandW: 100,
 				pad: "6px 12px",
 				size: 15,
 				nav: true,
+				nowrap: true,
+				fit: true,
 				color: d.weightRed ? "#a33327" : void 0
 			});
 			mkSpec(1, "bims", "BIMS", d.bims || "", {
