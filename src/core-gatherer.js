@@ -537,37 +537,91 @@
     if (bimsChainRan || stopped) return; bimsChainRan = true;
     var r = window.__tmReaders; if (!r || !r.findBimsViewLinks) return;
     var strength = curStrength;
+    // SEARCH ALL THE FORMS (his direction, 2026-10-23).
+    // Three passes, one union-merged series:
+    //  1. FAMILY: every form type whose name carries the
+    //     concept words (current + retired, newest
+    //     version first) gets its fetched list READ -
+    //     the Score column's BIMS rows merge in as points
+    //     - and scanned for MDS view links as before.
+    //     The old chain only hunted view links in these
+    //     lists; at Bedford the dedicated BIMS forms'
+    //     views open in the interaction app (unreadable
+    //     in a fetch), so the score sat in the fetched
+    //     list unread and the tile filled only when he
+    //     stood on the list himself (TREE-1647: tile 6 on
+    //     9/7/26 on the V10 list, '—' everywhere else).
+    //  2. CHAIN: any MDS view links found (the Social
+    //     Service stream) go through tryChainLinks as
+    //     before - section landings merge into the same
+    //     series, so the newest date wins across streams.
+    //  3. SWEEP: when the family found no points at all,
+    //     fetch EVERY remaining type's list and read it
+    //     the same way - facilities rename these forms,
+    //     and the scored row is the evidence, not the
+    //     form's title. Background, sequential, once per
+    //     page; each landing publishes as it arrives.
+    function mergeListPoints(doc) {
+      if (!r.bimsPointsFromList || !r.mergeBimsPoint) return 0;
+      var bp = r.bimsPointsFromList(doc);
+      if (!bp || !bp.points.length) return 0;
+      var G = gatherCtx();
+      for (var i = 0; i < bp.points.length; i++) r.mergeBimsPoint(G, bp.points[i], strength);
+      return bp.points.length;
+    }
     var found = r.findBimsViewLinks(listDoc);
-    if (found.links.length) { tryChainLinks(found.links, strength); return; }
-    // No carrier in the fetched list. The list is per-type
-    // (cp_assessment.jsp serves one ESOLstdassessid at a
-    // time) and the background fetch returns the tab's own
-    // type - at Boro Park that is his Psych: Consults, which
-    // can never carry a BIMS; the 'All' value is not honored
-    // by the fetch (live census 2026-10-23: rows=16
-    // carriers=0 on a resident whose SS rows exist). The
-    // list page's own type select names the BIMS-carrying
-    // types - fetch those lists (the same JSP, the type id
-    // the page itself offers) and search them too.
     var census = found.census;
+    var chainLinks = found.links.length ? found.links : null;
     var typeIds = r.findBimsTypeIds ? r.findBimsTypeIds(listDoc) : [];
+    var pointsFound = 0;
     var ti = 0;
     (function tryType() {
       if (stopped) return;
-      if (ti >= typeIds.length) {
-        stampBimsWhy('mds chain: rows=' + census.rows + ' carriers=' + census.carriers + ' types=' + ti + ' anchors=' + census.anchors);
-        return;
-      }
+      if (ti >= typeIds.length) { afterFamily(); return; }
       var url = listUrlWithType(listUrl, typeIds[ti++]);
       if (!url) { tryType(); return; }
       fetchDoc(url).then(function (tdoc) {
         if (stopped) return;
+        pointsFound += mergeListPoints(tdoc);
         var tf = r.findBimsViewLinks(tdoc);
         census.rows += tf.census.rows; census.carriers += tf.census.carriers; census.anchors += tf.census.anchors;
-        if (tf.links.length) { tryChainLinks(tf.links, strength); return; }
+        if (tf.links.length && !chainLinks) chainLinks = tf.links;
         tryType();
       }).catch(function () { tryType(); });
     })();
+    function afterFamily() {
+      if (chainLinks) tryChainLinks(chainLinks, strength);
+      if (pointsFound > 0) return;
+      sweepTypes();
+    }
+    function sweepTypes() {
+      if (!r.allTypeIds) { stampBimsWhy('mds chain: rows=' + census.rows + ' carriers=' + census.carriers + ' types=' + ti + ' anchors=' + census.anchors); return; }
+      var done = {};
+      for (var i = 0; i < typeIds.length; i++) done[typeIds[i]] = true;
+      var sel = listDoc.querySelector('select[name="ESOLstdassessid"]');
+      if (sel && sel.options[sel.selectedIndex]) done[sel.options[sel.selectedIndex].getAttribute('value') || ''] = true;
+      var rest = r.allTypeIds(listDoc).filter(function (id) { return !done[id]; });
+      var si = 0, swept = 0, sPoints = 0, sLinks = null;
+      (function nextSweep() {
+        if (stopped) return;
+        if (si >= rest.length) {
+          if (!packet.stops.bims || packet.stops.bims.status !== 'landed') {
+            stampBimsWhy('mds chain: rows=' + census.rows + ' carriers=' + census.carriers + ' types=' + ti + ' sweep=' + swept + ' anchors=' + census.anchors);
+          }
+          if (sLinks) tryChainLinks(sLinks, strength);
+          return;
+        }
+        var url = listUrlWithType(listUrl, rest[si++]);
+        if (!url) { nextSweep(); return; }
+        fetchDoc(url).then(function (tdoc) {
+          if (stopped) return;
+          swept++;
+          sPoints += mergeListPoints(tdoc);
+          if (!sLinks) { var tf = r.findBimsViewLinks(tdoc); if (tf.links.length) sLinks = tf.links; }
+          nextSweep();
+        }).catch(function () { nextSweep(); });
+      })();
+    }
   }
   function tryChainLinks(foundLinks, strength) {
     var links = foundLinks.slice(0, 3);
