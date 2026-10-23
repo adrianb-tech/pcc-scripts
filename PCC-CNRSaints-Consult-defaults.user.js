@@ -1,5 +1,5 @@
 // ==UserScript==
-// @version      1.13
+// @version      1.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Consult-defaults.user.js
 // @name         CNR + Saints — Consult form defaults
@@ -55,6 +55,68 @@
     return done;
   }
 
+  // The D (ported from Bedford + Crown Heights defaults
+  // 1.18, his ask 2026-10-23 — it works there and he wants
+  // it at every facility): on the newassess popup — New
+  // and Copy/Follow-up both land there — a "D" badge on
+  // the Save button, and the D key clicks Save. Same
+  // discipline as the original: D is live only until he
+  // types or clicks into a field; the moment he edits
+  // anything, D goes dead there, so it can never fight
+  // him over the date field. Facility gate reads the
+  // opener (the chart behind the popup), same names the
+  // CNR+Saints Keys script trusts.
+  var dPlanted = false;
+  function popupFacilityOk(){
+    try {
+      var texts = [];
+      var grab = function (win){ try { if (win && win.document && win.document.body) texts.push(win.document.body.innerText || win.document.body.textContent || ''); } catch (e) {} };
+      grab(window.opener); grab(window);
+      try { if (window.opener) grab(window.opener.top); } catch (e) {}
+      var txt = texts.join(' ').toLowerCase();
+      return txt.indexOf('downtown brooklyn') !== -1 || txt.indexOf('saints joachim') !== -1 ||
+             txt.indexOf('joachim & anne') !== -1 || txt.indexOf('joachim and anne') !== -1;
+    } catch (e) { return false; }
+  }
+  function popupSaveButton(){
+    var ins = document.querySelectorAll('input[type="button"], input[type="submit"]');
+    for (var i = 0; i < ins.length; i++) if ((ins[i].value || '') === 'Save') return ins[i];
+    return null;
+  }
+  function plantD(){
+    if (dPlanted) return;
+    if (!/newassess\.jsp/.test(location.pathname) && !document.querySelector('input[name="ESOLsave"]')) return;
+    if (!popupFacilityOk()) return;
+    var btn = popupSaveButton();
+    if (!btn) return;
+    var badge = document.createElement('span');
+    badge.textContent = 'D';
+    badge.style.cssText = 'display:inline-block;margin-left:6px;padding:1px 7px;' +
+      'background:#2f6f4f;color:#fff;border-radius:6px;vertical-align:middle;' +
+      'font:600 12px -apple-system,Helvetica,Arial,sans-serif;';
+    btn.parentNode.insertBefore(badge, btn.nextSibling);
+    dPlanted = true;
+    var heIsEditing = false;
+    document.addEventListener('input', function () { heIsEditing = true; }, true);
+    document.addEventListener('mousedown', function (ev) {
+      var tg = ev.target;
+      if (tg && (tg.tagName === 'TEXTAREA' || (tg.tagName === 'INPUT' && (tg.type === 'text' || tg.type === 'password')))) heIsEditing = true;
+    }, true);
+    document.addEventListener('keydown', function (e) {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.key !== 'd' && e.key !== 'D') return;
+      if (heIsEditing) return;
+      var b = popupSaveButton();
+      if (!b) return;
+      e.preventDefault();
+      var a = document.activeElement;
+      if (a && a.blur) { try { a.blur(); } catch (err) {} }
+      ['mousedown', 'mouseup', 'click'].forEach(function (type) {
+        b.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }));
+      });
+    });
+  }
+
   // Q9 Date of Consult — this script never touches it while he edits
   // (comment corrected in v1.13). The date IS auto-filled, but by the
   // CNR+Saints Keys script (v1.18+), inside his F press: typed in and
@@ -70,11 +132,12 @@
   // (v1.12: the date is off — these passes set checks + name only.)
   var burstLeft = 50;
   (function burst(){
+    plantD();
     if (runAll()) return;
     if (--burstLeft <= 0) return;
     setTimeout(burst, 60);
   })();
   [1500, 3000, 6000, 10000].forEach(function (ms) {
-    setTimeout(function(){ runAll(); }, ms);
+    setTimeout(function(){ runAll(); plantD(); }, ms);
   });
 })();
