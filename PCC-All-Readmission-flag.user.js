@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.11
+// @version 1.12
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -180,7 +180,9 @@
     return '';
   }
 
+  var flagPublished = false;
   function publishVerdict(verdict, reStr, lastFormStr){
+    flagPublished = true;
     // One verdict record, keyed to this resident + this
     // re-entry date, read on every tab (v1.7, his ask):
     // the tag everywhere must be the verdict the Forms
@@ -191,6 +193,24 @@
   }
   function dropNote(){
     try { localStorage.removeItem('tmReadmitNote'); } catch (e) {}
+  }
+  // STABILITY (v1.12, his live report 2026-10-23): EVERY
+  // verdict branch must be stable before it publishes.
+  // The alert branch always had a two-pass guard; 'new'
+  // and 'ok' did not - and the forms grid populates in
+  // stages, so an early pass could find the re-entry
+  // line but no psych rows yet and publish 'new' (Core
+  // then painted the NEW ADMISSION chip - the green he
+  // saw), or catch a bogus half-loaded 'latest' and
+  // publish 'ok'. Worse, the first publish stops the
+  // burst, so the wrong verdict stuck. Now a verdict
+  // publishes only when the same branch + dates survive
+  // two consecutive passes spanning at least a second -
+  // long enough for the grid's staged rows to land.
+  function stable(key){
+    var now = Date.now();
+    if (update._cand !== key) { update._cand = key; update._candSince = now; return false; }
+    return !!(update._candSince && now - update._candSince >= 1000);
   }
   function update(){
     var re = reentryDate();
@@ -203,6 +223,7 @@
       // readmission (his rule, 2026-10-19). v1.6 cleared
       // the box but left a stale tmReadmitNote behind, so
       // the warning kept showing on every other tab.
+      if (!stable('new|' + re.str)) return;
       dropNote();
       publishVerdict('new', re.str, '');
       if (SHOW_OK) render(re.node, 'ok', '', 'readmission check: no psych form in this list');
@@ -214,8 +235,7 @@
       // grid populates in stages, and a half-loaded list
       // can show a bogus old 'latest' date on an early
       // pass. Publish only when two passes agree.
-      var cand = re.str + '|' + lf.s;
-      if (update._cand !== cand) { update._cand = cand; return; }
+      if (!stable('readmit|' + re.str + '|' + lf.s)) return;
       publishVerdict('readmit', re.str, lf.s);
       render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
       // Publish the verdict so the tile-row script can show the same
@@ -225,6 +245,7 @@
         localStorage.setItem('tmReadmitNote', JSON.stringify({ id: chartId(), date: re.str, ts: Date.now() }));
       } catch (e) {}
     } else {
+      if (!stable('ok|' + re.str + '|' + lf.s)) return;
       publishVerdict('ok', re.str, lf.s);
       try {
         var cur = JSON.parse(localStorage.getItem('tmReadmitNote') || 'null');
@@ -235,6 +256,27 @@
     }
   }
 
-  // Bounded staggered runs after load — then it stops (no permanent interval).
-  [600, 2000, 4000, 7000].forEach(function (ms) { setTimeout(update, ms); });
+  // Scheduling (Smooth Arrival, audit C3): the verdict
+  // publishes as early as the list allows - the ladder
+  // is gone. A bounded burst (250ms steps, ~7s, the old
+  // ladder's window) runs update() until a verdict is
+  // published; update()'s own two-agreeing-passes guard
+  // still applies, so the earliest publish is the second
+  // burst tick (~500ms) instead of the old 2s+4s pair.
+  // On a page with no forms list at all the burst stops
+  // after a few tries - the verdict is computed on the
+  // Forms page itself, and Core's reserved chip slot
+  // (its own frame, planted with the G button) is what
+  // the verdict lands in on every other tab.
+  var flagTries = 0, flagNoList = 0;
+  function flagBurst(){
+    update();
+    flagTries++;
+    if (flagPublished || flagTries >= 28) return;
+    var lf2 = lastPsychForm();
+    if (!lf2.tableFound && !reentryDate()) { flagNoList++; if (flagNoList >= 4) return; }
+    else flagNoList = 0;
+    setTimeout(flagBurst, 250);
+  }
+  flagBurst();
 })();
