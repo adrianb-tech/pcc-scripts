@@ -623,6 +623,17 @@
     var key = raw.toLowerCase().replace(/\bd\/o\b/g, 'disorder');
     if (IND_NORM.hasOwnProperty(key)) return IND_NORM[key];                       // known phrase wins whole
     var primary = key.split(/\s+(?:for|and)\s+/)[0].replace(/^\s+|\s+$/g, '');     // else primary indication only
+    // Boilerplate is not an indication (his live case,
+    // 2026-10-23, TREE-1257): a sig tail like "...for
+    // RESIDENT" names WHO the med is for, not what it
+    // treats. When the mined phrase is that boilerplate -
+    // alone, or leading a longer phrase - it must not
+    // become the printed indication (his Zyprexa printed
+    // 'for RESIDENT' and the meds tile shone red against
+    // his note): fall back to the drug's default.
+    if (/^(?:the\s+)?(?:resident|residents|patient|patients)$/.test(primary)) return def;
+    primary = primary.replace(/^(?:the\s+)?(?:resident|patient)\s+(?:with\s+)?/, '');
+    if (!primary) return def;
     return IND_NORM.hasOwnProperty(primary) ? IND_NORM[primary] : primary;
   }
 
