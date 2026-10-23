@@ -197,23 +197,30 @@
         }
       }
       var sixAgo = new Date(); sixAgo.setMonth(sixAgo.getMonth() - 6);
-      // STOP SCORES (his rule, 2026-10-23): 0 and 99 mean
-      // he stops testing the BIMS. When the note's newest
-      // score is a stop score and the chart is stopped
-      // too (or carries no score at all), the tile is
-      // NOT red however old that score is - an old stop
-      // is a finished stop, and there are many. When the
-      // CHART's newest is a stop score but the note's
-      // newest is still 1+, the stop has not transferred
-      // into the note yet: red until a 0/99 lands in the
-      // note (he must have one there before he stops
-      // monitoring). Otherwise the freshness rule stands.
-      var chartBimsVal = null;
-      if (chart.bims) { var cbm = String(chart.bims).match(/^\s*(\d{1,2})\b/); if (cbm) chartBimsVal = +cbm[1]; }
+      // STOP SCORES + THE DATE RULE (his rules,
+      // 2026-10-23, the date clause added the same day
+      // from his live Bedford rounds): 0 and 99 mean he
+      // stops testing the BIMS. FIRST: if the note's
+      // newest BIMS date is on or after the chart's BIMS
+      // date, the tile is NEVER red - his note holds the
+      // freshest score there is, stopped or not. ELSE
+      // (the chart's score is the newer one, or the note
+      // has none): a chart stop score (0/99) is red until
+      // it transfers into the note - he must have one
+      // 0/99 in the note before he stops monitoring. A
+      // note-side stop with NO chart score at all is a
+      // finished stop, never red for age. Otherwise the
+      // freshness rule stands as before.
+      var chartBimsVal = null, chartBimsDate = null;
+      if (chart.bims) {
+        var cbm = String(chart.bims).match(/^\s*(\d{1,2})\b/); if (cbm) chartBimsVal = +cbm[1];
+        var cbd = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/); if (cbd) chartBimsDate = parseD(cbd[1]);
+      }
       var noteStop = (noteLatestVal === 0 || noteLatestVal === 99);
       var chartStop = (chartBimsVal === 0 || chartBimsVal === 99);
-      if (noteStop && (chartStop || chartBimsVal === null)) v.bims = false;
+      if (noteLatest && chartBimsDate && noteLatest >= chartBimsDate) v.bims = false;
       else if (chartStop) v.bims = true;
+      else if (noteStop && chartBimsVal === null) v.bims = false;
       else v.bims = !noteLatest || noteLatest < sixAgo;
       if (!v.bims && chart.readmit && chart.bims && chart.bimsPrev) {
         var cn = String(chart.bims).match(/on\s+(\d{1,2}\/\d{1,2}\/\d{2,4})/);
