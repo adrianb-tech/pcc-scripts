@@ -525,16 +525,44 @@
     return custB || (all.length === 1 ? all[0] : null);
   }
   var bimsChainRan = false;
-  function chainBimsFromList(listDoc) {
+  function chainBimsFromList(listDoc, listUrl) {
     if (bimsChainRan || stopped) return; bimsChainRan = true;
     var r = window.__tmReaders; if (!r || !r.findBimsViewLinks) return;
     var strength = curStrength;
     var found = r.findBimsViewLinks(listDoc);
-    var links = found.links.slice(0, 3);
-    if (!links.length) {
-      stampBimsWhy('mds chain: rows=' + found.census.rows + ' carriers=' + found.census.carriers + ' anchors=' + found.census.anchors);
-      return;
-    }
+    if (found.links.length) { tryChainLinks(found.links, strength); return; }
+    // No carrier in the fetched list. The list is per-type
+    // (cp_assessment.jsp serves one ESOLstdassessid at a
+    // time) and the background fetch returns the tab's own
+    // type - at Boro Park that is his Psych: Consults, which
+    // can never carry a BIMS; the 'All' value is not honored
+    // by the fetch (live census 2026-10-23: rows=16
+    // carriers=0 on a resident whose SS rows exist). The
+    // list page's own type select names the BIMS-carrying
+    // types - fetch those lists (the same JSP, the type id
+    // the page itself offers) and search them too.
+    var census = found.census;
+    var typeIds = r.findBimsTypeIds ? r.findBimsTypeIds(listDoc) : [];
+    var ti = 0;
+    (function tryType() {
+      if (stopped) return;
+      if (ti >= typeIds.length) {
+        stampBimsWhy('mds chain: rows=' + census.rows + ' carriers=' + census.carriers + ' types=' + ti + ' anchors=' + census.anchors);
+        return;
+      }
+      var url = listUrlWithType(listUrl, typeIds[ti++]);
+      if (!url) { tryType(); return; }
+      fetchDoc(url).then(function (tdoc) {
+        if (stopped) return;
+        var tf = r.findBimsViewLinks(tdoc);
+        census.rows += tf.census.rows; census.carriers += tf.census.carriers; census.anchors += tf.census.anchors;
+        if (tf.links.length) { tryChainLinks(tf.links, strength); return; }
+        tryType();
+      }).catch(function () { tryType(); });
+    })();
+  }
+  function tryChainLinks(foundLinks, strength) {
+    var links = foundLinks.slice(0, 3);
     var i = 0;
     (function next() {
       if (stopped) return;
@@ -561,9 +589,9 @@
       }).catch(function () { next(); });
     })();
   }
-  function parseAssessmentsThenChain(doc) {
+  function parseAssessmentsThenChain(doc, listUrl) {
     parseAssessments(doc);
-    chainBimsFromList(doc);
+    chainBimsFromList(doc, listUrl);
   }
   // Standing on an MDS section page (he opened one): read
   // its header natively, same cross-checks, same merge.
@@ -763,6 +791,15 @@
     }
     return setParam(setParam(u, 'ESOLstdassessid', '-1'), 'ESOLstatusFilter', '');
   }
+  // The same list URL aimed at ONE assessment type (the
+  // BIMS chain's type-directed fetch): the type id comes
+  // from the list page's own select, never hardcoded.
+  function listUrlWithType(u, id) {
+    if (!u) return u;
+    var re = /([?&])ESOLstdassessid=[^&]*/;
+    if (re.test(u)) return u.replace(re, '$1ESOLstdassessid=' + id);
+    return u + (u.indexOf('?') === -1 ? '?' : '&') + 'ESOLstdassessid=' + id;
+  }
   function gatherFetches() {
     refreshKey();
     if (stopped) return;
@@ -789,13 +826,14 @@
     // rendered list itself, read by the resident reader
     // when he stands on it (road A; graduated on the
     // TREE-1536__1/1537 list fixtures, harness h139).
-    add('assess', allTypesUrl(urls.assess), parseAssessmentsThenChain, ['ownnotes']);
+    var assessListUrl = allTypesUrl(urls.assess);
+    add('assess', assessListUrl, function (doc) { parseAssessmentsThenChain(doc, assessListUrl); }, ['ownnotes']);
     // The BIMS chain also rides its own list fetch when
     // ownnotes already landed (persisted) but bims never
     // has - the usual case for a resident whose list he
     // has never stood on. chainBimsFromList runs at most
     // once per page, so the two jobs never double-chain.
-    add('assessbims', allTypesUrl(urls.assess), chainBimsFromList, ['bims']);
+    add('assessbims', assessListUrl, function (doc) { chainBimsFromList(doc, assessListUrl); }, ['bims']);
     add('profile', urls.profile, parseProfile, ['relations']);
     add('results', urls.results, parseResults, ['labs']);
     add('orders', urls.orders, parseOrders, ['orders']);
