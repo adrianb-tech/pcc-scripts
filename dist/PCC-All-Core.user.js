@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.14
+// @version      2.10.15
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9323,15 +9323,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (!r || !r.parseMdsHeader) return false;
 			var hdr = r.parseMdsHeader(doc);
 			if (!hdr) return false;
-			var bp = r.parseBpBimsItems(doc);
-			if (bp && bp.score !== hdr.score) {
-				stampBimsWhy("mds chain: header " + hdr.score + " != BP items " + bp.score);
-				return false;
-			}
-			var cn = r.cnrItemSum(doc);
-			if (cn !== null && cn !== void 0 && cn !== hdr.score) {
-				stampBimsWhy("mds chain: header " + hdr.score + " != CNR items " + cn);
-				return false;
+			if (hdr.score !== 99) {
+				var bp = r.parseBpBimsItems(doc);
+				if (bp && bp.score !== hdr.score) {
+					stampBimsWhy("mds chain: header " + hdr.score + " != BP items " + bp.score);
+					return false;
+				}
+				var cn = r.cnrItemSum(doc);
+				if (cn !== null && cn !== void 0 && cn !== hdr.score) {
+					stampBimsWhy("mds chain: header " + hdr.score + " != CNR items " + cn);
+					return false;
+				}
 			}
 			var date = hdr.date || fallbackDate;
 			if (!date) return false;
@@ -9897,7 +9899,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}) && score !== void 0) {
 					bimsRowsSeen++;
 					var n = parseFloat(score);
-					if (n >= 0 && n <= 15) bims.push({
+					if (n >= 0 && n <= 15 || n === 99) bims.push({
 						date: dateStr,
 						score: n
 					});
@@ -9946,7 +9948,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var t = (as[i].textContent || "").trim();
 				if (/^\d+(\.\d+)?$/.test(t)) score = parseFloat(t);
 			}
-			if (score === null || !(score >= 0 && score <= 15)) return null;
+			if (score === null || !(score >= 0 && score <= 15 || score === 99)) return null;
 			var ad = doc.getElementById("assessDate");
 			var m = ad && /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(ad.textContent || "");
 			if (!m) return null;
@@ -10046,7 +10048,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			return cur.concat(ret).slice(0, 3);
 		}
 		function mergeBimsPoint(G, point, strength) {
-			if (!point || !(point.score >= 0 && point.score <= 15) || !point.date) return;
+			if (!point || !(point.score >= 0 && point.score <= 15 || point.score === 99) || !point.date) return;
 			var cur = G.packet.stops.bims;
 			var inc = strength || G.strength || "copy";
 			if (!cur || cur.status !== "landed" || !cur.series) {
