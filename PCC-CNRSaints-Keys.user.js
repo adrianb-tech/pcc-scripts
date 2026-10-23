@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.30
+// @version      1.31
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -230,20 +230,15 @@
   }
   function applyFButton() {
     try {
-      // ALL FORM-PAGE F BADGES OFF (his bisect step 2, 2026-10-14):
-      // top-only (v1.23) didn't cure the form's misread, so no F badge
-      // is planted next to the Save & Exit buttons at all. The F KEY is
-      // unchanged — it resolves its target at press time; the badges
-      // were only signs. Restore planting only on his verdict.
-      return;
+      // F BADGES RESTORED (his verdict, 2026-10-23): planting was
+      // switched off 2026-10-14 as a bisect step against the form's
+      // misread; the evidence later convicted the date fill's ack
+      // mirror (fixed in 1.31), never the badges. Badges plant on
+      // BOTH Save & Exit buttons again - his original design rule
+      // (click F from the top or the bottom toolbar).
       if (!shouldRun()) return;
       var targets = findAllSaveExitChain();
       for (var ti = 0; ti < targets.length; ti++) {
-        // BOTTOM F BADGE OFF (his bisect, 2026-10-14): he suspects the
-        // bottom badge is what makes the form misread — the form page
-        // gets ONE F badge, on the TOP Save & Exit only. Leave the
-        // bottom one off until his verdict says otherwise.
-        if (ti > 0) continue;
         var target = targets[ti];
         if (!target || !target.parentNode) continue;
         var nxt = target.nextSibling;
@@ -975,14 +970,47 @@
       try { input.dispatchEvent(keyEvK(doc, 'keyup', ch)); } catch (e5) {}
     }
     try { input.dispatchEvent(new Event('change', { bubbles: true })); } catch (e6) {}
-    // The widget's real (hidden) field, if the form carries one: same value.
-    var els = doc.querySelectorAll('input');
-    for (var j = 0; j < els.length; j++) {
-      var nm = ((els[j].getAttribute && els[j].getAttribute('name')) || '') + ' ' + (els[j].id || '');
-      if (els[j] !== input && nm.indexOf('Cust_2_II_9') !== -1 && nm.indexOf('_dummy') === -1) {
-        try { els[j].value = v; els[j].dispatchEvent(new Event('change', { bubbles: true })); } catch (e7) {}
-      }
+    // Mirror into the question's genuine companion fields ONLY, by
+    // exact name: the hidden display field (displaydate<qkey>, in
+    // display format) and the raw value field (<qkey> itself, in
+    // PCC's yyyymmdd). PCC hangs bookkeeping inputs off the same
+    // key — ack<qkey> (the acknowledgement flag), disabledby<qkey>,
+    // hiddenby<qkey> — and the pre-1.31 loop wrote the typed date
+    // into every one of them: the ack input left the browser
+    // holding a date string and Save & Exit landed on PCC's
+    // '2_II_9 needs to be acknowledged' page (h169). This is an
+    // allowlist, not a prefix blocklist — any other prefix PCC
+    // ever hangs off the key is excluded by construction.
+    var qkey = dateKeyOfK(input);
+    if (qkey) {
+      var dispF = doc.querySelector('[name="displaydate' + qkey + '"]');
+      if (dispF && dispF !== input) { try { dispF.value = v; dispF.dispatchEvent(new Event('change', { bubbles: true })); } catch (e7) {} }
+      var rawF = doc.querySelector('[name="' + qkey + '"]');
+      if (rawF && rawF !== input) { try { rawF.value = rawDateK(v); rawF.dispatchEvent(new Event('change', { bubbles: true })); } catch (e8) {} }
+      // Traverse PCC's own acknowledgement pathway for the filled
+      // question, the way a human-committed date does (the
+      // widget's dateChange ends in questionReviewed(qkey)). No
+      // other script in the CNR/Saints stack owns acks, and the
+      // scripted fill never fires the widget's commit path on its
+      // own. Never write the ack value directly — the page's
+      // machinery decides it (questionReviewed only converts
+      // N -> X); call it only if the page provides it.
+      try {
+        var w = doc.defaultView || window;
+        if (w && typeof w.questionReviewed === 'function') w.questionReviewed(qkey);
+      } catch (e9) {}
     }
+  }
+  // The question key of a date dummy: displaydate<qkey>_dummy.
+  function dateKeyOfK(input){
+    var nm = ((input.getAttribute && input.getAttribute('name')) || '') || input.id || '';
+    var m = /^displaydate(.+)_dummy$/.exec(nm);
+    return m ? m[1] : null;
+  }
+  // PCC's raw date format: MM/DD/YYYY -> yyyymmdd.
+  function rawDateK(v){
+    var p = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v || '');
+    return p ? p[3] + p[1] + p[2] : v;
   }
   function findDateInput(){
     var docs = allDocs();
