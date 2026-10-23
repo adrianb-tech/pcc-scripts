@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.14
+// @version 1.15
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -243,7 +243,14 @@ var __s3mod_Hide_unused_tabs = 1;
       if (!el.dataset.pccTrack) {
         el.dataset.pccTrack = '1';
         el.addEventListener('click', function () {
-          try { paintTab(el, name, true); } catch (e3) {}
+          // NO click-time paint (v1.15, his report
+          // 2026-10-23): painting the clicked tab current
+          // made navigation feel two-step — the color
+          // flipped instantly, then he waited for PCC's
+          // page to arrive. The tab now changes only
+          // when the new page lands and paints itself
+          // from where he actually is. The click still
+          // records the current-tab memory below.
           try {
             if (HIDE.indexOf(name) !== -1) sessionStorage.setItem('pccCurTab', name);
             else sessionStorage.removeItem('pccCurTab');
