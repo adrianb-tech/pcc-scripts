@@ -161,11 +161,16 @@
       var al = document.querySelector('.residentAllergies .residentDetailValue');
       if (al) { var f = fmtAllergies((al.textContent || '').trim()); if (f) out.allergies = f; }
       var a1 = txt.match(/Admission\s*\(re-?entry\)\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-      if (a1) out.admission = a1[1] + ' (re-entry)';
-      else {
-        var a2 = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
-        if (a2) out.admission = a2[1] + ' (initial)';
-      }
+      if (a1) { out.admission = a1[1] + ' (re-entry)'; out.admReentry = a1[1]; }
+      var a2 = txt.match(/Initial Admission Date[^0-9]*?(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (a2) { out.admInitial = a2[1]; if (!out.admission) out.admission = a2[1] + ' (initial)'; }
+      // Discharge (the Admission tile's third row, 2026-10-23):
+      // the strict pattern - a date directly after the label -
+      // can never borrow a later field's date when the discharge
+      // value is empty; the next label's letters block it. Empty
+      // is the normal in-house case and renders as a dash.
+      var a3 = txt.match(/Discharge Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
+      if (a3) out.admDischarge = a3[1];
     } catch (e) {}
     return out;
   }
@@ -696,8 +701,15 @@
     // Tiles are the shared <tm-tile> component now; the
     // fill contract rides on the host element, where the
     // G key and the fill engine have always looked for it.
-    var admM = (d.admission || '').match(/^(.*?)(\s*\((re-entry|initial)\))?$/i);
-    var admKind = admM && admM[3] ? admM[3].toLowerCase() : '';
+    // ADMISSION TILE (his spec, 2026-10-23): three dated rows -
+    // Re-entry / Initial / Discharge - inside the same 166 x 72
+    // band frame; a missing date renders as a dash, so the
+    // tile's shape never changes (discharge is empty for every
+    // in-house resident). d.admission itself is untouched - the
+    // flag chips below still read it as before.
+    var admRows = 'Re-entry|' + (d.admReentry || '—') + '\n' +
+      'Initial|' + (d.admInitial || '—') + '\n' +
+      'Discharge|' + (d.admDischarge || '—');
     // CARE PROFILE LINE BAND (his ruling, 2026-10-22): the
     // seven small tiles live INSIDE the Care Profile line
     // (#residentHeaderButtons), at ONE uniform height and
@@ -709,7 +721,7 @@
     // stamp stays in the packet) - a stamp line would
     // break the uniform height. Psych meds is NOT a band
     // tile (his ruling): it presents with the row-2 block.
-    mkSpec(1, 'admission', admKind ? 'Admission (' + admKind + ')' : 'Admission (re-entry)', admM ? admM[1] : (d.admission || ''), { band: 1, bandW: 166, pad: '6px 12px', size: 15 });
+    mkSpec(1, 'admission', 'Admission', admRows, { band: 1, bandW: 166, pad: '6px 12px', size: 12.5, rows: true });
     mkSpec(1, 'agesex', 'Age / Sex', d.ageSex || '', { band: 1, bandW: 88, pad: '6px 12px', size: 15, warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex || '' }, fill: { label: 'Age/Sex', value: d.ageSex || '' } });
     mkSpec(1, 'room', 'Room', d.room || '', { band: 1, bandW: 82, pad: '6px 12px', size: 15 });
     mkSpec(1, 'allergies', 'Allergies', d.allergies || '', { band: 1, bandW: 300, pad: '6px 12px', size: 13, natW: true, maxW: 300, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies || '' }, fill: { label: 'Allergies', value: d.allergies || '' } });
