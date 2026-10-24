@@ -1122,6 +1122,70 @@
   }
   var __tileMeasuring = {}; // key -> true while its off-flow measure is in flight
   var __lastSpecs = null;    // the freshest spec set (a landing can land mid-measure)
+  // First-paint gate (2.10.22, his live report: the meds tile
+  // painted on the LEFT on every tab click, then shifted to
+  // last). The meds tile takes the synchronous fillRow path
+  // while Admission/Age-Sex/Room/Weight/BIMS take the async
+  // measure path, so meds inserted first and the measured
+  // tiles landed before it a frame later, pushing it right.
+  // Until the first band paint, ready band tiles are HELD
+  // (sync kinds stashed, measured kinds measured) and only
+  // inserted together, in spec order, once the band measure
+  // queue drains - the row is born complete, meds last,
+  // nothing moves. The gate opens ONLY once the packet is
+  // settled: pre-settle, meds alone can be ready (its own
+  // gates fire on the fossil header/dashmeds stop while
+  // every other band tile waits on settle), and flushing
+  // that partial set would open the gate with meds painted
+  // first - the bug again, one build later. After the
+  // first paint the gate is open and later landings use the
+  // normal paths (a new tile appearing on fresh data is
+  // data arrival, not a first-paint shift).
+  var __bandGateOpen = false;
+  var __bandSettled = false; // latched: settle never un-fires for the gate
+  var __bandPending = {};    // key -> {sp, size} band tiles held for the first paint
+  var __bandMeasuring = {};  // key -> true while a BAND measure is in flight
+  function tryFlushBand() {
+    if (__bandGateOpen) return;
+    if (!__bandSettled) return; // partial pre-settle set must not open the gate
+    for (var k in __bandMeasuring) return; // a band measure is still in flight
+    var keys = Object.keys(__bandPending);
+    if (!keys.length) return; // nothing ready yet - gate stays closed
+    __bandGateOpen = true;
+    var order = ROW_KEYS[1] || [];
+    keys.sort(function (a, b) { return order.indexOf(a) - order.indexOf(b); });
+    keys.forEach(function (k) {
+      var pend = __bandPending[k]; delete __bandPending[k];
+      var sp = pend.sp;
+      if (__tileReg[sp.key]) return;
+      var r1 = document.getElementById(ROW_ID);
+      var r2 = document.getElementById('tmCardsRow2');
+      if (!r1 || !r2) return;
+      if (sp.opts.fillRow) {
+        var fel = createTile(sp);
+        __tileReg[sp.key].sig = specSig(sp);
+        insertTileInOrder(r1, fel, sp);
+        scheduleFit(sp.key, fel);
+        return;
+      }
+      if (!sp.opts.bandMeasure) {
+        var bpres = Object.assign({}, sp, { opts: Object.assign({}, sp.opts, { frozenW: sp.opts.bandW, frozenH: BAND_H }) });
+        var bel = createTile(bpres);
+        bel.setAttribute('data-tm-frozen', '1');
+        __tileReg[sp.key].sig = specSig(sp);
+        insertTileInOrder(r1, bel, sp);
+        scheduleFit(sp.key, bel);
+        return;
+      }
+      var pres = Object.assign({}, sp, { opts: Object.assign({}, sp.opts, { frozenW: pend.size[0], frozenH: BAND_H }) });
+      var el = createTile(pres);
+      el.setAttribute('data-tm-frozen', '1');
+      el.setAttribute('data-tm-measured', '1');
+      __tileReg[sp.key].sig = specSig(sp);
+      insertTileInOrder(r1, el, sp);
+      scheduleFit(sp.key, el);
+    });
+  }
   function presentReadyTiles(specs) {
     plantBand();
     var row = document.getElementById(ROW_ID);
@@ -1141,6 +1205,7 @@
     var settled = settledNow();
     var fallback = settled && __settleObserved;
     if (settled) __settleObserved = true;
+    if (settled) __bandSettled = true;
     specs.forEach(function (sp) {
       if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
       if (!tileReady(sp, fallback)) return;
@@ -1154,6 +1219,30 @@
         // and BAND_H), and FILL (the meds tile: no frozen
         // size at all - it takes the row's remaining
         // width and grows downward to maxH 101px).
+        if (!__bandGateOpen) {
+          // First paint not yet flushed: hold, don't insert.
+          // Sync kinds stash; measured kinds measure now and
+          // stash on completion; the flush inserts them all
+          // together, in spec order, when the queue drains.
+          if (sp.opts.fillRow || !sp.opts.bandMeasure) {
+            __bandPending[sp.key] = { sp: sp, size: null };
+            return;
+          }
+          __tileMeasuring[sp.key] = true;
+          __bandMeasuring[sp.key] = true;
+          measureTile(sp, function (size) {
+            delete __tileMeasuring[sp.key];
+            delete __bandMeasuring[sp.key];
+            if (size && !__tileReg[sp.key]) {
+              var fresh = null;
+              (__lastSpecs || []).forEach(function (s2) { if (s2.key === sp.key) fresh = s2; });
+              if (fresh && specSig(fresh) !== specSig(sp)) { buildCards(); tryFlushBand(); return; }
+              __bandPending[sp.key] = { sp: sp, size: size };
+            }
+            tryFlushBand();
+          });
+          return;
+        }
         if (sp.opts.fillRow) {
           var fel = createTile(sp);
           __tileReg[sp.key].sig = specSig(sp);
@@ -1204,6 +1293,9 @@
         scheduleFit(sp.key, el);
       });
     });
+    // All-sync first build (no band measure in flight):
+    // flush in this same tick - no visible delay.
+    if (!__bandGateOpen) tryFlushBand();
   }
   // Post-presentation line fitting only: the meds column
   // lines / allergies text shrink to the frame if they
