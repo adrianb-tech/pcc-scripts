@@ -742,9 +742,9 @@
     mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 188, pad: '6px 8px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
     var medsChip = String(d.meds === '- none' ? 0 : (d.meds ? d.meds.split('\n').length : 0));
     if (d.medsFill !== null && d.medsFill !== undefined) {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 101, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 110, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
     } else {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 101, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 110, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
     }
     // Summary (his change-set + spec): the assembled
     // picture - his notes, the progress notes, labs for
@@ -851,7 +851,7 @@
       // flex-start, not center (his 2026-10-24 ruling):
       // the meds tile grows DOWNWARD to 101px, and the
       // other tiles' tops must never move when it does.
-      row.style.cssText = 'display:flex;gap:8px;flex-wrap:nowrap;margin:0;align-items:flex-start;min-width:0;' +
+      row.style.cssText = 'display:flex;flex:1 1 0;gap:8px;flex-wrap:nowrap;margin:0;align-items:flex-start;min-width:0;' +
         'font-family:-apple-system,Helvetica,Arial,sans-serif;';
       bar.style.display = 'flex';
       bar.style.alignItems = 'center';
