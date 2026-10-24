@@ -14,7 +14,7 @@ type TileOpts = {
   warn?: boolean; rose?: boolean; pad?: string; minW?: number; wide?: boolean; full?: boolean;
   grow?: boolean; natW?: boolean; maxW?: number; fixedW?: number; size?: number; center?: boolean;
   weight?: number; color?: string; multi?: boolean; cols?: boolean; fit?: boolean;
-  rows?: boolean;
+  rows?: boolean; fillRow?: boolean; maxH?: number;
   nowrap?: boolean; maxw?: string; nav?: boolean;
   click?: { label: string; value: string };
   action?: string;
@@ -90,7 +90,8 @@ class TmTile extends LitElement {
       // growth, overflow clipped - and later text wraps
       // inside it instead of resizing the tile on screen.
       (o.frozenW && o.frozenH ? 'flex:none;width:' + o.frozenW + 'px;height:' + o.frozenH + 'px;overflow:hidden;' :
-      (o.full ? 'flex:1 1 auto;min-width:0;' : (o.wide ? 'flex:1 1 180px;min-width:0;' : (o.grow ? 'flex:1 1 400px;min-width:0;' : (o.natW ? 'flex:none;width:auto;' + (o.maxW ? 'max-width:' + o.maxW + 'px;' : '') : (o.fixedW ? 'flex:0 1 ' + o.fixedW + 'px;width:' + o.fixedW + 'px;' : 'flex:none;')))))) +
+      (o.fillRow ? 'flex:1 1 0;min-width:0;' : (o.full ? 'flex:1 1 auto;min-width:0;' : (o.wide ? 'flex:1 1 180px;min-width:0;' : (o.grow ? 'flex:1 1 400px;min-width:0;' : (o.natW ? 'flex:none;width:auto;' + (o.maxW ? 'max-width:' + o.maxW + 'px;' : '') : (o.fixedW ? 'flex:0 1 ' + o.fixedW + 'px;width:' + o.fixedW + 'px;' : 'flex:none;'))))))) +
+      (o.maxH ? 'max-height:' + o.maxH + 'px;overflow:hidden;' : '') +
       (o.maxw ? 'max-width:' + o.maxw + ';' : '') + (clickable ? 'cursor:pointer;' : '');
     const labelCss = 'white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:' +
       (o.warn ? '#ffe1e1' : (o.rose ? '#a05a52' : '#8494a7')) + ';';
@@ -102,18 +103,22 @@ class TmTile extends LitElement {
     // mini caps label + bold value - with NO separate label row,
     // so three rows fit the band's frozen 72px frame. The first
     // row's label carries data-tm-label (the component contract:
-    // every tile has one).
+    // every tile has one). Grid, not fixed-column flex (his
+    // 2026-10-24 ruling: Re-entry at 15px): the label column is
+    // max-content, so it fits the 15px RE-ENTRY label exactly
+    // and the dates still share one column; line-height 1.4
+    // keeps all three rows inside 72px (15px + 12.5px + 12.5px
+    // at 1.5 overflowed by 2px).
     if (o.rows) {
       const rowLines = String(this.value || '').split('\n').filter((ln) => ln.length);
       return html`<div data-tm-card style=${cardCss} title=${clickable ? 'Click to copy' : ''} @mousedown=${this.onMouseDown} @click=${this.onClick}>
-      <div style="margin-top:2px;">${rowLines.map((ln, i) => {
+      <div style="margin-top:2px;display:grid;grid-template-columns:max-content auto;column-gap:8px;line-height:1.4;">${rowLines.map((ln, i) => {
         const cut = ln.indexOf('|');
         const lab = cut >= 0 ? ln.slice(0, cut) : ln;
         const val = cut >= 0 ? ln.slice(cut + 1) : '';
-        return html`<div class="tmAdmRow" style="display:flex;align-items:baseline;gap:8px;line-height:1.5;">
-          <span class="tmAdmLab" ?data-tm-label=${i === 0} style="flex:none;width:66px;font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8494a7;">${lab}</span>
-          <span class="tmAdmVal" style="font-size:12.5px;font-weight:700;color:${val === '—' ? '#b6c2d2' : '#131c2b'};">${val}</span>
-        </div>`;
+        const big = i === 0;
+        return html`<span class="tmAdmLab" ?data-tm-label=${big} style="font-size:${big ? 15 : 9.5}px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#8494a7;">${lab}</span>
+          <span class="tmAdmVal" style="font-size:${big ? 15 : 12.5}px;font-weight:700;color:${val === '—' ? '#b6c2d2' : '#131c2b'};">${val}</span>`;
       })}</div>
     </div>`;
     }
