@@ -14,7 +14,7 @@ type TileOpts = {
   warn?: boolean; rose?: boolean; pad?: string; minW?: number; wide?: boolean; full?: boolean;
   grow?: boolean; natW?: boolean; maxW?: number; fixedW?: number; size?: number; center?: boolean;
   weight?: number; color?: string; multi?: boolean; cols?: boolean; fit?: boolean;
-  rows?: boolean; fillRow?: boolean; maxH?: number;
+  rows?: boolean; fillRow?: boolean; maxH?: number; minH?: number;
   nowrap?: boolean; maxw?: string; nav?: boolean;
   click?: { label: string; value: string };
   action?: string;
@@ -92,6 +92,7 @@ class TmTile extends LitElement {
       (o.frozenW && o.frozenH ? 'flex:none;width:' + o.frozenW + 'px;height:' + o.frozenH + 'px;overflow:hidden;' :
       (o.fillRow ? 'flex:1 1 0;min-width:0;' : (o.full ? 'flex:1 1 auto;min-width:0;' : (o.wide ? 'flex:1 1 180px;min-width:0;' : (o.grow ? 'flex:1 1 400px;min-width:0;' : (o.natW ? 'flex:none;width:auto;' + (o.maxW ? 'max-width:' + o.maxW + 'px;' : '') : (o.fixedW ? 'flex:0 1 ' + o.fixedW + 'px;width:' + o.fixedW + 'px;' : 'flex:none;'))))))) +
       (o.maxH ? 'max-height:' + o.maxH + 'px;overflow:hidden;' : '') +
+      (o.minH ? 'min-height:' + o.minH + 'px;' : '') +
       (o.maxw ? 'max-width:' + o.maxw + ';' : '') + (clickable ? 'cursor:pointer;' : '');
     const labelCss = 'white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:' +
       (o.warn ? '#ffe1e1' : (o.rose ? '#a05a52' : '#8494a7')) + ';';
