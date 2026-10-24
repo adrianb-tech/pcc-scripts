@@ -764,15 +764,15 @@
     mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 188, pad: '6px 8px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
     var medsChip = String(d.meds === '- none' ? 0 : (d.meds ? d.meds.split('\n').length : 0));
     if (d.medsFill !== null && d.medsFill !== undefined) {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, lines: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
     } else {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, lines: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
     }
     // Summary (his change-set + spec): the assembled
     // picture - his notes, the progress notes, labs for
     // his meds, weight/BIMS trends, GDR tracking. First
     // on the second line: the picture ahead of the parts.
-    mkSpec(2, 'summary', 'Summary', d.summary || '', { full: true, multi: true, size: 13, weight: 600, anchorCycle: true, click: { label: 'Summary', value: d.summary || '' }, fill: { label: 'Summary', value: d.summary || '' } }, sumAnchorLabel());
+    mkSpec(2, 'summary', 'Summary', d.summary || '', { stack: true, multi: true, size: 13, weight: 600, anchorCycle: true, click: { label: 'Summary', value: d.summary || '' }, fill: { label: 'Summary', value: d.summary || '' } }, sumAnchorLabel());
     // Psychiatric overview (his ruling, 2026-10-24):
     // Your words becomes a one-paragraph brief of the
     // chart. Deterministic v1 (no model, nothing phones
@@ -780,15 +780,15 @@
     // clinical order, each section present only when its
     // data landed. Copyable like Summary, so the brief
     // can go straight into a note.
-    mkSpec(2, 'overview', 'Psychiatric overview', d.overview || '', { full: true, multi: true, size: 13, weight: 600, click: { label: 'Psychiatric overview', value: d.overview || '' }, fill: { label: 'Psychiatric overview', value: d.overview || '' } });
+    mkSpec(2, 'overview', 'Psychiatric overview', d.overview || '', { stack: true, multi: true, size: 13, weight: 600, click: { label: 'Psychiatric overview', value: d.overview || '' }, fill: { label: 'Psychiatric overview', value: d.overview || '' } });
     // Diagnoses + Behaviors join the row (his change-set,
     // 2026-10-19): full-line tiles under the first row,
     // fed by the packet like the others. Diagnoses carries
     // the proven fill contract (the extractor box's own
     // label); Behaviors is display-only, exactly as its
     // box is - it has never been a fill source.
-    mkSpec(2, 'dx', 'Diagnoses', d.dx || '', { full: true, multi: true, warn: !!(tw && tw.dx), size: 13, weight: 600, click: { label: 'Diagnoses', value: d.dx || '' }, fill: { label: 'Diagnoses', value: d.dx || '' } }, null, d.stampDx);
-    mkSpec(2, 'beh', 'Behaviors', d.beh || '', { full: true, multi: true, size: 13, weight: 600 }, null, d.stampBeh);
+    mkSpec(2, 'dx', 'Diagnoses', d.dx || '', { stack: true, multi: true, warn: !!(tw && tw.dx), size: 13, weight: 600, click: { label: 'Diagnoses', value: d.dx || '' }, fill: { label: 'Diagnoses', value: d.dx || '' } }, null, d.stampDx);
+    mkSpec(2, 'beh', 'Behaviors', d.beh || '', { stack: true, multi: true, size: 13, weight: 600 }, null, d.stampBeh);
     // Per-tile presentation (Ear O3): a tile presents
     // when its own pipe settles - not in one row-global
     // wave. Until a tile presents it occupies no element;
@@ -1267,6 +1267,26 @@
     specs.forEach(function (sp) {
       if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
       if (!tileReady(sp, fallback)) return;
+      if (sp.opts && sp.opts.stack && sp.row === 2) {
+        // Row-2 stack (2.10.25, his ruling): overview,
+        // behaviors, diagnoses (and summary) stack
+        // vertically, each a full row wide, unfrozen -
+        // the measure path froze the overview at its
+        // unwrapped width (1790px in TREE-1304/1306),
+        // which runs off the screen in split view. A
+        // flex:1 1 100% tile always fits its row, and
+        // its height follows its wrapped lines. Row-2
+        // keeps its settle gate (tileReady above); the
+        // tile updates in place via updateTiles (no
+        // re-measure: no data-tm-measured attribute).
+        var sel = createTile(sp);
+        __tileReg[sp.key].sig = specSig(sp);
+        var sr1 = document.getElementById(ROW_ID);
+        var sr2 = document.getElementById('tmCardsRow2');
+        if (sr1 && sr2) insertTileInOrder(sr2, sel, sp);
+        scheduleFit(sp.key, sel);
+        return;
+      }
       if (sp.opts && sp.opts.band) {
         // Band tiles are BORN at their frame - no freeze
         // race, no growth after presentation. Three frame
