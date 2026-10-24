@@ -711,38 +711,40 @@
       'Initial|' + (d.admInitial || '—') + '\n' +
       'Discharge|' + (d.admDischarge || '—');
     // CARE PROFILE LINE BAND (his ruling, 2026-10-22): the
-    // seven small tiles live INSIDE the Care Profile line
-    // (#residentHeaderButtons), at ONE uniform height and
-    // fixed-by-kind widths - frames are decided by design,
-    // never measured from content, so the line's height is
-    // final at plant and no tile can grow, shrink or push
-    // the page. The band tiles carry no stamp line (the
-    // BIMS date rides inside its value; the relationships
-    // stamp stays in the packet) - a stamp line would
-    // break the uniform height. Psych meds is NOT a band
-    // tile (his ruling): it presents with the row-2 block.
-    // Band widths set to his fit specs (2026-10-23),
-    // then tightened the same evening on his screenshot
-    // ('each one can be less wide' — measured against
-    // the values in TREE-1758): Admission fits its
-    // widest row (DISCHARGE + 12/31/2026), Age/Sex fits
-    // '100F' under its label, Room fits X000X (E404A),
-    // Weight fits '232.7 lbs', BIMS fits '15 on
-    // 12/31/26' (fit:true shrinks the font if a longer
-    // form ever lands). Allergies / Relationships
-    // keep their widths by his ruling.
-    mkSpec(1, 'admission', 'Admission', admRows, { band: 1, bandW: 140, pad: '6px 8px', size: 12.5, rows: true });
-    mkSpec(1, 'agesex', 'Age / Sex', d.ageSex || '', { band: 1, bandW: 72, pad: '6px 8px', size: 15, center: true, warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex || '' }, fill: { label: 'Age/Sex', value: d.ageSex || '' } });
-    mkSpec(1, 'room', 'Room', d.room || '', { band: 1, bandW: 55, pad: '6px 8px', size: 15, center: true });
+    // eight small tiles live INSIDE the Care Profile line
+    // (#residentHeaderButtons), at ONE uniform height. His
+    // 2026-10-24 ruling replaced fixed-by-kind widths with
+    // EXACTLY 8px side margins: Admission, Age/Sex, Room,
+    // Weight and BIMS are MEASURED from their own content
+    // (bandMeasure: the off-flow measure path, frozen at
+    // measured width + the 8px padding, BAND_H tall), so
+    // each tile is its widest text + 16px and nothing
+    // more. Allergies / Relationships keep their widths
+    // by his ruling (don't touch). The band tiles carry
+    // no stamp line (the BIMS date rides inside its
+    // value; the relationships stamp stays in the
+    // packet) - a stamp line would break the uniform
+    // height. Psych meds JOINS the band (his ruling,
+    // 2026-10-24, reversing 2026-10-23 'don't move it'):
+    // it fills whatever row space is left after
+    // Relationships (fillRow, no frozen width), its
+    // lines stack and wrap, and it grows DOWNWARD only
+    // to 101px (72 + 29: three 13px lines) - the row's
+    // tops never move. It leaves the Dash row-2 block
+    // in both views; its band stamp line is gone with
+    // the move (band tiles carry none).
+    mkSpec(1, 'admission', 'Admission', admRows, { band: 1, bandMeasure: true, pad: '6px 8px', size: 12.5, rows: true });
+    mkSpec(1, 'agesex', 'Age / Sex', d.ageSex || '', { band: 1, bandMeasure: true, pad: '6px 8px', size: 15, center: true, warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex || '' }, fill: { label: 'Age/Sex', value: d.ageSex || '' } });
+    mkSpec(1, 'room', 'Room', d.room || '', { band: 1, bandMeasure: true, pad: '6px 8px', size: 15, center: true });
     mkSpec(1, 'allergies', 'Allergies', d.allergies || '', { band: 1, bandW: 292, pad: '6px 8px', size: 13, natW: true, maxW: 300, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies || '' }, fill: { label: 'Allergies', value: d.allergies || '' } });
-    mkSpec(1, 'weight', 'Weight', d.weight || '', { band: 1, bandW: 80, pad: '6px 8px', size: 15, nav: true, nowrap: true, fit: true, center: true, color: d.weightRed ? '#a33327' : undefined });
-    mkSpec(1, 'bims', 'BIMS', d.bims || '', { band: 1, bandW: 120, pad: '6px 8px', size: 14, natW: true, nowrap: true, fit: true, center: true, warn: !!(tw && tw.bims), click: { label: 'BIMS', value: d.bims || '' }, fill: { label: 'BIMS', value: d.bims || '' } });
+    mkSpec(1, 'weight', 'Weight', d.weight || '', { band: 1, bandMeasure: true, pad: '6px 8px', size: 15, nav: true, nowrap: true, fit: true, center: true, color: d.weightRed ? '#a33327' : undefined });
+    mkSpec(1, 'bims', 'BIMS', d.bims || '', { band: 1, bandMeasure: true, pad: '6px 8px', size: 14, natW: true, nowrap: true, fit: true, center: true, warn: !!(tw && tw.bims), click: { label: 'BIMS', value: d.bims || '' }, fill: { label: 'BIMS', value: d.bims || '' } });
     mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 188, pad: '6px 8px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
     var medsChip = String(d.meds === '- none' ? 0 : (d.meds ? d.meds.split('\n').length : 0));
     if (d.medsFill !== null && d.medsFill !== undefined) {
-      mkSpec(2, 'meds', 'Psych meds', d.meds || '', { cols: true, wide: true, multi: true, size: 13, weight: 600, maxw: '920px', warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip, d.stampMeds);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 101, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
     } else {
-      mkSpec(2, 'meds', 'Psych meds', d.meds || '', { cols: true, wide: true, multi: true, size: 13, weight: 600, maxw: '920px', warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip, d.stampMeds);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 101, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
     }
     // Summary (his change-set + spec): the assembled
     // picture - his notes, the progress notes, labs for
@@ -819,7 +821,7 @@
   // the gatherer's first pass - the page reserves the
   // space from the start and nothing ever shoves down.
   // DOM order is part of the layout (h145): tmCardsRow
-  // (the seven band tiles, inside the Care Profile line)
+  // (the eight band tiles, inside the Care Profile line)
   // first, tmCardsRow2 (the content block) directly
   // beneath the line.
   function plantBand() {
@@ -846,7 +848,10 @@
         row.id = ROW_ID;
       }
       if (row.parentNode !== bar) bar.appendChild(row);
-      row.style.cssText = 'display:flex;gap:8px;flex-wrap:nowrap;margin:0;align-items:center;min-width:0;' +
+      // flex-start, not center (his 2026-10-24 ruling):
+      // the meds tile grows DOWNWARD to 101px, and the
+      // other tiles' tops must never move when it does.
+      row.style.cssText = 'display:flex;gap:8px;flex-wrap:nowrap;margin:0;align-items:flex-start;min-width:0;' +
         'font-family:-apple-system,Helvetica,Arial,sans-serif;';
       bar.style.display = 'flex';
       bar.style.alignItems = 'center';
@@ -961,8 +966,8 @@
   // fixed widths - see buildCards). Row 2 is the content
   // block beneath it: meds first, then the full-line tiles.
   var BAND_H = 72;
-  var ROW_KEYS = { 1: ['admission', 'agesex', 'room', 'allergies', 'weight', 'bims', 'rel'],
-                   2: ['meds', 'summary', 'words', 'beh', 'dx'] };
+  var ROW_KEYS = { 1: ['admission', 'agesex', 'room', 'allergies', 'weight', 'bims', 'rel', 'meds'],
+                   2: ['summary', 'words', 'beh', 'dx'] };
   function stopLanded(k) {
     var s = lastStops && lastStops[k];
     return !!(s && s.status === 'landed');
@@ -1140,19 +1145,35 @@
       if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
       if (!tileReady(sp, fallback)) return;
       if (sp.opts && sp.opts.band) {
-        // Band tiles are BORN at their designed frame
-        // (fixed width by kind, BAND_H for every tile) -
-        // no measuring, no freeze race, no growth: the
-        // frame is known before the content exists.
-        var bpres = Object.assign({}, sp, { opts: Object.assign({}, sp.opts, { frozenW: sp.opts.bandW, frozenH: BAND_H }) });
-        var bel = createTile(bpres);
-        bel.setAttribute('data-tm-frozen', '1');
-        __tileReg[sp.key].sig = specSig(sp);
-        var br1 = document.getElementById(ROW_ID);
-        var br2 = document.getElementById('tmCardsRow2');
-        if (br1 && br2) insertTileInOrder(br1, bel, sp);
-        scheduleFit(sp.key, bel);
-        return;
+        // Band tiles are BORN at their frame - no freeze
+        // race, no growth after presentation. Three frame
+        // kinds (his 2026-10-24 ruling): fixed by kind
+        // (Allergies / Relationships, bandW), MEASURED
+        // from content (bandMeasure: falls through to the
+        // measure path below, frozen at measured width
+        // and BAND_H), and FILL (the meds tile: no frozen
+        // size at all - it takes the row's remaining
+        // width and grows downward to maxH 101px).
+        if (sp.opts.fillRow) {
+          var fel = createTile(sp);
+          __tileReg[sp.key].sig = specSig(sp);
+          var fr1 = document.getElementById(ROW_ID);
+          var fr2 = document.getElementById('tmCardsRow2');
+          if (fr1 && fr2) insertTileInOrder(fr1, fel, sp);
+          scheduleFit(sp.key, fel);
+          return;
+        }
+        if (!sp.opts.bandMeasure) {
+          var bpres = Object.assign({}, sp, { opts: Object.assign({}, sp.opts, { frozenW: sp.opts.bandW, frozenH: BAND_H }) });
+          var bel = createTile(bpres);
+          bel.setAttribute('data-tm-frozen', '1');
+          __tileReg[sp.key].sig = specSig(sp);
+          var br1 = document.getElementById(ROW_ID);
+          var br2 = document.getElementById('tmCardsRow2');
+          if (br1 && br2) insertTileInOrder(br1, bel, sp);
+          scheduleFit(sp.key, bel);
+          return;
+        }
       }
       __tileMeasuring[sp.key] = true;
       measureTile(sp, function (size) {
@@ -1168,9 +1189,14 @@
         var fresh = null;
         (__lastSpecs || []).forEach(function (s2) { if (s2.key === sp.key) fresh = s2; });
         if (fresh && specSig(fresh) !== specSig(sp)) { buildCards(); return; }
-        var pres = Object.assign({}, sp, { opts: Object.assign({}, sp.opts, { frozenW: size[0], frozenH: size[1] }) });
+        // A measured BAND tile freezes at its measured
+        // width but at the band's uniform height, never
+        // its natural height (a single-value tile's
+        // content is ~47px; the band frame is 72px).
+        var pres = Object.assign({}, sp, { opts: Object.assign({}, sp.opts, { frozenW: size[0], frozenH: (sp.opts && sp.opts.band) ? BAND_H : size[1] }) });
         var el = createTile(pres);
         el.setAttribute('data-tm-frozen', '1');
+        if (sp.opts && sp.opts.bandMeasure) el.setAttribute('data-tm-measured', '1');
         __tileReg[sp.key].sig = specSig(sp); // registry tracks the BARE spec (updateTiles compares bare sigs)
         var r1 = document.getElementById(ROW_ID);
         var r2 = document.getElementById('tmCardsRow2');
@@ -1201,6 +1227,20 @@
       if (s === reg.sig) return;
       reg.sig = s;
       applyTile(reg.el, sp);
+      // A measured band tile re-measures when its content
+      // changes (a later BIMS landing, a new weight):
+      // its frame follows its content, so a wider value
+      // never clips inside the old frame. Data-driven
+      // only - the frame never moves without new data.
+      if (reg.el.getAttribute('data-tm-measured') && !__tileMeasuring[sp.key]) {
+        __tileMeasuring[sp.key] = true;
+        measureTile(sp, function (size) {
+          delete __tileMeasuring[sp.key];
+          if (!size || !__tileReg[sp.key]) return;
+          var el2 = __tileReg[sp.key].el;
+          el2.opts = Object.assign({}, el2.opts, { frozenW: size[0], frozenH: BAND_H });
+        });
+      }
     });
   }
 
