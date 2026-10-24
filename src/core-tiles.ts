@@ -16,6 +16,7 @@ type TileOpts = {
   weight?: number; color?: string; multi?: boolean; cols?: boolean; fit?: boolean;
   rows?: boolean; fillRow?: boolean; maxH?: number; minH?: number;
   nowrap?: boolean; maxw?: string; nav?: boolean;
+  stack?: boolean; lines?: boolean;
   click?: { label: string; value: string };
   action?: string;
   fill?: { label: string; value: string };
@@ -89,8 +90,17 @@ class TmTile extends LitElement {
       // size IS the frame - explicit width/height, no flex
       // growth, overflow clipped - and later text wraps
       // inside it instead of resizing the tile on screen.
+      // Row-2 stack (2.10.25): a full row wide, unfrozen -
+      // the measure path froze the overview at its
+      // unwrapped width (1790px), which runs off the
+      // screen in split view. flex:1 1 100% in the
+      // wrapping row puts one tile per line, always
+      // exactly the row's width, height following its
+      // wrapped lines. Stack wins over frozen: a stack
+      // tile is never measured, so it never freezes.
+      (o.stack ? 'flex:1 1 100%;min-width:0;' :
       (o.frozenW && o.frozenH ? 'flex:none;width:' + o.frozenW + 'px;height:' + o.frozenH + 'px;overflow:hidden;' :
-      (o.fillRow ? 'flex:1 1 0;min-width:0;' : (o.full ? 'flex:1 1 auto;min-width:0;' : (o.wide ? 'flex:1 1 180px;min-width:0;' : (o.grow ? 'flex:1 1 400px;min-width:0;' : (o.natW ? 'flex:none;width:auto;' + (o.maxW ? 'max-width:' + o.maxW + 'px;' : '') : (o.fixedW ? 'flex:0 1 ' + o.fixedW + 'px;width:' + o.fixedW + 'px;' : 'flex:none;'))))))) +
+      (o.fillRow ? 'flex:1 1 0;min-width:0;' : (o.full ? 'flex:1 1 auto;min-width:0;' : (o.wide ? 'flex:1 1 180px;min-width:0;' : (o.grow ? 'flex:1 1 400px;min-width:0;' : (o.natW ? 'flex:none;width:auto;' + (o.maxW ? 'max-width:' + o.maxW + 'px;' : '') : (o.fixedW ? 'flex:0 1 ' + o.fixedW + 'px;width:' + o.fixedW + 'px;' : 'flex:none;')))))))) +
       (o.maxH ? 'max-height:' + o.maxH + 'px;overflow:hidden;' : '') +
       (o.minH ? 'min-height:' + o.minH + 'px;' : '') +
       (o.maxw ? 'max-width:' + o.maxw + ';' : '') + (clickable ? 'cursor:pointer;' : '');
@@ -133,6 +143,19 @@ class TmTile extends LitElement {
       const cols = [];
       for (let ci = 0; ci < ncols; ci++) cols.push(lines.slice(ci * per, (ci + 1) * per));
       valuePart = html`<div data-medsfit="1" style="margin-top:9px;display:flex;gap:26px;min-width:0;">${cols.map((slice) => html`<div style="max-width:300px;flex:1 1 0;min-width:0;">${slice.map((ln) => html`<div class="tmMedLine" style=${fontCss + 'white-space:nowrap;'}>${ln}</div>`)}</div>`)}</div>`;
+    } else if (o.lines) {
+      // One visual line per med (2.10.25, his ruling):
+      // each \n-line renders as its own nowrap div with
+      // ellipsis, so the line count - and therefore the
+      // tile height - is identical on every tab no
+      // matter how wide the tab's bar is. (The generic
+      // pre-line path wraps long lines, so the same med
+      // list took a different number of visual lines -
+      // and a different height - per tab. The nowrap
+      // opt alone cannot do this: it collapses \n and
+      // runs the whole list onto one line.)
+      const lns = String(this.value).split('\n').filter((ln) => ln.length);
+      valuePart = html`<div style=${'margin-top:9px;' + fontCss}>${lns.map((ln) => html`<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ln}</div>`)}</div>`;
     } else {
       valuePart = html`<div ?data-fit=${!!o.fit} style=${'margin-top:9px;' + fontCss + (o.multi ? 'white-space:pre-line;' : '') + (o.nowrap ? 'white-space:nowrap;' : '')}>${this.value}</div>`;
     }
