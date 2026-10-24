@@ -731,13 +731,13 @@
     // 12/31/26' (fit:true shrinks the font if a longer
     // form ever lands). Allergies / Relationships
     // keep their widths by his ruling.
-    mkSpec(1, 'admission', 'Admission', admRows, { band: 1, bandW: 148, pad: '6px 12px', size: 12.5, rows: true });
-    mkSpec(1, 'agesex', 'Age / Sex', d.ageSex || '', { band: 1, bandW: 72, pad: '6px 12px', size: 15, warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex || '' }, fill: { label: 'Age/Sex', value: d.ageSex || '' } });
-    mkSpec(1, 'room', 'Room', d.room || '', { band: 1, bandW: 68, pad: '6px 12px', size: 15 });
-    mkSpec(1, 'allergies', 'Allergies', d.allergies || '', { band: 1, bandW: 300, pad: '6px 12px', size: 13, natW: true, maxW: 300, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies || '' }, fill: { label: 'Allergies', value: d.allergies || '' } });
-    mkSpec(1, 'weight', 'Weight', d.weight || '', { band: 1, bandW: 88, pad: '6px 12px', size: 15, nav: true, nowrap: true, fit: true, color: d.weightRed ? '#a33327' : undefined });
-    mkSpec(1, 'bims', 'BIMS', d.bims || '', { band: 1, bandW: 128, pad: '6px 12px', size: 14, natW: true, nowrap: true, fit: true, warn: !!(tw && tw.bims), click: { label: 'BIMS', value: d.bims || '' }, fill: { label: 'BIMS', value: d.bims || '' } });
-    mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 196, pad: '6px 12px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
+    mkSpec(1, 'admission', 'Admission', admRows, { band: 1, bandW: 140, pad: '6px 8px', size: 12.5, rows: true });
+    mkSpec(1, 'agesex', 'Age / Sex', d.ageSex || '', { band: 1, bandW: 72, pad: '6px 8px', size: 15, center: true, warn: !!(tw && tw.age), click: { label: 'Age/Sex', value: d.ageSex || '' }, fill: { label: 'Age/Sex', value: d.ageSex || '' } });
+    mkSpec(1, 'room', 'Room', d.room || '', { band: 1, bandW: 55, pad: '6px 8px', size: 15, center: true });
+    mkSpec(1, 'allergies', 'Allergies', d.allergies || '', { band: 1, bandW: 292, pad: '6px 8px', size: 13, natW: true, maxW: 300, weight: 600, color: '#a33327', fit: true, warn: !!(tw && tw.allergies), click: { label: 'Allergies', value: d.allergies || '' }, fill: { label: 'Allergies', value: d.allergies || '' } });
+    mkSpec(1, 'weight', 'Weight', d.weight || '', { band: 1, bandW: 80, pad: '6px 8px', size: 15, nav: true, nowrap: true, fit: true, center: true, color: d.weightRed ? '#a33327' : undefined });
+    mkSpec(1, 'bims', 'BIMS', d.bims || '', { band: 1, bandW: 120, pad: '6px 8px', size: 14, natW: true, nowrap: true, fit: true, center: true, warn: !!(tw && tw.bims), click: { label: 'BIMS', value: d.bims || '' }, fill: { label: 'BIMS', value: d.bims || '' } });
+    mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 188, pad: '6px 8px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
     var medsChip = String(d.meds === '- none' ? 0 : (d.meds ? d.meds.split('\n').length : 0));
     if (d.medsFill !== null && d.medsFill !== undefined) {
       mkSpec(2, 'meds', 'Psych meds', d.meds || '', { cols: true, wide: true, multi: true, size: 13, weight: 600, maxw: '920px', warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip, d.stampMeds);
