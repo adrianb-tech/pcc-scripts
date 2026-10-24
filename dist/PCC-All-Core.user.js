@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.21
+// @version      2.10.22
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11821,6 +11821,58 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		var __tileMeasuring = {};
 		var __lastSpecs = null;
+		var __bandGateOpen = false;
+		var __bandSettled = false;
+		var __bandPending = {};
+		var __bandMeasuring = {};
+		function tryFlushBand() {
+			if (__bandGateOpen) return;
+			if (!__bandSettled) return;
+			for (var k in __bandMeasuring) return;
+			var keys = Object.keys(__bandPending);
+			if (!keys.length) return;
+			__bandGateOpen = true;
+			var order = ROW_KEYS[1] || [];
+			keys.sort(function(a, b) {
+				return order.indexOf(a) - order.indexOf(b);
+			});
+			keys.forEach(function(k) {
+				var pend = __bandPending[k];
+				delete __bandPending[k];
+				var sp = pend.sp;
+				if (__tileReg[sp.key]) return;
+				var r1 = document.getElementById(ROW_ID);
+				var r2 = document.getElementById("tmCardsRow2");
+				if (!r1 || !r2) return;
+				if (sp.opts.fillRow) {
+					var fel = createTile(sp);
+					__tileReg[sp.key].sig = specSig(sp);
+					insertTileInOrder(r1, fel, sp);
+					scheduleFit(sp.key, fel);
+					return;
+				}
+				if (!sp.opts.bandMeasure) {
+					var bel = createTile(Object.assign({}, sp, { opts: Object.assign({}, sp.opts, {
+						frozenW: sp.opts.bandW,
+						frozenH: BAND_H
+					}) }));
+					bel.setAttribute("data-tm-frozen", "1");
+					__tileReg[sp.key].sig = specSig(sp);
+					insertTileInOrder(r1, bel, sp);
+					scheduleFit(sp.key, bel);
+					return;
+				}
+				var el = createTile(Object.assign({}, sp, { opts: Object.assign({}, sp.opts, {
+					frozenW: pend.size[0],
+					frozenH: BAND_H
+				}) }));
+				el.setAttribute("data-tm-frozen", "1");
+				el.setAttribute("data-tm-measured", "1");
+				__tileReg[sp.key].sig = specSig(sp);
+				insertTileInOrder(r1, el, sp);
+				scheduleFit(sp.key, el);
+			});
+		}
 		function presentReadyTiles(specs) {
 			plantBand();
 			var row = document.getElementById(ROW_ID);
@@ -11838,10 +11890,43 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var settled = settledNow();
 			var fallback = settled && __settleObserved;
 			if (settled) __settleObserved = true;
+			if (settled) __bandSettled = true;
 			specs.forEach(function(sp) {
 				if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
 				if (!tileReady(sp, fallback)) return;
 				if (sp.opts && sp.opts.band) {
+					if (!__bandGateOpen) {
+						if (sp.opts.fillRow || !sp.opts.bandMeasure) {
+							__bandPending[sp.key] = {
+								sp,
+								size: null
+							};
+							return;
+						}
+						__tileMeasuring[sp.key] = true;
+						__bandMeasuring[sp.key] = true;
+						measureTile(sp, function(size) {
+							delete __tileMeasuring[sp.key];
+							delete __bandMeasuring[sp.key];
+							if (size && !__tileReg[sp.key]) {
+								var fresh = null;
+								(__lastSpecs || []).forEach(function(s2) {
+									if (s2.key === sp.key) fresh = s2;
+								});
+								if (fresh && specSig(fresh) !== specSig(sp)) {
+									buildCards();
+									tryFlushBand();
+									return;
+								}
+								__bandPending[sp.key] = {
+									sp,
+									size
+								};
+							}
+							tryFlushBand();
+						});
+						return;
+					}
 					if (sp.opts.fillRow) {
 						var fel = createTile(sp);
 						__tileReg[sp.key].sig = specSig(sp);
@@ -11890,6 +11975,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					scheduleFit(sp.key, el);
 				});
 			});
+			if (!__bandGateOpen) tryFlushBand();
 		}
 		function scheduleFit(key, el) {
 			if (!el) return;
