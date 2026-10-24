@@ -764,9 +764,9 @@
     mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 188, pad: '6px 8px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
     var medsChip = String(d.meds === '- none' ? 0 : (d.meds ? d.meds.split('\n').length : 0));
     if (d.medsFill !== null && d.medsFill !== undefined) {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, lines: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 132, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, lines: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
     } else {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, lines: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 132, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, lines: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
     }
     // Summary (his change-set + spec): the assembled
     // picture - his notes, the progress notes, labs for
