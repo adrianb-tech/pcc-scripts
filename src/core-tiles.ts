@@ -12,7 +12,7 @@ import { html, LitElement } from 'lit';
 
 type TileOpts = {
   warn?: boolean; rose?: boolean; pad?: string; minW?: number; wide?: boolean; full?: boolean;
-  grow?: boolean; natW?: boolean; maxW?: number; fixedW?: number; size?: number;
+  grow?: boolean; natW?: boolean; maxW?: number; fixedW?: number; size?: number; center?: boolean;
   weight?: number; color?: string; multi?: boolean; cols?: boolean; fit?: boolean;
   rows?: boolean;
   nowrap?: boolean; maxw?: string; nav?: boolean;
@@ -83,6 +83,7 @@ class TmTile extends LitElement {
       (o.warn ? '#ff8080' : (o.rose ? '#f0c8c2' : '#e2e8f0')) + ';border-radius:12px;box-shadow:' +
       (o.warn ? '0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)' : '0 1px 3px rgba(15,23,42,.05)') + ';' +
       'padding:' + (o.pad || '12px 16px 14px') + ';min-width:' + (o.minW || 0) + 'px;' +
+      (o.center ? 'text-align:center;' : '') +
       // SMOOTH ARRIVAL freeze (audit A3): when moreless
       // has frozen this tile at presentation, the frozen
       // size IS the frame - explicit width/height, no flex
@@ -130,7 +131,7 @@ class TmTile extends LitElement {
       valuePart = html`<div ?data-fit=${!!o.fit} style=${'margin-top:9px;' + fontCss + (o.multi ? 'white-space:pre-line;' : '') + (o.nowrap ? 'white-space:nowrap;' : '')}>${this.value}</div>`;
     }
     return html`<div data-tm-card style=${cardCss} title=${clickable ? 'Click to copy' : ''} @mousedown=${this.onMouseDown} @click=${this.onClick}>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;">
+      <div style="display:flex;align-items:center;justify-content:${o.center ? 'center' : 'space-between'};gap:14px;">
         <span data-tm-label style=${labelCss}>${this.label}</span>
         ${this.chip ? (o.anchorCycle
           ? html`<span style=${chipCss} title="Switch summary window" @click=${this.onAnchorClick}>${this.chip}</span>`
