@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.24
+// @version      2.10.25
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5747,7 +5747,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		render() {
 			const o = this.opts || {};
 			const clickable = !!(o.click || o.delegate || o.nav || o.action);
-			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.center ? "text-align:center;" : "") + (o.frozenW && o.frozenH ? "flex:none;width:" + o.frozenW + "px;height:" + o.frozenH + "px;overflow:hidden;" : o.fillRow ? "flex:1 1 0;min-width:0;" : o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxH ? "max-height:" + o.maxH + "px;overflow:hidden;" : "") + (o.minH ? "min-height:" + o.minH + "px;" : "") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.center ? "text-align:center;" : "") + (o.stack ? "flex:1 1 100%;min-width:0;" : o.frozenW && o.frozenH ? "flex:none;width:" + o.frozenW + "px;height:" + o.frozenH + "px;overflow:hidden;" : o.fillRow ? "flex:1 1 0;min-width:0;" : o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxH ? "max-height:" + o.maxH + "px;overflow:hidden;" : "") + (o.minH ? "min-height:" + o.minH + "px;" : "") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
 			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
 			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
 			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
@@ -5773,6 +5773,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				const cols = [];
 				for (let ci = 0; ci < ncols; ci++) cols.push(lines.slice(ci * per, (ci + 1) * per));
 				valuePart = b`<div data-medsfit="1" style="margin-top:9px;display:flex;gap:26px;min-width:0;">${cols.map((slice) => b`<div style="max-width:300px;flex:1 1 0;min-width:0;">${slice.map((ln) => b`<div class="tmMedLine" style=${fontCss + "white-space:nowrap;"}>${ln}</div>`)}</div>`)}</div>`;
+			} else if (o.lines) {
+				const lns = String(this.value).split("\n").filter((ln) => ln.length);
+				valuePart = b`<div style=${"margin-top:9px;" + fontCss}>${lns.map((ln) => b`<div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ln}</div>`)}</div>`;
 			} else valuePart = b`<div ?data-fit=${!!o.fit} style=${"margin-top:9px;" + fontCss + (o.multi ? "white-space:pre-line;" : "") + (o.nowrap ? "white-space:nowrap;" : "")}>${this.value}</div>`;
 			return b`<div data-tm-card style=${cardCss} title=${clickable ? "Click to copy" : ""} @mousedown=${this.onMouseDown} @click=${this.onClick}>
       <div style="display:flex;align-items:center;justify-content:${o.center ? "center" : "space-between"};gap:14px;">
@@ -11583,6 +11586,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				size: 13,
 				weight: 600,
 				multi: true,
+				lines: true,
 				warn: !!(tw && tw.meds),
 				click: {
 					label: "Psych meds",
@@ -11602,11 +11606,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				size: 13,
 				weight: 600,
 				multi: true,
+				lines: true,
 				warn: !!(tw && tw.meds),
 				delegate: "meds"
 			}, medsChip);
 			mkSpec(2, "summary", "Summary", d.summary || "", {
-				full: true,
+				stack: true,
 				multi: true,
 				size: 13,
 				weight: 600,
@@ -11621,7 +11626,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			}, sumAnchorLabel());
 			mkSpec(2, "overview", "Psychiatric overview", d.overview || "", {
-				full: true,
+				stack: true,
 				multi: true,
 				size: 13,
 				weight: 600,
@@ -11635,7 +11640,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			});
 			mkSpec(2, "dx", "Diagnoses", d.dx || "", {
-				full: true,
+				stack: true,
 				multi: true,
 				warn: !!(tw && tw.dx),
 				size: 13,
@@ -11650,7 +11655,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			}, null, d.stampDx);
 			mkSpec(2, "beh", "Behaviors", d.beh || "", {
-				full: true,
+				stack: true,
 				multi: true,
 				size: 13,
 				weight: 600
@@ -12004,6 +12009,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			specs.forEach(function(sp) {
 				if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
 				if (!tileReady(sp, fallback)) return;
+				if (sp.opts && sp.opts.stack && sp.row === 2) {
+					var sel = createTile(sp);
+					__tileReg[sp.key].sig = specSig(sp);
+					var sr1 = document.getElementById(ROW_ID);
+					var sr2 = document.getElementById("tmCardsRow2");
+					if (sr1 && sr2) insertTileInOrder(sr2, sel, sp);
+					scheduleFit(sp.key, sel);
+					return;
+				}
 				if (sp.opts && sp.opts.band) {
 					if (!__bandGateOpen) {
 						if (sp.opts.fillRow || !sp.opts.bandMeasure) {
