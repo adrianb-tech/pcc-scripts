@@ -1953,7 +1953,35 @@
   // hover highlights ride along untouched. The wrap is
   // rebuilt on every render pass, like watchCollapse.
   function watchFlagsFlow(doc, box) {
-    if (!box || box.querySelector('.tmWatchBody')) return;
+    if (!box) return;
+    var existing = box.querySelector('.tmWatchBody');
+    if (existing) {
+      // Heal the hybrid broken state (TREE-1151): a body
+      // expand() unclipped and a mouseleave re-clamped
+      // carries max-height 26px with overflow visible
+      // !important + height auto !important standing.
+      // Strip the leftover !important declarations and
+      // re-clamp, so the box heals on the next Mica
+      // pass without a re-wrap. Never touch a
+      // hover-expanded body (maxHeight 'none'): collapsing
+      // it mid-hover would fight the hover itself.
+      // removeProperty + re-set (not a plain assignment)
+      // so the repair holds regardless of how this
+      // browser treats normal assignments over
+      // !important declarations.
+      try {
+        if (existing.style.maxHeight !== 'none' &&
+            (existing.style.getPropertyPriority('overflow') === 'important' ||
+             existing.style.getPropertyPriority('height') === 'important')) {
+          existing.style.removeProperty('overflow');
+          existing.style.setProperty('overflow', 'hidden');
+          existing.style.removeProperty('height');
+          existing.style.removeProperty('max-height');
+          existing.style.maxHeight = '26px';
+        }
+      } catch (e) {}
+      return;
+    }
     var body = doc.createElement('div');
     body.className = 'tmWatchBody';
     while (box.firstChild) body.appendChild(box.firstChild);
@@ -2440,6 +2468,15 @@
     // actually overflow, and write only after all reads.
     var clips = [];
     doc.querySelectorAll('body *').forEach(function(e) {
+      // The flags clip is DELIBERATE (his ruling): the
+      // watch body is clipped to one line by design and
+      // expands only on hover. expand() unclips PCC's
+      // own clipped portlet content, never our clip -
+      // unclipping it here is what left the hybrid
+      // broken state (TREE-1151: 26px box, visible
+      // overflow) after a later mouseleave re-clamped
+      // only the height.
+      if (e.classList && e.classList.contains('tmWatchBody')) return;
       if (e.scrollHeight > e.clientHeight + 1) {
         var cs = win.getComputedStyle(e);
         if (/(auto|scroll|hidden)/.test(cs.overflowY)) clips.push(e);
