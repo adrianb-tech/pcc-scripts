@@ -571,6 +571,27 @@
     return lines.length ? lines.join('\n') : '- none';
   }
 
+  // Psychiatric overview, deterministic v1 (his ruling,
+  // 2026-10-24): one paragraph assembled from the chart's
+  // own stops. No judgment, no model - each section
+  // appears only when its data landed. The analytic
+  // "best paragraph" version (a model judging salience)
+  // is a separate decision, not this tile.
+  function oneLine(s) {
+    return String(s || '').replace(/\s+/g, ' ').trim();
+  }
+  function composeOverview(d) {
+    if (!d) return '';
+    var parts = [];
+    if (d.ageSex) parts.push(oneLine(d.ageSex) + '.');
+    if (d.admission) parts.push('Admission: ' + oneLine(d.admission) + '.');
+    if (d.dx) parts.push('Diagnoses: ' + oneLine(d.dx) + '.');
+    if (d.meds) parts.push(d.meds === '- none' ? 'No psych meds.' : 'Psych meds: ' + oneLine(d.meds) + '.');
+    if (d.bims) parts.push('BIMS ' + oneLine(d.bims) + '.');
+    if (d.beh) parts.push('Behaviors noted: ' + oneLine(d.beh) + '.');
+    if (d.rel) parts.push('Relationships: ' + oneLine(d.rel) + '.');
+    return parts.join(' ');
+  }
   function buildCards() {
     pullFromPacket();
     var bar = document.getElementById('residentHeaderButtons');
@@ -588,6 +609,7 @@
       d.beh = feedBeh;
       d.words = (window.__tmYourWordsApi ? window.__tmYourWordsApi.get() : '');
       d.summary = (window.__tmSummary && lastStops) ? window.__tmSummary.text(lastStops, window.__tmSumAnchor) : '';
+      d.overview = composeOverview(d);
       d.stampRel = feedStampRel; d.stampBims = feedStampBims; d.stampMeds = feedStampMeds; d.stampDx = feedStampDx; d.stampBeh = feedStampBeh;
     }
   // His med order (2026-10-19): medications for the
@@ -742,21 +764,23 @@
     mkSpec(1, 'rel', 'Relationships', d.rel || '', { band: 1, bandW: 188, pad: '6px 8px', size: 15, natW: true, maxW: 280, fit: true, warn: !!(tw && tw.rel), click: { label: 'Relationships', value: d.rel || '' }, fill: { label: 'Relationships', value: d.rel || '' } });
     var medsChip = String(d.meds === '- none' ? 0 : (d.meds ? d.meds.split('\n').length : 0));
     if (d.medsFill !== null && d.medsFill !== undefined) {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 110, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), click: { label: 'Psych meds', value: d.medsFill }, fill: { label: 'Psych meds', value: d.medsFill } }, medsChip);
     } else {
-      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 110, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
+      mkSpec(1, 'meds', 'Psych meds', d.meds || '', { band: 1, fillRow: true, maxH: 115, minH: 72, pad: '6px 8px', size: 13, weight: 600, multi: true, warn: !!(tw && tw.meds), delegate: 'meds' }, medsChip);
     }
     // Summary (his change-set + spec): the assembled
     // picture - his notes, the progress notes, labs for
     // his meds, weight/BIMS trends, GDR tracking. First
     // on the second line: the picture ahead of the parts.
     mkSpec(2, 'summary', 'Summary', d.summary || '', { full: true, multi: true, size: 13, weight: 600, anchorCycle: true, click: { label: 'Summary', value: d.summary || '' }, fill: { label: 'Summary', value: d.summary || '' } }, sumAnchorLabel());
-    // Your words (converted from the retired Psychiatry
-    // tab, his change-set): his own dictated text for this
-    // resident, memory-only, edited in the panel its click
-    // opens. First on the second line - his words ahead of
-    // the chart's.
-    mkSpec(2, 'words', 'Your words', d.words || '', { full: true, multi: true, size: 13, weight: 600, action: 'yourwords' });
+    // Psychiatric overview (his ruling, 2026-10-24):
+    // Your words becomes a one-paragraph brief of the
+    // chart. Deterministic v1 (no model, nothing phones
+    // out): the paragraph is the chart's own stops in
+    // clinical order, each section present only when its
+    // data landed. Copyable like Summary, so the brief
+    // can go straight into a note.
+    mkSpec(2, 'overview', 'Psychiatric overview', d.overview || '', { full: true, multi: true, size: 13, weight: 600, click: { label: 'Psychiatric overview', value: d.overview || '' }, fill: { label: 'Psychiatric overview', value: d.overview || '' } });
     // Diagnoses + Behaviors join the row (his change-set,
     // 2026-10-19): full-line tiles under the first row,
     // fed by the packet like the others. Diagnoses carries
@@ -967,7 +991,7 @@
   // block beneath it: meds first, then the full-line tiles.
   var BAND_H = 72;
   var ROW_KEYS = { 1: ['admission', 'agesex', 'room', 'allergies', 'weight', 'bims', 'rel', 'meds'],
-                   2: ['summary', 'words', 'beh', 'dx'] };
+                   2: ['summary', 'overview', 'beh', 'dx'] };
   function stopLanded(k) {
     var s = lastStops && lastStops[k];
     return !!(s && s.status === 'landed');
@@ -1034,6 +1058,14 @@
       if (!settledNow()) return false;
       return SUMMARY_INPUTS.every(function (k) { return stopResolved(k); });
     }
+    // Stored first paint (2.10.24): band tiles may present
+    // from a complete stored set before settle - the gate
+    // in presentReadyTiles already verified the set is
+    // complete (__bandStored), and the flush still lands
+    // them together in spec order. Row 2 keeps its settle
+    // gate: it sits below the fold and its tiles compose
+    // from stops that keep arriving.
+    if (sp.row === 1 && __bandStored) return true;
     return settledNow() || fallback;
   }
   function keyOfTileEl(el) {
@@ -1143,11 +1175,36 @@
   // data arrival, not a first-paint shift).
   var __bandGateOpen = false;
   var __bandSettled = false; // latched: settle never un-fires for the gate
+  var __bandStored = false; // latched: stored-packet first paint opened the gate
   var __bandPending = {};    // key -> {sp, size} band tiles held for the first paint
   var __bandMeasuring = {};  // key -> true while a BAND measure is in flight
+  // Stored-packet first paint (2.10.24, his 1-second ask):
+  // the band may paint from the resident's SAVED packet
+  // before the load settles, when the saved stops cover
+  // the band's inputs. The live header (cardData) already
+  // supplies admission/age/room/allergies/weight by the
+  // time specs exist; the packet must carry relations,
+  // BIMS, and a meds list. Fresh landings count the same
+  // as stored ones - what matters is that the values are
+  // LANDED, not that they are old. The gate still opens
+  // exactly once, with the full set, in spec order - the
+  // 2.10.22 no-shift law stands; only the wait for settle
+  // goes away. Verdicts and G still wait for real settle
+  // (window.__tmCore.settled()), which this latch never
+  // touches.
+  function storedBandReady() {
+    try {
+      var s = lastStops || {};
+      if (!s.relations || s.relations.status !== 'landed') return false;
+      if (!s.bims || s.bims.status !== 'landed') return false;
+      var ml = (s.header && s.header.medsList) || (s.dashmeds && s.dashmeds.status === 'landed' && s.dashmeds.lines);
+      if (!ml) return false;
+      return true;
+    } catch (e) { return false; }
+  }
   function tryFlushBand() {
     if (__bandGateOpen) return;
-    if (!__bandSettled) return; // partial pre-settle set must not open the gate
+    if (!__bandSettled && !__bandStored) return; // partial pre-settle set must not open the gate (unless the stored set is complete)
     for (var k in __bandMeasuring) return; // a band measure is still in flight
     var keys = Object.keys(__bandPending);
     if (!keys.length) return; // nothing ready yet - gate stays closed
@@ -1206,6 +1263,7 @@
     var fallback = settled && __settleObserved;
     if (settled) __settleObserved = true;
     if (settled) __bandSettled = true;
+    if (!__bandGateOpen && !__bandSettled && storedBandReady()) __bandStored = true;
     specs.forEach(function (sp) {
       if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
       if (!tileReady(sp, fallback)) return;
