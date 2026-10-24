@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.15
+// @version 1.16
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -228,18 +228,53 @@ var __s3mod_Hide_unused_tabs = 1;
       if (ALL_TABS.indexOf(norm(s.textContent)) !== -1 && s.children.length <= 2) s.style.display = '';
     }
 
+    // Current tab from the URL first (v1.16): the page URL
+    // already says where he is, while the session memory
+    // may still name the tab he came FROM and PCC's
+    // selected class may not be set yet on the first
+    // paint. PCC's own selected class still wins below
+    // when it exists; the memory is the fallback.
+    // Unknown URLs yield '' and the memory/class path
+    // decides - never paint a wrong current.
+    function urlTab() {
+      var u = location.href;
+      if (/cp_residentdashboard/i.test(u)) return 'DASH';
+      if (/cp_careclientprofile/i.test(u)) return 'PROFILE';
+      if (/progressnotes/i.test(u)) return 'PROG NOTES';
+      return '';
+    }
     // Current-tab memory (v1.7, his report): MORE -> click a hidden tab ->
     // the page loads but the bar re-collapses without that tab, so he can't
     // see where he is. Remember his tab clicks for the session; if he is ON
     // a normally-hidden tab, keep THAT tab visible in the collapsed bar and
     // mark it as current. Bonus signal: PCC's own selected-tab class.
-    var cur = '';
-    try { cur = sessionStorage.getItem('pccCurTab') || ''; } catch (e) {}
+    var cur = urlTab();
+    try { if (!cur) cur = sessionStorage.getItem('pccCurTab') || ''; } catch (e) {}
     order.forEach(function (name) {
       var el = tabs[name];
       var a = el.querySelector('a');
       var cls = String(el.className || '') + ' ' + (a ? String(a.className || '') : '');
       if (/(selected|active|current)/i.test(cls) || el.getAttribute('aria-selected') === 'true') cur = name;
+      if (!el.dataset.pccFwd) {
+        el.dataset.pccFwd = '1';
+        el.addEventListener('click', function (ev) {
+          // Dead-padding forward (v1.16, his report
+          // 2026-10-24): paintTab styles the CONTAINER
+          // (TD/LI) when PCC's navigation lives on a
+          // smaller inner link, so the padding ring
+          // looks like a button but clicks nothing.
+          // Forward a click that did NOT land on a
+          // link to the container's own link, so the
+          // whole painted button navigates. Skipped
+          // when the container itself is the link or
+          // button, or carries its own onclick - those
+          // already navigate from the padding.
+          if (ev.target && ev.target.closest && ev.target.closest('a')) return;
+          if (el.tagName === 'A' || el.tagName === 'BUTTON' || el.onclick) return;
+          var a = el.querySelector('a');
+          if (a) a.click();
+        });
+      }
       if (!el.dataset.pccTrack) {
         el.dataset.pccTrack = '1';
         el.addEventListener('click', function () {
