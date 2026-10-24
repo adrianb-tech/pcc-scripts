@@ -2411,9 +2411,24 @@
     if (medsDoc && medsPanel && medsPanel.parentNode && panel.ownerDocument !== medsDoc) {
       var oldT = medsDoc.getElementById('dxToggle');
       if (oldT) oldT.remove();
+      // A toggle parked on the Edit Layout bar by a Main-view
+      // pass must not linger there in Mica view: the fresh
+      // Diagnoses-frame toggle (just recreated by setButton)
+      // is the live one, so the bar copy is dropped.
+      try {
+        var topDoc = doc.defaultView && doc.defaultView.parent ? doc.defaultView.parent.document : null;
+        var barT = topDoc && topDoc.getElementById('dxToggle');
+        if (barT) barT.remove();
+      } catch (e) {}
       var tog = doc.getElementById('dxToggle');
       medsPanel.parentNode.insertBefore(panel, medsPanel.nextSibling);
-      if (tog) medsPanel.parentNode.insertBefore(tog, panel);
+      if (tog) {
+        // Undo the bar ride (orderMainDash floats it right
+        // with no margin); back to setButton's own shape.
+        tog.style.cssFloat = '';
+        tog.style.margin = '0 6px 6px 0';
+        medsPanel.parentNode.insertBefore(tog, panel);
+      }
     }
   }
 
@@ -2532,6 +2547,53 @@
     } catch (e) {}
   }
 
+  // Main view (his ruling, 2026-10-24): the Psych dx first
+  // toggle leaves the Diagnoses column and rides the Edit
+  // Layout bar, right-aligned above the Diagnoses box - so
+  // the Medications and Active Diagnoses green bars sit at
+  // the same level (the toggle was pushing the Diagnoses
+  // bar one bar lower from inside its frame). setButton
+  // recreates the toggle in the Diagnoses frame every pass
+  // (it is missing there once moved), so each pass moves
+  // the fresh copy up and drops the previous bar copy -
+  // exactly one toggle, always the fresh text. Its click
+  // still toggles: the handler closes over the Diagnoses
+  // frame document, like the flags button's.
+  function orderMainDash() {
+    try {
+      if (dashView() === 'main') return; // folded = user Mica view only
+      var dxDoc = null;
+      document.querySelectorAll('iframe[id^="iFramePanel_"]').forEach(function (f) {
+        try { if (DX_FRAME.test(f.id)) dxDoc = f.contentDocument || f.contentWindow.document; } catch (e) {}
+      });
+      if (!dxDoc || !dxDoc.body) return;
+      var tog = dxDoc.getElementById('dxToggle');
+      if (!tog) return; // already parked in the bar, or no Dx frame yet
+      // The Edit Layout bar: the row holding PCC's Edit
+      // Layout button (tmViewBtn sits in it too, which is
+      // why hideDashChrome leaves the row visible). Fall
+      // back to the View button's parent when the Edit
+      // Layout button is not found.
+      var cell = null;
+      var el = document.getElementById('ESOLeditLayout');
+      var tr = el && el.closest ? el.closest('tr') : null;
+      if (tr) {
+        var cells = tr.querySelectorAll('td');
+        if (cells.length) cell = cells[cells.length - 1];
+      }
+      if (!cell) {
+        var vb = document.getElementById('tmViewBtn');
+        if (vb && vb.parentNode) cell = vb.parentNode;
+      }
+      if (!cell) return;
+      var oldT = document.getElementById('dxToggle');
+      if (oldT && oldT !== tog) oldT.remove();
+      if (tog.parentNode !== cell) cell.appendChild(tog);
+      tog.style.cssFloat = 'right';
+      tog.style.margin = '0';
+    } catch (e) {}
+  }
+
   // Main view: Medications and Active Diagnoses sit side by side
   // (his ask, 2026-10-14). Pure CSS on PCC's #dragArea layout
   // table - the widget iframes are never reparented (that would
@@ -2598,6 +2660,7 @@
     // the Meds frame during the Dx pass), and the
     // side-by-side heights equalized on fresh numbers.
     orderMicaDash();
+    orderMainDash();
     equalizePortletHeights();
   }
 
