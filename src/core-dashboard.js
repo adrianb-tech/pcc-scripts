@@ -1104,6 +1104,20 @@
     } catch (e) { return null; }
   }
 
+  // The Medications frame's document, from any frame
+  // document: the portlet iframes hang off the top
+  // document's dragArea, so the parent document holds
+  // them. Used by the Mica order (the Diagnoses panel
+  // moves into the Medications frame).
+  function medsDocOf(doc) {
+    try {
+      var td = doc.defaultView.parent.document;
+      if (!td) return null;
+      var f = td.getElementById('iFramePanel_Medications');
+      return f ? (f.contentDocument || f.contentWindow.document) : null;
+    } catch (e) { return null; }
+  }
+
   // FULL-LIST LAYOUT (his composition, 2026-10-14): the three
   // boxes (flags | labs | black box) sit side by side in thirds
   // in a row in the DASHBOARD document, above the side-by-side
@@ -1123,7 +1137,28 @@
       row = td.createElement('div');
       row.id = 'tmBoxesRow';
       row.style.cssText = 'display:flex;gap:10px;align-items:stretch;width:100%;box-sizing:border-box;margin:0 0 10px 0;';
-      area.parentNode.insertBefore(row, area);
+    }
+    // His order (2026-10-24): Medications / Active
+    // Diagnoses FIRST, the screening row underneath -
+    // so the row goes AFTER the dragArea, not before
+    // it. The flags button travels with its section:
+    // it is rebuilt in-frame every pass (setButton only
+    // creates when missing there), so each pass moves
+    // the fresh copy up and drops the previous one -
+    // exactly one button, always the fresh count. Its
+    // click still toggles the panel: togglePanel falls
+    // back to the parent document when the panel is
+    // not in the button's own document.
+    if (row.parentNode !== area.parentNode || area.nextSibling !== row) {
+      area.parentNode.insertBefore(row, area.nextSibling);
+    }
+    var btn = doc.getElementById('interactionInfo');
+    if (btn) {
+      var oldBtn = td.getElementById('interactionInfo');
+      if (oldBtn && oldBtn !== btn) oldBtn.remove();
+      if (btn.parentNode !== row.parentNode || row.previousSibling !== btn) {
+        row.parentNode.insertBefore(btn, row);
+      }
     }
     BOX_IDS.forEach(function (id) {
       var fresh = doc.getElementById(id);
@@ -2290,12 +2325,20 @@
     var firstRow = null;
     (groups || []).some(function (g) { if (g.rows[0]) { firstRow = g.rows[0]; return true; } return false; });
     if (firstRow) table = firstRow.closest('table');
-    var panel = doc.getElementById('tmDxPanel');
+    // The panel may live in the Medications frame (the
+    // Mica order moves it there - see below), so look
+    // across documents before creating a second one.
+    var medsDoc = medsDocOf(doc);
+    var panel = doc.getElementById('tmDxPanel') || (medsDoc && medsDoc.getElementById('tmDxPanel')) || null;
     // Main view keeps only ICD-10 + Short Description.
     trimTable(doc, table, ['ICD-10', 'Short Description'], !folded);
     sealBoxes(table);
     if (!folded) {
       if (panel) panel.remove();
+      // A toggle moved into the Medications frame by a
+      // Mica pass must not linger there in Main view.
+      var movedT = medsDoc && medsDoc.getElementById('dxToggle');
+      if (movedT) movedT.remove();
       if (table) table.style.display = '';
       return;
     }
@@ -2347,8 +2390,31 @@
       bar.textContent = show
         ? '\u25BE ' + rest.length + ' more diagnoses \u2014 click to hide'
         : '\u25B8 ' + rest.length + ' more diagnoses \u2014 click to show all';
-      refitFrame(doc);
+      // The frame that OWNS the panel now (the panel
+      // may have moved into the Medications frame).
+      refitFrame(panel.ownerDocument || doc);
     };
+    // His order (2026-10-24, Mica view): Medications,
+    // Diagnoses, then the screening fields - but the
+    // panel lives in the Diagnoses frame and the fields
+    // live in the Medications frame, and frames cannot
+    // interleave. So the panel + its toggle move INTO
+    // the Medications frame, right after the meds
+    // panel; orderMicaDash (fit end) then puts the
+    // fields after them. setButton recreates the toggle
+    // in the Diagnoses frame every pass (it is missing
+    // there once moved), so the stale copy in the
+    // Medications frame is dropped first - exactly one
+    // toggle, always the fresh text. If the meds panel
+    // is not there yet, the move waits for a later pass.
+    var medsPanel = medsDoc && medsDoc.getElementById('tmMedsPanel');
+    if (medsDoc && medsPanel && medsPanel.parentNode && panel.ownerDocument !== medsDoc) {
+      var oldT = medsDoc.getElementById('dxToggle');
+      if (oldT) oldT.remove();
+      var tog = doc.getElementById('dxToggle');
+      medsPanel.parentNode.insertBefore(panel, medsPanel.nextSibling);
+      if (tog) medsPanel.parentNode.insertBefore(tog, panel);
+    }
   }
 
   function expand(doc) {
@@ -2409,6 +2475,61 @@
         unclipParents(f);
       } catch (e) {}
     });
+    equalizePortletHeights();
+  }
+
+  // Same-size fields (his ruling, 2026-10-24, Main view
+  // only): Medications and Active Diagnoses get equal
+  // height - the taller one's height, never a scroll
+  // inside. The widths are already equal (flex columns
+  // below). Event-driven only: runs at the end of fit()
+  // and refitFrame(), never on a timer or observer.
+  function equalizePortletHeights() {
+    try {
+      if (dashView() === 'main') return; // Mica view has no side-by-side tables
+      var meds = document.getElementById('iFramePanel_Medications');
+      var dx = null;
+      document.querySelectorAll('iframe[id^="iFramePanel_"]').forEach(function (f) {
+        if (DX_FRAME.test(f.id)) dx = f;
+      });
+      if (!meds || !dx) return;
+      var h = Math.max(meds.offsetHeight || 0, dx.offsetHeight || 0);
+      if (h <= 0) return;
+      if (Math.abs((meds.offsetHeight || 0) - h) > 2) meds.style.height = h + 'px';
+      if (Math.abs((dx.offsetHeight || 0) - h) > 2) dx.style.height = h + 'px';
+    } catch (e) {}
+  }
+
+  // Mica order (his ruling, 2026-10-24): Medications,
+  // Diagnoses, then the screening fields. The fields
+  // (flags button + watch box) live in the Medications
+  // frame above the meds panel; the Dx pass moves the
+  // Diagnoses panel into the same frame. This runs at
+  // fit() end, after both frame passes, and puts the
+  // fields after the panel. Idempotent: nodes already
+  // in place are left alone (insertBefore(x, x) would
+  // throw, so each move is guarded). The Meds frame
+  // is refit to its new content height, since the
+  // panel arrived after its own height was set.
+  function orderMicaDash() {
+    try {
+      if (dashView() !== 'main') return; // folded = user Mica view only
+      var medsF = document.getElementById('iFramePanel_Medications');
+      var medsDoc = medsF && (medsF.contentDocument || medsF.contentWindow.document);
+      if (!medsDoc || !medsDoc.body) return;
+      var medsPanel = medsDoc.getElementById('tmMedsPanel');
+      var dxPanel = medsDoc.getElementById('tmDxPanel');
+      var anchor = dxPanel || medsPanel;
+      if (!anchor || !anchor.parentNode) return;
+      var btn = medsDoc.getElementById('interactionInfo');
+      var watch = medsDoc.getElementById('tmWatchBox');
+      if (btn && btn !== anchor.nextSibling) anchor.parentNode.insertBefore(btn, anchor.nextSibling);
+      var after = (btn && btn.parentNode === anchor.parentNode) ? btn.nextSibling : anchor.nextSibling;
+      if (watch && watch !== after) anchor.parentNode.insertBefore(watch, after);
+      var h = Math.ceil(contentBottom(medsDoc)) + 30;
+      if (h > 80 && Math.abs(h - medsF.offsetHeight) > 5) medsF.style.height = h + 'px';
+      unclipParents(medsF);
+    } catch (e) {}
   }
 
   // Main view: Medications and Active Diagnoses sit side by side
@@ -2472,6 +2593,12 @@
         if (sig) processedSig[f.id] = sig;
       } catch (e) {}
     });
+    // Both frame passes ran: the Mica order can now be
+    // asserted across frames (the Dx panel arrives in
+    // the Meds frame during the Dx pass), and the
+    // side-by-side heights equalized on fresh numbers.
+    orderMicaDash();
+    equalizePortletHeights();
   }
 
   // Curator export (v2.32): the Gatherer fetches the
