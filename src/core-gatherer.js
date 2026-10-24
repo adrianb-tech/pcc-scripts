@@ -423,7 +423,7 @@
     // has drawn its box on this page.
     var bev = [];
     try { bev = (window.__tmBehEvents) ? window.__tmBehEvents.extract(document) : []; } catch (e) {}
-    if (b || bev.length) land('behaviors', { source: 'Progress Notes', at: nowT(), summary: b || '', events: bev.slice(0, 400) });
+    if (b || bev.length) land('behaviors', { source: 'Progress Notes', at: nowT(), summary: b || behEventsSummary(bev), events: bev.slice(0, 400) });
     var dx = readTile(/^Diagnoses\b/i, 700);
     var dxBox = document.getElementById('pnDxBox');
     if (dxBox) dx = norm(dxBox.textContent).slice(0, 700);
@@ -799,6 +799,31 @@
   // the same landing, at copy strength, stamped as a copy.
   // His own visit to the page still overwrites on sight
   // (native beats copy by the packet law).
+  // Behaviors summary from dated events (2.10.24): when
+  // no extractor box text exists, the tile still fills
+  // from the events the note table yields - otherwise an
+  // events-only landing carries an empty summary and the
+  // tile's feed (which requires a non-empty summary)
+  // never shows it. Shared by the live read and the
+  // fetch pipe.
+  function behEventsSummary(evs) {
+    if (!evs || !evs.length) return '';
+    var parts = [];
+    for (var i = 0; i < evs.length && parts.length < 5; i++) {
+      var e = evs[i];
+      // signals is an ARRAY of labels (behavevents.js:
+      // sigs = Object.keys(counts)) - Object.keys on it
+      // returns indices, not labels (Ear h209 caught
+      // this: "10/20/26: 0, 1, 2"). The object branch
+      // stays only as a defensive fallback.
+      var labels = (e && e.signals) ? (Array.isArray(e.signals) ? e.signals : Object.keys(e.signals)) : [];
+      if (!labels.length) continue;
+      var d = '';
+      try { var p = String(e.date || '').split('-'); if (p.length === 3) d = parseInt(p[1], 10) + '/' + parseInt(p[2], 10) + '/' + p[0].slice(2) + ': '; } catch (ex) {}
+      parts.push(d + labels.join(', '));
+    }
+    return parts.join('; ');
+  }
   function parseNotesPage(doc) {
     if (!doc || !doc.getElementById) return;
     var dxBox = doc.getElementById('pnDxBox');
@@ -810,7 +835,7 @@
     // there even when the box text is absent.
     var bev2 = [];
     try { bev2 = (window.__tmBehEvents) ? window.__tmBehEvents.extract(doc) : []; } catch (e) {}
-    if (b2 || bev2.length) land('behaviors', { source: 'Progress Notes', at: nowT(), summary: b2, events: bev2.slice(0, 400) });
+    if (b2 || bev2.length) land('behaviors', { source: 'Progress Notes', at: nowT(), summary: b2 || behEventsSummary(bev2), events: bev2.slice(0, 400) });
   }
   function notesUrl(urls) {
     if (urls.notes) {
