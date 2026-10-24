@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.23
+// @version      2.10.24
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
-// @run-at       document-idle
+// @run-at       document-end
 // ==/UserScript==
 
 (function() {
@@ -7926,7 +7926,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 		}
 		function watchFlagsFlow(doc, box) {
-			if (!box || box.querySelector(".tmWatchBody")) return;
+			if (!box) return;
+			var existing = box.querySelector(".tmWatchBody");
+			if (existing) {
+				try {
+					if (existing.style.maxHeight !== "none" && (existing.style.getPropertyPriority("overflow") === "important" || existing.style.getPropertyPriority("height") === "important")) {
+						existing.style.removeProperty("overflow");
+						existing.style.setProperty("overflow", "hidden");
+						existing.style.removeProperty("height");
+						existing.style.removeProperty("max-height");
+						existing.style.maxHeight = "26px";
+					}
+				} catch (e) {}
+				return;
+			}
 			var body = doc.createElement("div");
 			body.className = "tmWatchBody";
 			while (box.firstChild) body.appendChild(box.firstChild);
@@ -8372,6 +8385,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var win = doc.defaultView;
 			var clips = [];
 			doc.querySelectorAll("body *").forEach(function(e) {
+				if (e.classList && e.classList.contains("tmWatchBody")) return;
 				if (e.scrollHeight > e.clientHeight + 1) {
 					var cs = win.getComputedStyle(e);
 					if (/(auto|scroll|hidden)/.test(cs.overflowY)) clips.push(e);
@@ -9304,7 +9318,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (b || bev.length) land("behaviors", {
 				source: "Progress Notes",
 				at: nowT(),
-				summary: b || "",
+				summary: b || behEventsSummary(bev),
 				events: bev.slice(0, 400)
 			});
 			var dx = readTile(/^Diagnoses\b/i, 700);
@@ -9727,6 +9741,22 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}));
 			} catch (e) {}
 		}
+		function behEventsSummary(evs) {
+			if (!evs || !evs.length) return "";
+			var parts = [];
+			for (var i = 0; i < evs.length && parts.length < 5; i++) {
+				var e = evs[i];
+				var labels = e && e.signals ? Array.isArray(e.signals) ? e.signals : Object.keys(e.signals) : [];
+				if (!labels.length) continue;
+				var d = "";
+				try {
+					var p = String(e.date || "").split("-");
+					if (p.length === 3) d = parseInt(p[1], 10) + "/" + parseInt(p[2], 10) + "/" + p[0].slice(2) + ": ";
+				} catch (ex) {}
+				parts.push(d + labels.join(", "));
+			}
+			return parts.join("; ");
+		}
 		function parseNotesPage(doc) {
 			if (!doc || !doc.getElementById) return;
 			var dxBox = doc.getElementById("pnDxBox");
@@ -9747,7 +9777,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (b2 || bev2.length) land("behaviors", {
 				source: "Progress Notes",
 				at: nowT(),
-				summary: b2,
+				summary: b2 || behEventsSummary(bev2),
 				events: bev2.slice(0, 400)
 			});
 		}
@@ -11297,6 +11327,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return lines.length ? lines.join("\n") : "- none";
 		}
+		function oneLine(s) {
+			return String(s || "").replace(/\s+/g, " ").trim();
+		}
+		function composeOverview(d) {
+			if (!d) return "";
+			var parts = [];
+			if (d.ageSex) parts.push(oneLine(d.ageSex) + ".");
+			if (d.admission) parts.push("Admission: " + oneLine(d.admission) + ".");
+			if (d.dx) parts.push("Diagnoses: " + oneLine(d.dx) + ".");
+			if (d.meds) parts.push(d.meds === "- none" ? "No psych meds." : "Psych meds: " + oneLine(d.meds) + ".");
+			if (d.bims) parts.push("BIMS " + oneLine(d.bims) + ".");
+			if (d.beh) parts.push("Behaviors noted: " + oneLine(d.beh) + ".");
+			if (d.rel) parts.push("Relationships: " + oneLine(d.rel) + ".");
+			return parts.join(" ");
+		}
 		function buildCards() {
 			pullFromPacket();
 			var bar = document.getElementById("residentHeaderButtons");
@@ -11314,6 +11359,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				d.beh = feedBeh;
 				d.words = window.__tmYourWordsApi ? window.__tmYourWordsApi.get() : "";
 				d.summary = window.__tmSummary && lastStops ? window.__tmSummary.text(lastStops, window.__tmSumAnchor) : "";
+				d.overview = composeOverview(d);
 				d.stampRel = feedStampRel;
 				d.stampBims = feedStampBims;
 				d.stampMeds = feedStampMeds;
@@ -11531,7 +11577,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (d.medsFill !== null && d.medsFill !== void 0) mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				band: 1,
 				fillRow: true,
-				maxH: 110,
+				maxH: 115,
 				minH: 72,
 				pad: "6px 8px",
 				size: 13,
@@ -11550,7 +11596,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			else mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				band: 1,
 				fillRow: true,
-				maxH: 110,
+				maxH: 115,
 				minH: 72,
 				pad: "6px 8px",
 				size: 13,
@@ -11574,12 +11620,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					value: d.summary || ""
 				}
 			}, sumAnchorLabel());
-			mkSpec(2, "words", "Your words", d.words || "", {
+			mkSpec(2, "overview", "Psychiatric overview", d.overview || "", {
 				full: true,
 				multi: true,
 				size: 13,
 				weight: 600,
-				action: "yourwords"
+				click: {
+					label: "Psychiatric overview",
+					value: d.overview || ""
+				},
+				fill: {
+					label: "Psychiatric overview",
+					value: d.overview || ""
+				}
 			});
 			mkSpec(2, "dx", "Diagnoses", d.dx || "", {
 				full: true,
@@ -11744,7 +11797,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			],
 			2: [
 				"summary",
-				"words",
+				"overview",
 				"beh",
 				"dx"
 			]
@@ -11788,6 +11841,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					return stopResolved(k);
 				});
 			}
+			if (sp.row === 1 && __bandStored) return true;
 			return settledNow() || fallback;
 		}
 		function keyOfTileEl(el) {
@@ -11866,11 +11920,23 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		var __lastSpecs = null;
 		var __bandGateOpen = false;
 		var __bandSettled = false;
+		var __bandStored = false;
 		var __bandPending = {};
 		var __bandMeasuring = {};
+		function storedBandReady() {
+			try {
+				var s = lastStops || {};
+				if (!s.relations || s.relations.status !== "landed") return false;
+				if (!s.bims || s.bims.status !== "landed") return false;
+				if (!(s.header && s.header.medsList || s.dashmeds && s.dashmeds.status === "landed" && s.dashmeds.lines)) return false;
+				return true;
+			} catch (e) {
+				return false;
+			}
+		}
 		function tryFlushBand() {
 			if (__bandGateOpen) return;
-			if (!__bandSettled) return;
+			if (!__bandSettled && !__bandStored) return;
 			for (var k in __bandMeasuring) return;
 			var keys = Object.keys(__bandPending);
 			if (!keys.length) return;
@@ -11934,6 +12000,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var fallback = settled && __settleObserved;
 			if (settled) __settleObserved = true;
 			if (settled) __bandSettled = true;
+			if (!__bandGateOpen && !__bandSettled && storedBandReady()) __bandStored = true;
 			specs.forEach(function(sp) {
 				if (__tileReg[sp.key] || __tileMeasuring[sp.key]) return;
 				if (!tileReady(sp, fallback)) return;
