@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.22
+// @version      2.10.23
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5747,7 +5747,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		render() {
 			const o = this.opts || {};
 			const clickable = !!(o.click || o.delegate || o.nav || o.action);
-			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.center ? "text-align:center;" : "") + (o.frozenW && o.frozenH ? "flex:none;width:" + o.frozenW + "px;height:" + o.frozenH + "px;overflow:hidden;" : o.fillRow ? "flex:1 1 0;min-width:0;" : o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxH ? "max-height:" + o.maxH + "px;overflow:hidden;" : "") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.center ? "text-align:center;" : "") + (o.frozenW && o.frozenH ? "flex:none;width:" + o.frozenW + "px;height:" + o.frozenH + "px;overflow:hidden;" : o.fillRow ? "flex:1 1 0;min-width:0;" : o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxH ? "max-height:" + o.maxH + "px;overflow:hidden;" : "") + (o.minH ? "min-height:" + o.minH + "px;" : "") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
 			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
 			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
 			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
@@ -8354,9 +8354,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (medsDoc && medsPanel && medsPanel.parentNode && panel.ownerDocument !== medsDoc) {
 				var oldT = medsDoc.getElementById("dxToggle");
 				if (oldT) oldT.remove();
+				try {
+					var topDoc = doc.defaultView && doc.defaultView.parent ? doc.defaultView.parent.document : null;
+					var barT = topDoc && topDoc.getElementById("dxToggle");
+					if (barT) barT.remove();
+				} catch (e) {}
 				var tog = doc.getElementById("dxToggle");
 				medsPanel.parentNode.insertBefore(panel, medsPanel.nextSibling);
-				if (tog) medsPanel.parentNode.insertBefore(tog, panel);
+				if (tog) {
+					tog.style.cssFloat = "";
+					tog.style.margin = "0 6px 6px 0";
+					medsPanel.parentNode.insertBefore(tog, panel);
+				}
 			}
 		}
 		function expand(doc) {
@@ -8442,6 +8451,37 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				unclipParents(medsF);
 			} catch (e) {}
 		}
+		function orderMainDash() {
+			try {
+				if (dashView() === "main") return;
+				var dxDoc = null;
+				document.querySelectorAll("iframe[id^=\"iFramePanel_\"]").forEach(function(f) {
+					try {
+						if (DX_FRAME.test(f.id)) dxDoc = f.contentDocument || f.contentWindow.document;
+					} catch (e) {}
+				});
+				if (!dxDoc || !dxDoc.body) return;
+				var tog = dxDoc.getElementById("dxToggle");
+				if (!tog) return;
+				var cell = null;
+				var el = document.getElementById("ESOLeditLayout");
+				var tr = el && el.closest ? el.closest("tr") : null;
+				if (tr) {
+					var cells = tr.querySelectorAll("td");
+					if (cells.length) cell = cells[cells.length - 1];
+				}
+				if (!cell) {
+					var vb = document.getElementById("tmViewBtn");
+					if (vb && vb.parentNode) cell = vb.parentNode;
+				}
+				if (!cell) return;
+				var oldT = document.getElementById("dxToggle");
+				if (oldT && oldT !== tog) oldT.remove();
+				if (tog.parentNode !== cell) cell.appendChild(tog);
+				tog.style.cssFloat = "right";
+				tog.style.margin = "0";
+			} catch (e) {}
+		}
 		function applySideBySide() {
 			var st = document.getElementById("tmSideStyle");
 			if (dashView() !== "main") {
@@ -8493,6 +8533,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				} catch (e) {}
 			});
 			orderMicaDash();
+			orderMainDash();
 			equalizePortletHeights();
 		}
 		try {
@@ -11490,7 +11531,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (d.medsFill !== null && d.medsFill !== void 0) mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				band: 1,
 				fillRow: true,
-				maxH: 101,
+				maxH: 110,
+				minH: 72,
 				pad: "6px 8px",
 				size: 13,
 				weight: 600,
@@ -11508,7 +11550,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			else mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				band: 1,
 				fillRow: true,
-				maxH: 101,
+				maxH: 110,
+				minH: 72,
 				pad: "6px 8px",
 				size: 13,
 				weight: 600,
@@ -11631,7 +11674,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					row.id = ROW_ID;
 				}
 				if (row.parentNode !== bar) bar.appendChild(row);
-				row.style.cssText = "display:flex;gap:8px;flex-wrap:nowrap;margin:0;align-items:flex-start;min-width:0;font-family:-apple-system,Helvetica,Arial,sans-serif;";
+				row.style.cssText = "display:flex;flex:1 1 0;gap:8px;flex-wrap:nowrap;margin:0;align-items:flex-start;min-width:0;font-family:-apple-system,Helvetica,Arial,sans-serif;";
 				bar.style.display = "flex";
 				bar.style.alignItems = "center";
 				bar.style.flexWrap = "nowrap";
