@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.19
+// @version      2.10.20
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5747,7 +5747,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		render() {
 			const o = this.opts || {};
 			const clickable = !!(o.click || o.delegate || o.nav || o.action);
-			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.frozenW && o.frozenH ? "flex:none;width:" + o.frozenW + "px;height:" + o.frozenH + "px;overflow:hidden;" : o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
+			const cardCss = "background:" + (o.warn ? "#ff1a1a" : o.rose ? "#fdf3f2" : "#fff") + ";border:1px solid " + (o.warn ? "#ff8080" : o.rose ? "#f0c8c2" : "#e2e8f0") + ";border-radius:12px;box-shadow:" + (o.warn ? "0 0 10px rgba(255,26,26,.55),0 1px 3px rgba(15,23,42,.05)" : "0 1px 3px rgba(15,23,42,.05)") + ";padding:" + (o.pad || "12px 16px 14px") + ";min-width:" + (o.minW || 0) + "px;" + (o.center ? "text-align:center;" : "") + (o.frozenW && o.frozenH ? "flex:none;width:" + o.frozenW + "px;height:" + o.frozenH + "px;overflow:hidden;" : o.full ? "flex:1 1 auto;min-width:0;" : o.wide ? "flex:1 1 180px;min-width:0;" : o.grow ? "flex:1 1 400px;min-width:0;" : o.natW ? "flex:none;width:auto;" + (o.maxW ? "max-width:" + o.maxW + "px;" : "") : o.fixedW ? "flex:0 1 " + o.fixedW + "px;width:" + o.fixedW + "px;" : "flex:none;") + (o.maxw ? "max-width:" + o.maxw + ";" : "") + (clickable ? "cursor:pointer;" : "");
 			const labelCss = "white-space:nowrap;font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:" + (o.warn ? "#ffe1e1" : o.rose ? "#a05a52" : "#8494a7") + ";";
 			const fontCss = "font-size:" + (o.size || 21) + "px;font-weight:" + (o.weight || 700) + ";line-height:" + (o.multi ? "1.45" : "1.3") + ";color:" + (o.warn ? "#ffffff" : o.color || "#131c2b") + ";";
 			const chipCss = "font-size:16px;font-weight:800;color:" + (o.warn ? "#ffffff" : "#2563eb") + ";";
@@ -5776,7 +5776,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				valuePart = b`<div data-medsfit="1" style="margin-top:9px;display:flex;gap:26px;min-width:0;">${cols.map((slice) => b`<div style="max-width:300px;flex:1 1 0;min-width:0;">${slice.map((ln) => b`<div class="tmMedLine" style=${fontCss + "white-space:nowrap;"}>${ln}</div>`)}</div>`)}</div>`;
 			} else valuePart = b`<div ?data-fit=${!!o.fit} style=${"margin-top:9px;" + fontCss + (o.multi ? "white-space:pre-line;" : "") + (o.nowrap ? "white-space:nowrap;" : "")}>${this.value}</div>`;
 			return b`<div data-tm-card style=${cardCss} title=${clickable ? "Click to copy" : ""} @mousedown=${this.onMouseDown} @click=${this.onClick}>
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;">
+      <div style="display:flex;align-items:center;justify-content:${o.center ? "center" : "space-between"};gap:14px;">
         <span data-tm-label style=${labelCss}>${this.label}</span>
         ${this.chip ? o.anchorCycle ? b`<span style=${chipCss} title="Switch summary window" @click=${this.onAnchorClick}>${this.chip}</span>` : b`<span style=${chipCss}>${this.chip}</span>` : ""}
       </div>
@@ -11327,16 +11327,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			mkSpec(1, "admission", "Admission", "Re-entry|" + (d.admReentry || "—") + "\nInitial|" + (d.admInitial || "—") + "\nDischarge|" + (d.admDischarge || "—"), {
 				band: 1,
-				bandW: 148,
-				pad: "6px 12px",
+				bandW: 140,
+				pad: "6px 8px",
 				size: 12.5,
 				rows: true
 			});
 			mkSpec(1, "agesex", "Age / Sex", d.ageSex || "", {
 				band: 1,
 				bandW: 72,
-				pad: "6px 12px",
+				pad: "6px 8px",
 				size: 15,
+				center: true,
 				warn: !!(tw && tw.age),
 				click: {
 					label: "Age/Sex",
@@ -11349,14 +11350,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "room", "Room", d.room || "", {
 				band: 1,
-				bandW: 68,
-				pad: "6px 12px",
-				size: 15
+				bandW: 55,
+				pad: "6px 8px",
+				size: 15,
+				center: true
 			});
 			mkSpec(1, "allergies", "Allergies", d.allergies || "", {
 				band: 1,
-				bandW: 300,
-				pad: "6px 12px",
+				bandW: 292,
+				pad: "6px 8px",
 				size: 13,
 				natW: true,
 				maxW: 300,
@@ -11375,22 +11377,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "weight", "Weight", d.weight || "", {
 				band: 1,
-				bandW: 88,
-				pad: "6px 12px",
+				bandW: 80,
+				pad: "6px 8px",
 				size: 15,
 				nav: true,
 				nowrap: true,
 				fit: true,
+				center: true,
 				color: d.weightRed ? "#a33327" : void 0
 			});
 			mkSpec(1, "bims", "BIMS", d.bims || "", {
 				band: 1,
-				bandW: 128,
-				pad: "6px 12px",
+				bandW: 120,
+				pad: "6px 8px",
 				size: 14,
 				natW: true,
 				nowrap: true,
 				fit: true,
+				center: true,
 				warn: !!(tw && tw.bims),
 				click: {
 					label: "BIMS",
@@ -11403,8 +11407,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			mkSpec(1, "rel", "Relationships", d.rel || "", {
 				band: 1,
-				bandW: 196,
-				pad: "6px 12px",
+				bandW: 188,
+				pad: "6px 8px",
 				size: 15,
 				natW: true,
 				maxW: 280,
