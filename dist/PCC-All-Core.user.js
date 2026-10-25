@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.26
+// @version      2.10.27
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9033,6 +9033,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		function badRelations(stop) {
 			return !!(stop && stop.summary && /^relationships\b[\s:—–-]*$/i.test(norm(stop.summary)));
 		}
+		function dropSelfUnlessAlone(summary) {
+			var parts = String(summary || "").split(/,\s*/).filter(function(p) {
+				return !!p.trim();
+			});
+			if (parts.length < 2) return summary;
+			var rest = parts.filter(function(p) {
+				return !/^self$/i.test(p.trim());
+			});
+			if (rest.length && rest.length !== parts.length) return rest.join(", ");
+			return summary;
+		}
+		function adoptStop(k, stop) {
+			if (k !== "relations") return stop;
+			var out = {};
+			for (var f in stop) if (Object.prototype.hasOwnProperty.call(stop, f)) out[f] = stop[f];
+			out.summary = dropSelfUnlessAlone(stop.summary);
+			return out;
+		}
 		function loadStored() {
 			try {
 				storeKey = residentKey();
@@ -9045,7 +9063,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				STOP_KEYS.forEach(function(k) {
 					if (stored.stops[k] && stored.stops[k].status === "landed") {
 						if (k === "relations" && badRelations(stored.stops[k])) return;
-						packet.stops[k] = stored.stops[k];
+						packet.stops[k] = adoptStop(k, stored.stops[k]);
 					}
 				});
 			} catch (e) {}
@@ -9063,7 +9081,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				STOP_KEYS.forEach(function(k) {
 					if (packet.stops[k].status !== "landed" && stored.stops[k] && stored.stops[k].status === "landed") {
 						if (k === "relations" && badRelations(stored.stops[k])) return;
-						packet.stops[k] = stored.stops[k];
+						packet.stops[k] = adoptStop(k, stored.stops[k]);
 						changed = true;
 					}
 				});
@@ -9965,20 +9983,31 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				Promise.allSettled(jobs);
 			}
 		}
-		document.addEventListener("keydown", function(e) {
-			if (e.key !== "0" || e.metaKey || e.ctrlKey || e.altKey) return;
-			var t = e.target;
-			if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
-			stopped = true;
+		function abortFetches() {
 			controllers.forEach(function(c) {
 				try {
 					c.abort();
 				} catch (err) {}
 			});
+		}
+		document.addEventListener("keydown", function(e) {
+			if (e.key !== "0" || e.metaKey || e.ctrlKey || e.altKey) return;
+			var t = e.target;
+			if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
+			stopped = true;
+			abortFetches();
 		}, true);
-		document.addEventListener("click", function() {
+		function isNavClick(e) {
+			var t = e && e.target;
+			if (!t || !t.closest) return false;
+			if (t.closest("#pccMoreTabsBtn")) return true;
+			if (t.closest("[data-pcc-track]")) return true;
+			return !!t.closest("a[href]");
+		}
+		document.addEventListener("click", function(e) {
 			gatherPage();
-			gatherFetches();
+			if (isNavClick(e)) abortFetches();
+			else gatherFetches();
 			feedFromPacket(true);
 			publish(true);
 		}, true);
@@ -11168,6 +11197,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			};
 		} catch (e) {}
+		try {
+			if (window.__tmCore) window.__tmCore.replant = function() {
+				var r1Gone = !document.getElementById(ROW_ID);
+				var r2Gone = !document.getElementById("tmCardsRow2");
+				plantBand();
+				if (r1Gone) (ROW_KEYS[1] || []).forEach(function(k) {
+					delete __tileReg[k];
+				});
+				if (r2Gone) (ROW_KEYS[2] || []).forEach(function(k) {
+					delete __tileReg[k];
+				});
+				buildCards();
+			};
+		} catch (e) {}
 		function fireClick(el) {
 			var W = el.ownerDocument && el.ownerDocument.defaultView || window;
 			[
@@ -11345,6 +11388,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (d.rel) parts.push("Relationships: " + oneLine(d.rel) + ".");
 			return parts.join(" ");
 		}
+		function dropSelfUnlessAlone(summary) {
+			var parts = String(summary || "").split(/,\s*/).filter(function(p) {
+				return !!p.trim();
+			});
+			if (parts.length < 2) return summary;
+			var rest = parts.filter(function(p) {
+				return !/^self$/i.test(p.trim());
+			});
+			if (rest.length && rest.length !== parts.length) return rest.join(", ");
+			return summary;
+		}
 		function buildCards() {
 			pullFromPacket();
 			var bar = document.getElementById("residentHeaderButtons");
@@ -11357,7 +11411,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var mp = medsPanel();
 				d.medsFill = mp && mp.btn && mp.btn.hasAttribute("data-fill-value") ? mp.btn.getAttribute("data-fill-value") : feedMeds || null;
 				d.bims = bimsValue();
-				d.rel = relValue();
+				d.rel = dropSelfUnlessAlone(relValue());
 				d.dx = feedDx;
 				d.beh = feedBeh;
 				d.words = window.__tmYourWordsApi ? window.__tmYourWordsApi.get() : "";
