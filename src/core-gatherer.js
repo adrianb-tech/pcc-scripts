@@ -130,6 +130,26 @@
   function badRelations(stop) {
     return !!(stop && stop.summary && /^relationships\b[\s:—–-]*$/i.test(norm(stop.summary)));
   }
+  // SELF adoption filter (his rule, 2026-10-25): a stored relations
+  // stop is adopted only after dropSelfUnlessAlone — the same rule
+  // readers.js applies at landing (h196). Duplicated here (not
+  // imported) because gatherer loads before readers and __tmReaders
+  // does not expose it; the rule is pure (no state), so the copies
+  // cannot drift except by an explicit edit to one of them.
+  function dropSelfUnlessAlone(summary) {
+    var parts = String(summary || '').split(/,\s*/).filter(function (p) { return !!p.trim(); });
+    if (parts.length < 2) return summary;
+    var rest = parts.filter(function (p) { return !/^self$/i.test(p.trim()); });
+    if (rest.length && rest.length !== parts.length) return rest.join(', ');
+    return summary;
+  }
+  function adoptStop(k, stop) {
+    if (k !== 'relations') return stop;
+    var out = {};
+    for (var f in stop) { if (Object.prototype.hasOwnProperty.call(stop, f)) out[f] = stop[f]; }
+    out.summary = dropSelfUnlessAlone(stop.summary);
+    return out;
+  }
   function loadStored() {
     try {
       storeKey = residentKey();
@@ -148,7 +168,7 @@
       STOP_KEYS.forEach(function (k) {
         if (stored.stops[k] && stored.stops[k].status === 'landed') {
           if (k === 'relations' && badRelations(stored.stops[k])) return;
-          packet.stops[k] = stored.stops[k];
+          packet.stops[k] = adoptStop(k, stored.stops[k]);
         }
       });
     } catch (e) {}
@@ -172,7 +192,7 @@
       STOP_KEYS.forEach(function (k) {
         if (packet.stops[k].status !== 'landed' && stored.stops[k] && stored.stops[k].status === 'landed') {
           if (k === 'relations' && badRelations(stored.stops[k])) return;
-          packet.stops[k] = stored.stops[k];
+          packet.stops[k] = adoptStop(k, stored.stops[k]);
           changed = true;
         }
       });
@@ -1018,14 +1038,37 @@
   }
 
   // '0' is the kill-switch: stop everything, abort fetches.
+  function abortFetches() {
+    controllers.forEach(function (c) { try { c.abort(); } catch (err) {} });
+  }
   document.addEventListener('keydown', function (e) {
     if (e.key !== '0' || e.metaKey || e.ctrlKey || e.altKey) return;
     var t = e.target;
     if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable)) return;
     stopped = true;
-    controllers.forEach(function (c) { try { c.abort(); } catch (err) {} });
+    abortFetches();
   }, true);
-  document.addEventListener('click', function () { gatherPage(); gatherFetches(); feedFromPacket(true); publish(true); }, true);
+  // Navigation-click fetch skip (Misc 10s, his scripts-off proof):
+  // a click on a tab link, a tracked tab, or the MORE button starts
+  // PCC's own navigation/postback, which needs the ~6/host connection
+  // pool — a click-triggered fetch burst (~8 concurrent) queues behind
+  // it. Skip gatherFetches on those clicks AND abort in-flight
+  // controllers (frees the pool immediately); gatherPage (local parse)
+  // + feed + publish stay. Aborted stops stay unlanded and refetch on
+  // the next page's ladder (same as the '0' handler's abort).
+  function isNavClick(e) {
+    var t = e && e.target;
+    if (!t || !t.closest) return false;
+    if (t.closest('#pccMoreTabsBtn')) return true;
+    if (t.closest('[data-pcc-track]')) return true;
+    return !!t.closest('a[href]');
+  }
+  document.addEventListener('click', function (e) {
+    gatherPage();
+    if (isNavClick(e)) { abortFetches(); }
+    else { gatherFetches(); }
+    feedFromPacket(true); publish(true);
+  }, true);
   // A keypress is also a settle moment (contract rule 4):
   // repaint once from the latest packet, including arrivals
   // that converged silently since the last settle. Typing is
