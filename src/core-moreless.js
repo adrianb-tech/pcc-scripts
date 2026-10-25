@@ -337,6 +337,27 @@
     } catch (e) {}
   }
   try { if (window.__tmCore) window.__tmCore.hooks = { queueCopy: queueCopy, hlTile: hlTile, goWtsVitals: goWtsVitals, medsPanel: medsPanel, fireClick: fireClick, flashLabel: flashLabel, cycleSummaryAnchor: cycleSummaryAnchor, action: function (name) { if (name === 'yourwords' && window.__tmYourWordsApi) window.__tmYourWordsApi.open(); } }; } catch (e) {}
+  // Swap re-plant (Hide-tabs 1.17 calls this when #tmCardsRow is gone):
+  // re-plant the band row + re-fill tiles from the in-memory packet
+  // (buildCards pulls from #tmGatherPacket, which lives in the top
+  // document's body outside the swapped frames, so it survives swaps).
+  // The registry is the catch (h226): presentReadyTiles skips any key
+  // already in __tileReg, so re-building after a wipe would plant an
+  // empty row — the removed tiles' keys are still registered. Clear
+  // ONLY the wiped rows' keys (ROW_KEYS[1] for the band, ROW_KEYS[2]
+  // for row 2): a surviving row's tiles are still in the DOM, and
+  // clearing their keys would duplicate them. Which rows were wiped
+  // is read BEFORE plantBand re-creates them. Idempotent: calling it
+  // when nothing is wiped clears nothing and re-builds in place (the
+  // normal re-build path, also used on clicks) — a harmless no-op.
+  try { if (window.__tmCore) window.__tmCore.replant = function () {
+    var r1Gone = !document.getElementById(ROW_ID);
+    var r2Gone = !document.getElementById('tmCardsRow2');
+    plantBand();
+    if (r1Gone) (ROW_KEYS[1] || []).forEach(function (k) { delete __tileReg[k]; });
+    if (r2Gone) (ROW_KEYS[2] || []).forEach(function (k) { delete __tileReg[k]; });
+    buildCards();
+  }; } catch (e) {}
 
   function tile(labelText, valueText, opts) {
     opts = opts || {};
@@ -592,6 +613,18 @@
     if (d.rel) parts.push('Relationships: ' + oneLine(d.rel) + '.');
     return parts.join(' ');
   }
+  // SELF display filter (his rule): same rule as readers.js:381
+  // landing + gatherer adoption — duplicated here (not imported)
+  // because the rule is pure, so the copies cannot drift except by
+  // an explicit edit. Defense in depth: even a packet that bypassed
+  // adoption never shows 'self' when others are named.
+  function dropSelfUnlessAlone(summary) {
+    var parts = String(summary || '').split(/,\s*/).filter(function (p) { return !!p.trim(); });
+    if (parts.length < 2) return summary;
+    var rest = parts.filter(function (p) { return !/^self$/i.test(p.trim()); });
+    if (rest.length && rest.length !== parts.length) return rest.join(', ');
+    return summary;
+  }
   function buildCards() {
     pullFromPacket();
     var bar = document.getElementById('residentHeaderButtons');
@@ -604,7 +637,7 @@
       var mp = medsPanel();
       d.medsFill = (mp && mp.btn && mp.btn.hasAttribute('data-fill-value')) ? mp.btn.getAttribute('data-fill-value') : (feedMeds || null);
       d.bims = bimsValue();
-      d.rel = relValue();
+      d.rel = dropSelfUnlessAlone(relValue());
       d.dx = feedDx;
       d.beh = feedBeh;
       d.words = (window.__tmYourWordsApi ? window.__tmYourWordsApi.get() : '');
