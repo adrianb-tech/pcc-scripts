@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC — Dot
-// @version      1.1
+// @version      1.2
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dot.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dot.user.js
 // @match        https://*.pointclickcare.com/*
@@ -9,36 +9,43 @@
 // @grant        none
 // ==/UserScript==
 
-// PCC — Dot 1.1 (2026-10-24, his psych-notes trial): ONE dot, for his
-// psychiatric notes only — the 6-dot trail of stage 1 is replaced, not
-// extended, for this trial. The dot links to ALL his psychiatric
-// notes: tapping it goes to the assessments list, all-types view,
-// where his consults live (the list carries no per-consult links, so
-// the list IS the gathering link). The ring analyzes his notes on
-// chart open and shows its progress, then offers Summary:
+// PCC — Dot 1.2 (2026-10-25, his Prog Notes step): TWO dots —
+// psychiatric notes (assessments list) + Progress Notes (View All).
+// Summary is REMOVED (his ruling): the summary path goes to ONE
+// location, the Progress Notes page, where the ring gathers TWO
+// pieces — (1) diagnoses, (2) behaviors — and shows a CHECK MARK
+// when both land. Hover the ring for Diagnoses + Behaviors buttons;
+// click one and a box comes out with the information gathered.
+// Then he goes to Dash.
 //
 //   FETCHING (no visit — the ring gets it on chart open):
-//     - consult dates + count (assessments list fetch, all-types)
+//     - consult dates + count (assessments list fetch, href as-is)
 //     - full texts of consults already opened (stored packet)
 //   GATHERING (visit — he goes there):
+//     - diagnoses + behaviors: the Progress Notes page (the Dot
+//       reads the extractors' planted boxes live; on later pages
+//       it reads Core's packet — never the note frames directly)
 //     - full text of any never-opened consult: open it from the list
-//       (tap the dot to go there)
+//       (tap the psych dot to go there)
 //
-// The ring's arc is honest coverage, not a fake percentage: the list
-// landing closes half the ring; the stored full texts close the other
-// half in proportion (fullN / N). The check mark means the ANALYSIS
-// is done (list + stored merge complete) — even when some texts are
-// still missing, because those need his visits. The Summary panel
-// names that bound plainly instead of hiding it.
+// The ring is per-page: on Prog Notes it closes half for diagnoses
+// and half for behaviors, with a check when both land; on the
+// assessments list it is the 1.1 psych arc (list half + full-text
+// half); elsewhere it stays neutral. Dot links are the tab bar's
+// own hrefs AS-IS (no params appended — the 1.1 param-stripping
+// lesson: PCC strips them live). The host is never auto-removed
+// on a chart page (URL /client/, chart header, or any dot link
+// keeps it); only a clearly non-chart page (login) removes it.
 //
 // Standing laws honored: top document only; keys dead while typing;
 // '0' toggles the dot (session-only); nothing phones out (one
-// same-origin fetch of a page he already has access to); no note
-// text is displayed or stored by this script — only dates, counts,
-// and coverage (the panel lists dates, never note content); the
-// position persists as x/y only. The test hook __tmDotPsych exposes
-// counts + URLs only (same-origin console, never transmitted).
-// Snippety untouched (no fields, no paste, no keys except '0').
+// same-origin fetch of a page he already has access to); the box
+// shows the gathered diagnoses + behaviors LISTS (structured packet
+// content), never consult narrative text; the position persists as
+// x/y only. The test hooks __tmDotPsych + __tmDotProg expose counts,
+// URLs, and the gathered dx/beh lists (same-origin console only,
+// never transmitted — the same exposure Core's __tmGather already
+// gives). Snippety untouched (no fields, no paste, no keys except '0').
 
 (function () {
   'use strict';
@@ -109,14 +116,100 @@
     }
     return '';
   }
-  function allTypesUrl(u) {
-    if (!u) return u;
-    function setParam(url, name, val) {
-      var re = new RegExp('([?&])' + name + '=[^&]*');
-      if (re.test(url)) return url.replace(re, '$1' + name + '=' + val);
-      return url + (url.indexOf('?') === -1 ? '?' : '&') + name + '=' + val;
+  // The Progress Notes URL, discovered live from the tab bar (never
+  // hardcoded), href AS-IS: pass 1 matches the href itself, pass 2
+  // the tab label. No params appended (the 1.1 lesson — PCC strips
+  // them live; the tab's own href is the reliable form, and the
+  // View All filter, if needed, is his 1 click on the page).
+  function discoverProgNotesUrl() {
+    var anchors = document.querySelectorAll('a[href]');
+    for (var p = 0; p < 2; p++) {
+      for (var i = 0; i < anchors.length; i++) {
+        var a = anchors[i];
+        var href = a.getAttribute('href') || '';
+        if (/editmyprofile|myprofile/i.test(href)) continue;
+        var label = norm(a.textContent);
+        var hit = (p === 0) ? /progressnotesviewall|progressnotes\.xhtml/i.test(href)
+          : (label && label.length <= 24 && /prog\s*notes/i.test(label));
+        if (!hit) continue;
+        try { return new URL(href, location.href).href; } catch (e) { return ''; }
+      }
     }
-    return setParam(setParam(u, 'ESOLstdassessid', '-1'), 'ESOLstatusFilter', '');
+    return '';
+  }
+
+  // Live read: on the Progress Notes page the extractors plant
+  // #pnDxBox/#pnBehBox (content in #pnDxOut/#pnBehOut). Read the
+  // content element when present, else the whole box. This is the
+  // gather itself — it needs no packet and no fetch (h222 proves
+  // it with a fetch that always rejects). Never the note frames
+  // themselves, only the extractors' planted boxes.
+  function readLiveProg() {
+    var out = { dx: '', beh: '' };
+    try {
+      // Whole-box fallback ONLY when the Out element is absent (old
+      // extractor shape). When the Out is present-but-empty, that
+      // means nothing gathered — falling back to the box would
+      // return the label text ("Diagnoses", "Behavior — …") as
+      // content and fake a check.
+      var dxOut = document.getElementById('pnDxOut');
+      if (dxOut) {
+        out.dx = (dxOut.textContent || '').replace(/\s+/g, ' ').trim();
+      } else {
+        var dxBox = document.getElementById('pnDxBox');
+        if (dxBox) out.dx = (dxBox.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+      var behOut = document.getElementById('pnBehOut');
+      if (behOut) {
+        out.beh = (behOut.textContent || '').replace(/\s+/g, ' ').trim();
+      } else {
+        var behBox = document.getElementById('pnBehBox');
+        if (behBox) out.beh = (behBox.textContent || '').replace(/\s+/g, ' ').trim();
+      }
+    } catch (e) {}
+    return out;
+  }
+  // Stored diagnoses + behaviors (Core's packet, localStorage): stops
+  // carry { status, summary } — this script reads status + summary
+  // ONLY, never note text. Returns landed flags + texts ('' when a
+  // stop is not landed or there is no chart key / packet).
+  function readStoredProg() {
+    var out = { dxLanded: false, behLanded: false, dxText: '', behText: '' };
+    if (!chart) return out;
+    try {
+      var raw = localStorage.getItem(STORE_PREFIX + chart);
+      if (!raw) return out;
+      var stored = JSON.parse(raw);
+      var stops = (stored && stored.stops) || {};
+      var dx = stops.diagnoses || {}, beh = stops.behaviors || {};
+      if (dx.status === 'landed') {
+        out.dxLanded = true;
+        out.dxText = dx.summary || dx.text || '';
+      }
+      if (beh.status === 'landed') {
+        out.behLanded = true;
+        out.behText = beh.summary || beh.text || '';
+      }
+    } catch (e) {}
+    return out;
+  }
+  // Merge: live wins when present (freshest, and the only source on
+  // the Prog Notes page before Core lands it); the packet's landed
+  // flag + text fill what the live page does not have (other
+  // pages, or boxes not yet planted). Returns true on any change.
+  function refreshProg() {
+    var live = readLiveProg();
+    var p = readStoredProg();
+    var ndxText = live.dx || p.dxText;
+    var nbehText = live.beh || p.behText;
+    var ndxLanded = !!live.dx || p.dxLanded;
+    var nbehLanded = !!live.beh || p.behLanded;
+    var changed = ndxLanded !== dxLanded || nbehLanded !== behLanded ||
+      ndxText !== dxText || nbehText !== behText;
+    dxLanded = ndxLanded; behLanded = nbehLanded;
+    dxText = ndxText; behText = nbehText;
+    progDone = dxLanded && behLanded;
+    return changed;
   }
 
   // Psych consult dates from a fetched assessments list doc: rows with
@@ -152,11 +245,14 @@
     } catch (e) { return []; }
   }
 
-  var host = null, shadow = null, boxEl = null, dotEl = null, ringProg = null,
-    ringCheck = null, slotEl = null, panelEl = null, panelTextEl = null;
-  var chart = '', assessUrl = '', lastNavUrl = null;
-  var fetched = false, fetching = false, fetchFailed = false, listFound = false;
-  var dates = [], fetchedDates = [], fullN = 0, done = false, panelOpen = false, justDragged = false;
+  var host = null, shadow = null, boxEl = null, dotEl = null, progDotEl = null,
+    ringProg = null, ringCheck = null, menuEl = null, dxBtnEl = null, behBtnEl = null,
+    gatherBoxEl = null, gatherTextEl = null;
+  var chart = '', assessUrl = '', progUrl = '', lastNavUrl = null;
+  var fetched = false, fetching = false, fetchFailed = false, listFound = false, progFound = false;
+  var dates = [], fetchedDates = [], fullN = 0, done = false, justDragged = false;
+  var progDone = false, dxText = '', behText = '', dxLanded = false, behLanded = false;
+  var boxOpen = false, boxKind = '';
 
   // Merge fetched dates with the stored list by date (a full text is
   // never downgraded by a later date-only sighting; a stored date the
@@ -180,18 +276,35 @@
     return changed;
   }
 
+  // Current page, from the URL (no tab-bar dependency): Prog Notes
+  // (the stream) vs the assessments list vs anything else.
+  function curPage() {
+    var h = location.href || '';
+    if (/progressnotesviewall|progressnotes\.xhtml/i.test(h)) return 'prog';
+    if (/cp_assessment|assessments/i.test(h)) return 'assess';
+    return 'other';
+  }
   function arcFrac() {
+    // Per-page ring: Prog Notes closes half for diagnoses and half
+    // for behaviors; the assessments list keeps the 1.1 psych arc
+    // (list half + full-text half); elsewhere neutral.
+    if (curPage() === 'prog') return (dxLanded ? 0.5 : 0) + (behLanded ? 0.5 : 0);
     if (!fetched) return 0;
     var n = dates.length;
     if (n === 0) return 0.5; // list known, nothing to cover
     return 0.5 + 0.5 * (fullN / n);
+  }
+  function ringDone() {
+    if (curPage() === 'prog') return progDone;
+    if (curPage() === 'assess') return done;
+    return false;
   }
   function renderRing() {
     if (!ringProg) return;
     var frac = arcFrac();
     var dash = (frac * CIRC).toFixed(1);
     ringProg.setAttribute('stroke-dasharray', dash + ' ' + CIRC.toFixed(2));
-    if (ringCheck) ringCheck.style.display = done ? '' : 'none';
+    if (ringCheck) ringCheck.style.display = ringDone() ? '' : 'none';
   }
   function dotTitle() {
     if (fetchFailed) return 'Psychiatric notes — list fetch failed (reload to retry)';
@@ -199,53 +312,58 @@
     if (!done) return 'Psychiatric notes — gathering…';
     return 'Psychiatric notes — done: ' + dates.length + ' consults, ' + fullN + ' full text';
   }
-  function renderDot() {
-    if (!dotEl) return;
-    dotEl.className = 'tmDot' + (done ? ' filled' : '');
-    dotEl.title = dotTitle();
+  function progDotTitle() {
+    // Landed first: gathered content wins over the not-found
+    // message, even when the Prog Notes tab link itself is missing
+    // (the current tab is a non-link, so on the Prog Notes page
+    // the link is often absent while the gather succeeded).
+    if (progDone) return 'Progress Notes — done: diagnoses + behaviors gathered';
+    if (!progFound) return 'Progress Notes — notes page not found on this page';
+    var parts = [];
+    if (!dxLanded) parts.push('diagnoses');
+    if (!behLanded) parts.push('behaviors');
+    return 'Progress Notes — gathering: ' + parts.join(' + ') + ' still needed';
   }
-  function renderSummaryBtn() {
-    if (!slotEl) return;
-    slotEl.innerHTML = done
-      ? '<button id="tmSummaryBtn" title="Summary of all psychiatric notes">Summary</button>'
-      : '';
-    var btn = slotEl.querySelector('#tmSummaryBtn');
-    if (btn) btn.addEventListener('click', function (ev) {
-      ev.stopPropagation();
-      if (panelOpen) hidePanel(); else showPanel();
-    });
+  function renderDots() {
+    if (dotEl) {
+      dotEl.className = 'tmDot' + (done ? ' filled' : '');
+      dotEl.title = dotTitle();
+    }
+    if (progDotEl) {
+      progDotEl.className = 'tmDot' + (progDone ? ' filled' : '');
+      progDotEl.title = progDotTitle();
+    }
   }
-  function renderAll() { renderRing(); renderDot(); renderSummaryBtn(); }
+  // Hover menu labels: a check suffix when that piece has landed,
+  // so hover alone tells him what is gathered without clicking.
+  function renderMenu() {
+    if (dxBtnEl) dxBtnEl.textContent = 'Diagnoses' + (dxLanded ? ' ✓' : '');
+    if (behBtnEl) behBtnEl.textContent = 'Behaviors' + (behLanded ? ' ✓' : '');
+  }
+  function renderAll() { renderRing(); renderDots(); renderMenu(); }
 
-  function buildSummaryText() {
-    var n = dates.length;
-    if (!fetched) return 'Psychiatric notes — still gathering…';
-    if (n === 0) return 'Psychiatric notes: no consults found on the assessments list.';
-    var lines = [];
-    lines.push('Psychiatric notes: ' + n + ' consults');
-    lines.push('Range: ' + fmtDate(dates[n - 1].date) + ' – ' + fmtDate(dates[0].date));
-    lines.push('Latest: ' + fmtDate(dates[0].date));
-    lines.push('Full text: ' + fullN + ' of ' + n);
-    if (!chart) lines.push('Stored texts not read — no chart header on this page.');
-    else if (fullN < n) lines.push('The other ' + (n - fullN) +
-      ' were never opened — their text is not available until you open each one. Tap the dot to go to the list.');
-    lines.push('');
-    lines.push('Consults (newest first):');
-    dates.forEach(function (e) {
-      lines.push(fmtDate(e.date) + ' — ' + (e.full ? 'full text' : 'date only'));
-    });
-    return lines.join('\n');
+  function gatherTextFor(kind) {
+    // Landed first, same rule as the title: gathered text shows
+    // even when the Prog Notes tab link is missing.
+    if (kind === 'dx') {
+      if (dxLanded) return dxText || 'Diagnoses — gathered, but the list came back empty.';
+      if (!progFound) return 'Progress Notes — notes page not found on this page.';
+      return 'Diagnoses — not gathered yet. Visit the Progress Notes page and the ring gathers them.';
+    }
+    if (behLanded) return behText || 'Behaviors — gathered, but the list came back empty.';
+    if (!progFound) return 'Progress Notes — notes page not found on this page.';
+    return 'Behaviors — not gathered yet. Visit the Progress Notes page and the ring gathers them.';
   }
-  function showPanel() {
-    if (!panelEl || !done) return;
-    panelTextEl.textContent = buildSummaryText();
-    panelEl.style.display = 'block';
-    panelOpen = true;
+  function showGather(kind) {
+    if (!gatherBoxEl || !gatherTextEl) return;
+    boxKind = kind; boxOpen = true;
+    gatherTextEl.textContent = gatherTextFor(kind);
+    gatherBoxEl.style.display = 'block';
     // Position near the dot, clamped to the viewport. jsdom has no
     // layout (rects are 0) — then it sits below the host, unclamped.
     try {
       var rect = host.getBoundingClientRect();
-      var pw = panelEl.offsetWidth || 0, ph = panelEl.offsetHeight || 0;
+      var pw = gatherBoxEl.offsetWidth || 0, ph = gatherBoxEl.offsetHeight || 0;
       var vw = window.innerWidth || 1024, vh = window.innerHeight || 768;
       var left = (rect.width > 0) ? rect.left : (parseInt(host.style.left, 10) || 0);
       var top = (rect.height > 0) ? (rect.bottom + 8) : 0;
@@ -254,13 +372,13 @@
         var above = (rect.height > 0 ? rect.top : vh) - ph - 8;
         if (above >= 8) top = above;
       }
-      panelEl.style.left = left + 'px'; panelEl.style.top = top + 'px';
+      gatherBoxEl.style.left = left + 'px'; gatherBoxEl.style.top = top + 'px';
     } catch (e) {}
   }
-  function hidePanel() {
-    if (!panelEl) return;
-    panelEl.style.display = 'none';
-    panelOpen = false;
+  function hideGather() {
+    if (!gatherBoxEl) return;
+    gatherBoxEl.style.display = 'none';
+    boxOpen = false; boxKind = '';
   }
 
   function loadPos() {
@@ -286,12 +404,15 @@
       host = existing; shadow = host.shadowRoot;
       if (shadow) {
         boxEl = shadow.getElementById('tmDotBox'); dotEl = shadow.getElementById('tmDot');
+        progDotEl = shadow.getElementById('tmDotProg');
         ringProg = shadow.getElementById('tmRingProg'); ringCheck = shadow.getElementById('tmRingCheck');
-        slotEl = shadow.getElementById('tmSummarySlot'); panelEl = shadow.getElementById('tmSummaryPanel');
-        panelTextEl = shadow.getElementById('tmSummaryText');
+        menuEl = shadow.getElementById('tmHoverMenu');
+        dxBtnEl = shadow.getElementById('tmDxBtn'); behBtnEl = shadow.getElementById('tmBehBtn');
+        gatherBoxEl = shadow.getElementById('tmGatherBox');
+        gatherTextEl = shadow.getElementById('tmGatherText');
       }
       renderAll();
-      if (panelOpen) showPanel();
+      if (boxOpen) showGather(boxKind);
       return;
     }
     host = document.createElement('div');
@@ -315,13 +436,13 @@
       '.tmDot{width:11px;height:11px;border-radius:50%;box-sizing:border-box;cursor:pointer;' +
       'background:#ffffff;border:2px solid #cbd5e1;}' +
       '.tmDot.filled{background:#7c3aed;border:2px solid #7c3aed;}' +
-      '#tmSummarySlot{min-height:30px;display:flex;align-items:center;justify-content:center;}' +
-      '#tmSummaryBtn{font:600 13px system-ui,sans-serif;color:#ffffff;background:#7c3aed;' +
-      'border:none;border-radius:999px;padding:6px 14px;cursor:pointer;}' +
-      '#tmSummaryPanel{display:none;position:fixed;z-index:2147483647;width:340px;max-width:90vw;' +
+      '#tmHoverMenu{display:none;flex-direction:column;gap:4px;align-items:stretch;}' +
+      '.tmMenuBtn{font:600 12px system-ui,sans-serif;color:#ffffff;background:#7c3aed;' +
+      'border:none;border-radius:999px;padding:5px 12px;cursor:pointer;white-space:nowrap;}' +
+      '#tmGatherBox{display:none;position:fixed;z-index:2147483647;width:340px;max-width:90vw;' +
       'max-height:60vh;overflow:auto;background:#ffffff;border:1px solid #cbd5e1;border-radius:12px;' +
       'box-shadow:0 8px 30px rgba(0,0,0,0.25);padding:14px;font:13px/1.5 system-ui,sans-serif;color:#0f172a;}' +
-      '#tmSummaryText{white-space:pre-line;margin:0 0 12px 0;}' +
+      '#tmGatherText{white-space:pre-line;margin:0 0 12px 0;}' +
       '.tmPanelBtn{font:600 12px system-ui,sans-serif;color:#7c3aed;background:#f5f3ff;' +
       'border:1px solid #ddd6fe;border-radius:999px;padding:5px 12px;cursor:pointer;margin-right:8px;}' +
       '</style>' +
@@ -334,43 +455,77 @@
       'stroke-linecap="round" stroke-linejoin="round" style="display:none"/>' +
       '</svg>' +
       '<span id="tmDot" class="tmDot" title="Psychiatric notes"></span>' +
-      '<div id="tmSummarySlot"></div>' +
+      '<span id="tmDotProg" class="tmDot" title="Progress Notes"></span>' +
+      '<div id="tmHoverMenu">' +
+      '<button id="tmDxBtn" class="tmMenuBtn" title="Show the gathered diagnoses">Diagnoses</button>' +
+      '<button id="tmBehBtn" class="tmMenuBtn" title="Show the gathered behaviors">Behaviors</button>' +
       '</div>' +
-      '<div id="tmSummaryPanel"><div id="tmSummaryText"></div>' +
-      '<button id="tmCopyBtn" class="tmPanelBtn" title="Copy the summary">Copy</button>' +
-      '<button id="tmCloseBtn" class="tmPanelBtn" title="Close the summary">Close</button></div>';
+      '</div>' +
+      '<div id="tmGatherBox"><div id="tmGatherText"></div>' +
+      '<button id="tmGatherCopyBtn" class="tmPanelBtn" title="Copy the gathered information">Copy</button>' +
+      '<button id="tmGatherCloseBtn" class="tmPanelBtn" title="Close the box">Close</button></div>';
     boxEl = shadow.getElementById('tmDotBox');
     dotEl = shadow.getElementById('tmDot');
+    progDotEl = shadow.getElementById('tmDotProg');
     ringProg = shadow.getElementById('tmRingProg');
     ringCheck = shadow.getElementById('tmRingCheck');
-    slotEl = shadow.getElementById('tmSummarySlot');
-    panelEl = shadow.getElementById('tmSummaryPanel');
-    panelTextEl = shadow.getElementById('tmSummaryText');
-    var copyBtn = shadow.getElementById('tmCopyBtn');
+    menuEl = shadow.getElementById('tmHoverMenu');
+    dxBtnEl = shadow.getElementById('tmDxBtn');
+    behBtnEl = shadow.getElementById('tmBehBtn');
+    gatherBoxEl = shadow.getElementById('tmGatherBox');
+    gatherTextEl = shadow.getElementById('tmGatherText');
+    var copyBtn = shadow.getElementById('tmGatherCopyBtn');
     if (copyBtn) copyBtn.addEventListener('click', function (ev) {
       ev.stopPropagation();
       try {
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(buildSummaryText());
+          navigator.clipboard.writeText(gatherTextFor(boxKind));
         }
       } catch (e) {}
     });
-    var closeBtn = shadow.getElementById('tmCloseBtn');
-    if (closeBtn) closeBtn.addEventListener('click', function (ev) { ev.stopPropagation(); hidePanel(); });
+    var closeBtn = shadow.getElementById('tmGatherCloseBtn');
+    if (closeBtn) closeBtn.addEventListener('click', function (ev) { ev.stopPropagation(); hideGather(); });
+    if (dxBtnEl) dxBtnEl.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (justDragged) { justDragged = false; return; }
+      showGather('dx');
+    });
+    if (behBtnEl) behBtnEl.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (justDragged) { justDragged = false; return; }
+      showGather('beh');
+    });
+    // Hover the ring = the two buttons. The menu's visibility is an
+    // inline style (not a class) so it reads the same in jsdom as in
+    // the browser. An open gather box stays until Close, even after
+    // the mouse leaves.
+    boxEl.addEventListener('mouseenter', function () {
+      if (menuEl) menuEl.style.display = 'flex';
+    });
+    boxEl.addEventListener('mouseleave', function () {
+      if (menuEl) menuEl.style.display = 'none';
+    });
     bindDrag();
-    // Tap the dot = go to all psychiatric notes (the assessments list,
-    // all-types view), discovered live from this chart's tab bar. A
-    // drag never navigates (justDragged), and the press never leaks
-    // into PCC's document listeners.
-    boxEl.addEventListener('click', function (ev) {
+    // Tap a dot = go to that page, its tab href as-is, discovered
+    // live from this chart's tab bar. A drag never navigates
+    // (justDragged), and the press never leaks into PCC's document
+    // listeners (so a dot tap never fires Core's click fetch burst).
+    if (dotEl) dotEl.addEventListener('click', function (ev) {
       ev.stopPropagation();
       if (justDragged) { justDragged = false; return; }
       if (!assessUrl) return;
       lastNavUrl = assessUrl;
       try { window.location.href = assessUrl; } catch (e) {}
     });
+    if (progDotEl) progDotEl.addEventListener('click', function (ev) {
+      ev.stopPropagation();
+      if (justDragged) { justDragged = false; return; }
+      if (!progUrl) return;
+      lastNavUrl = progUrl;
+      try { window.location.href = progUrl; } catch (e) {}
+    });
     renderAll();
-    if (panelOpen) showPanel();
+    if (boxOpen) showGather(boxKind);
   }
 
   function bindDrag() {
@@ -451,7 +606,6 @@
         fetchedDates = parsePsychDates(doc);
         mergeNotes(fetchedDates);
         done = true;
-        if (panelOpen) panelTextEl.textContent = buildSummaryText();
         renderAll();
       })
       .catch(function () {
@@ -464,23 +618,33 @@
   // (Core landed their texts) join the merge on his next click — no
   // polling, no observers. Re-renders only when the merge changed.
   document.addEventListener('click', function () {
-    if (!fetched) return;
-    if (mergeNotes(fetchedDates)) renderAll();
-    if (panelOpen) panelTextEl.textContent = buildSummaryText();
+    var changed = false;
+    if (fetched && mergeNotes(fetchedDates)) changed = true;
+    if (refreshProg()) changed = true;
+    if (changed) renderAll();
+    if (boxOpen && gatherTextEl) gatherTextEl.textContent = gatherTextFor(boxKind);
   });
 
   // Bounded refinement burst: the tab bar and header render late, so
-  // re-discover the chart + list URL as PCC renders. Stops early once
+  // re-discover the chart + dot URLs as PCC renders. Stops early once
   // the fetch has started with a known chart; otherwise runs ~2s.
-  // Only the initial burst removes the host on non-chart pages
-  // (login: no chart header, no assessments link).
+  // Only the initial burst removes the host, and only on a clearly
+  // non-chart page (login: no chart header, no dot link, no
+  // /client/ URL). A chart page keeps the host even if a link is
+  // missing — the assessments page has no assess link (its ASSMNTS
+  // tab is not a link) but its /client/ URL keeps it (the 1.1
+  // vanishing bug).
   function refineBurst(removeIfNoContext) {
     var contextFound = false, burstLeft = 40;
     (function burst() {
       var c = headerChart();
       if (c) { chart = c; contextFound = true; }
       var u = discoverAssessUrl();
-      if (u) { assessUrl = allTypesUrl(u); listFound = true; contextFound = true; }
+      if (u) { assessUrl = u; listFound = true; contextFound = true; }
+      var pu = discoverProgNotesUrl();
+      if (pu) { progUrl = pu; progFound = true; contextFound = true; }
+      if (/\/client\//i.test(location.href || '')) contextFound = true;
+      refreshProg(); // live read needs no chart; packet read guards on it
       if (assessUrl && !fetched && !fetching) tryFetch();
       if (chart && assessUrl && fetching) return; // fetch underway, chart known: done
       if (chart && assessUrl && fetched) return;
@@ -519,6 +683,14 @@
       getState: function () {
         return { done: done, n: dates.length, fullN: fullN, assessUrl: assessUrl,
           lastNavUrl: lastNavUrl, fetchFailed: fetchFailed, listFound: listFound };
+      }
+    };
+  } catch (e) {}
+  try {
+    window.__tmDotProg = {
+      getState: function () {
+        return { done: progDone, diagnoses: dxText, behaviors: behText,
+          progUrl: progUrl, assessUrl: assessUrl, lastNavUrl: lastNavUrl };
       }
     };
   } catch (e) {}
