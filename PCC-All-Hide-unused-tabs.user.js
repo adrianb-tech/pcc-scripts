@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.16
+// @version 1.17
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -382,6 +382,50 @@ var __s3mod_Hide_unused_tabs = 1;
     if (--burstLeft <= 0) return;
     setTimeout(burst, 50);
   })();
+  // SWAP RE-STYLE/RE-PLANT (v1.17, his Immun→MDS + Misc→MDS reports):
+  // a PCC swap replaces the tab bar (fresh DOM: no pccTrack, no MORE
+  // button) and can remove the band row, and nothing re-applies our
+  // styling. This is NOT a return to the frozen-bar re-runs (which
+  // re-touched a styled bar on every click and made clicks land on a
+  // moving target): the burst below does NOTHING when markers are
+  // present — it only acts when the bar was actually wiped. Bounded
+  // (setTimeout chain like the burst above, max 20×500ms ≈ 10s,
+  // early-exit when fixed), click-triggered only (a document capture
+  // listener — it survives swaps, unlike per-tab listeners on wiped
+  // DOM), no preventDefault, no stopPropagation, no DOM writes on
+  // the click itself. First check at 500ms (the swap has not happened
+  // yet on the click itself, so an immediate check would see the old
+  // bar and never start).
+  var swapTimer = null, swapTries = 0;
+  function swapMarkersOk() {
+    return !!document.querySelector('[data-pcc-track]') && !!document.getElementById('pccMoreTabsBtn');
+  }
+  function swapBurst() {
+    if (swapTimer) return;
+    swapTries = 0;
+    var tick = function () {
+      swapTries++;
+      var barOk = swapMarkersOk();
+      var bandOk = !!document.getElementById('tmCardsRow');
+      if (barOk && bandOk) { swapTimer = null; return; }
+      if (!barOk) { try { run(); } catch (e) {} }
+      if (!bandOk) { try { if (window.__tmCore && window.__tmCore.replant) window.__tmCore.replant(); } catch (e) {} }
+      if (swapTries >= 20) { swapTimer = null; return; }
+      swapTimer = setTimeout(tick, 500);
+    };
+    swapTimer = setTimeout(tick, 500);
+  }
+  function isTabClick(e) {
+    var t = e && e.target;
+    if (!t || !t.closest) return false;
+    if (t.closest('#pccMoreTabsBtn')) return true;
+    if (t.closest('[data-pcc-track]')) return true;
+    var a = t.closest('a[href]');
+    return !!(a && ALL_TABS.indexOf(norm(a.textContent)) !== -1);
+  }
+  document.addEventListener('click', function (e) {
+    if (isTabClick(e)) swapBurst();
+  }, true);
   // FROZEN BAR (v1.13, his report 2026-10-19): the late
   // passes (2.5s/4.5s/7s) and the re-run 300ms after
   // every click are GONE. PCC re-renders the bar with
