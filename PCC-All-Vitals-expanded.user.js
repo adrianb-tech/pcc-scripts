@@ -1,8 +1,8 @@
 // ==UserScript==
-// @version 1.5
+// @version 1.6
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Vitals-expanded.user.js
-// @name         Every facility — Vitals: open expanded
+// @name         Every facility — Header view: open compact
 // @match        https://*.pointclickcare.com/*
 // @run-at       document-idle
 // @grant        none
@@ -32,9 +32,16 @@
     // Flipped 2026-10-14 (his call): the tile row pulls everything he
     // needs out of Compact view, so this script now opens COMPACT.
     // (It used to open Expanded — that is what had moved his setting
-    // from Standard to Expanded.) Same finder shape, new target:
-    // the toggle option whose text is 'compact', in the group that
-    // also offers Expanded + Standard.
+    // from Standard to Expanded.)
+    // 2026-10-25 (Vitals 1.6): the toggle is PCC's resident-header
+    // view toggle (capture shape, fixture h221): buttons with ids
+    // rh-header-view-toggle-toggle-button-<mode> + matching
+    // data-testids, mutually exclusive, one always selected.
+    // Precise finder first; the text+context shape is the fallback
+    // if PCC ever changes the ids.
+    var precise = document.getElementById('rh-header-view-toggle-toggle-button-compact') ||
+      document.querySelector('[data-testid="rh-header-view-toggle-toggle-button-compact"]');
+    if (precise) return precise;
     var lists = [document.querySelectorAll('a,button'), document.querySelectorAll('span,td,div,label')];
     for (var l = 0; l < lists.length; l++){
       var els = lists[l];
@@ -53,9 +60,11 @@
     var el = findCompact();
     if (!el) return;
     if (isSelected(el)){ done = true; return; }                 // already Compact — leave it
-    var last = +(sessionStorage.getItem('pccCompactView') || 0);
-    if (Date.now() - last < 6000){ done = true; return; }       // just clicked — don't loop
-    sessionStorage.setItem('pccCompactView', Date.now());
+    // 2026-10-25: no session throttle. The old 6s throttle skipped a
+    // needed click when he moved between pages quickly (<6s apart) —
+    // a "sometimes" cause of Standard showing. The done flag +
+    // isSelected already prevent loops (click only when Compact is
+    // not selected; done after one click).
     el.click();
     done = true;
   }
@@ -136,15 +145,45 @@
     fireClick(btn);
   }, true);
 
-  // Scheduling: bounded staggered runs after load + re-run on your clicks.
-  // (Permanent interval removed in the reorganization — no-timers rule.)
-  [400, 1000, 2000, 3500, 5500, 8000].forEach(function (ms) { setTimeout(function () { run(); plantFBadge(); }, ms); });
+  // Scheduling (Smooth Arrival, audit B4): the view
+  // change happens in the FIRST pass that finds the
+  // toggle - the staggered ladder is gone. A bounded
+  // burst (250ms steps, ~10s) retries only while the
+  // header is still rendering, and stops as soon
+  // as run() is done; the F overlay plants in that same
+  // pass and afterwards only repositions (scroll/resize/
+  // click), never re-plants.
+  var vtsTries = 0;
+  function vtsBurst() {
+    run();
+    plantFBadge();
+    vtsTries++;
+    if (done || vtsTries >= 40) return;
+    setTimeout(vtsBurst, 250);
+  }
+  vtsBurst();
+  // 2026-10-25: a manual touch on the header toggle ends the
+  // script's authority that load. The burst runs up to ~10s for
+  // slow renders, but once he clicks any toggle button himself,
+  // done is set and the burst never clicks again — his pick
+  // stands, even if it happens mid-burst. Only real presses
+  // count (isTrusted); the script's own load-time click does
+  // not trip this, and run() sets done itself anyway.
+  document.addEventListener('click', function (e) {
+    if (!e.isTrusted) return;
+    var t = e.target;
+    if (t && t.closest && t.closest('#rh-header-view-toggle, [data-testid^="rh-header-view-toggle-toggle-button-"]')) done = true;
+  }, true);
   var pccSchedLast = 0;
   document.addEventListener('click', function (e) {
       if (!e.isTrusted) return;
       var now = Date.now();
       if (now - pccSchedLast < 800) return;
       pccSchedLast = now;
-      setTimeout(function () { run(); plantFBadge(); }, 350);
+      // 2026-10-25: click repositions the F badge ONLY. The old
+      // run() retry here re-asserted Compact after any click when
+      // the load-time burst had missed — overriding a manual
+      // Standard/Expanded pick. Manual switches stand now.
+      setTimeout(function () { plantFBadge(); }, 350);
   }, true);
 })();
