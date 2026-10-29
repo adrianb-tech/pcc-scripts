@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.22
+// @version 1.23
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -426,13 +426,15 @@ var __s3mod_Hide_unused_tabs = 1;
   document.addEventListener('click', function (e) {
     if (isTabClick(e)) swapBurst();
   }, true);
-  // TAB SHORTCUTS (v1.18, his request 2026-10-29; v1.22 O fix):
+  // TAB SHORTCUTS (v1.18, his request 2026-10-29; v1.22 O fix; v1.23 F13 focus):
   // single-key tab jumps. H dash (dasH — D is bound on the popup defaults
   // scripts), P profile, O assessments tab, N prog notes (prog Notes — P
   // is profile). The assessments tab is ONE tab with two facility labels:
   // ASSMNTS at Boro Park, FORMS everywhere else (his 2026-10-29 correction —
   // not a pair to toggle). O is found by the button (href pattern first,
-  // the Dot's proven approach), not by the label. Same guards as the Keys
+  // the Dot's proven approach), not by the label. F13 focuses the
+  // assessments button without navigating (for his ducky split-view macro:
+  // F13, then Ctrl+Cmd+Enter). Same guards as the Keys
   // scripts: isTrusted only, no modifiers, no repeat, dead while typing.
   // '0' toggles the shortcuts locally (like the Keys scripts). Claimed
   // keys (A/F/G/Q/1/2/3) are left alone — this handler ignores them.
@@ -486,10 +488,26 @@ var __s3mod_Hide_unused_tabs = 1;
     window.__tmTabKeys.lastNav = 'click:' + name;
     try { (found.a || found.el).click(); } catch (err) {}
   }
+  // F13 (v1.23, his split-view macro): focus the assessments tab's button
+  // WITHOUT navigating, so the ducky can follow with Ctrl+Cmd+Enter to
+  // open it in Helium's split view. No mouse coordinates needed — works
+  // on any display, single or dual.
+  function tabKeyFocusForms() {
+    var found = tabKeyFind('FORMS');
+    var t = found && (found.a || found.el);
+    window.__tmTabKeys = window.__tmTabKeys || {};
+    if (t && t.focus) {
+      try { t.focus(); } catch (e) {}
+      window.__tmTabKeys.focusedForms = true;
+    } else {
+      window.__tmTabKeys.focusedForms = false;
+    }
+  }
   document.addEventListener('keydown', function (e) {
     if (!e.isTrusted) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.repeat) return;
+    if (e.key === 'F13') { tabKeyFocusForms(); try { e.preventDefault(); } catch (errF) {} return; }
     if (tabKeyEditable(e.target)) return;
     var k = (e.key || '').toUpperCase();
     if (k.length !== 1) return;
