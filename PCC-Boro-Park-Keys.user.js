@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.14
+// @version      2.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -380,10 +380,56 @@
       if (!picked) return false;
       for (var j = 0; j < sel.options.length; j++) sel.options[j].selected = (sel.options[j] === picked);
       try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e2) {}
+      saveStickyType(sel);
       var apply = findApply(doc);
       if (apply) { fireClick(apply); return true; }
     } catch (e) {}
     return false;
+  }
+  // ---- Sticky form TYPE (his 2026-10-29 ruling: the assessments page
+  // remembers his last TYPE filter. Restores it once on page open; saves
+  // on his change (dropdown or 1/2/3 keys); never switches on its own) ----
+  var STICKY_TYPE_KEY = 'tmStickyFormType';
+  function stickyTypeText(sel) {
+    try {
+      var o = sel.options[sel.selectedIndex];
+      return o ? (o.text || '').replace(/\s+/g, ' ').trim() : '';
+    } catch (e) { return ''; }
+  }
+  function saveStickyType(sel) {
+    try {
+      var t = stickyTypeText(sel);
+      if (t) { try { localStorage.setItem(STICKY_TYPE_KEY, t); } catch (e2) {} }
+    } catch (e) {}
+  }
+  function restoreStickyType() {
+    try {
+      if (!shouldRun()) return;
+      var saved = null;
+      try { saved = localStorage.getItem(STICKY_TYPE_KEY); } catch (e) {}
+      findInFrames(window.top || window, function(doc) {
+        var sel = findTypeSelect(doc);
+        if (!sel) return null;
+        if (!sel.__stickyAttached) {
+          sel.__stickyAttached = true;
+          sel.addEventListener('change', function() { saveStickyType(sel); });
+        }
+        if (!saved) return true;
+        var cur = stickyTypeText(sel);
+        if (cur.toUpperCase() === saved.toUpperCase()) return true;
+        var opts = sel.options, found = null, i, j;
+        for (i = 0; i < opts.length; i++) {
+          if ((opts[i].text || '').replace(/\s+/g, ' ').trim().toUpperCase() === saved.toUpperCase()) { found = opts[i]; break; }
+        }
+        if (!found) return true;
+        for (j = 0; j < opts.length; j++) opts[j].selected = (opts[j] === found);
+        try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e2) {}
+        saveStickyType(sel);
+        var apply = findApply(doc);
+        if (apply) fireClick(apply);
+        return true;
+      });
+    } catch (e) {}
   }
   function applyNumberBadges() {
     try {
@@ -1167,6 +1213,10 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
+  // Sticky TYPE: restore his last filter (once PCC has rendered the select)
+  restoreStickyType();
+  setTimeout(restoreStickyType, 1500);
+  setTimeout(restoreStickyType, 4000);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
