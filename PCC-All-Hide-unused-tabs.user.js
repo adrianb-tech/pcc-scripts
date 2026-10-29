@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.17
+// @version 1.18
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -425,6 +425,66 @@ var __s3mod_Hide_unused_tabs = 1;
   }
   document.addEventListener('click', function (e) {
     if (isTabClick(e)) swapBurst();
+  }, true);
+  // TAB SHORTCUTS (v1.18, his request 2026-10-29): single-key tab jumps.
+  // H dash (dasH — D is bound on the popup defaults scripts), P profile,
+  // O forms/assmnts pair (toggle: on forms → assmnts, elsewhere → forms),
+  // N prog notes (prog Notes — P is profile). Same guards as the Keys
+  // scripts: isTrusted only, no modifiers, no repeat, dead while typing.
+  // '0' toggles the shortcuts locally (like the Keys scripts). Claimed
+  // keys (A/F/G/Q/1/2/3) are left alone — this handler ignores them.
+  var tabKeysOn = true;
+  function tabKeyEditable(t) {
+    return !!(t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable));
+  }
+  function tabKeyUrlTab() {
+    var u = location.href;
+    if (/cp_residentdashboard/i.test(u)) return 'DASH';
+    if (/cp_careclientprofile/i.test(u)) return 'PROFILE';
+    if (/progressnotes/i.test(u)) return 'PROG NOTES';
+    if (/cp_assessment|assessments/i.test(u)) return 'ASSMNTS';
+    if (/forms/i.test(u)) return 'FORMS';
+    return '';
+  }
+  function tabKeyHref(name) {
+    var cands = candidates();
+    if (!cands.length) return null;
+    var bar = findBar(cands);
+    if (!bar) return null;
+    for (var i = 0; i < cands.length; i++) {
+      if (!bar.contains(cands[i].el)) continue;
+      if (norm(cands[i].el.textContent) !== name) continue;
+      var el = tabElement(cands[i].el, name);
+      var a = (el.tagName === 'A') ? el : el.querySelector('a');
+      if (a && a.href) return a.href; // href as-is (the Dot's 1.1 lesson: no params appended)
+      return null;
+    }
+    return null;
+  }
+  function tabKeyGo(name) {
+    var href = tabKeyHref(name);
+    window.__tmTabKeys = window.__tmTabKeys || {};
+    if (!href) return;
+    window.__tmTabKeys.lastNav = href;
+    location.href = href;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (!e.isTrusted) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.repeat) return;
+    if (tabKeyEditable(e.target)) return;
+    var k = (e.key || '').toUpperCase();
+    if (k.length !== 1) return;
+    if (k === '0') { tabKeysOn = !tabKeysOn; return; }
+    if (!tabKeysOn) return;
+    var target = null;
+    if (k === 'H') target = 'DASH';
+    else if (k === 'P') target = 'PROFILE';
+    else if (k === 'N') target = 'PROG NOTES';
+    else if (k === 'O') target = (tabKeyUrlTab() === 'FORMS') ? 'ASSMNTS' : 'FORMS';
+    else return;
+    tabKeyGo(target);
+    try { e.preventDefault(); } catch (err) {}
   }, true);
   // FROZEN BAR (v1.13, his report 2026-10-19): the late
   // passes (2.5s/4.5s/7s) and the re-run 300ms after
