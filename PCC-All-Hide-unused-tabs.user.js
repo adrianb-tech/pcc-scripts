@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.19
+// @version 1.20-diag
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -485,6 +485,38 @@ var __s3mod_Hide_unused_tabs = 1;
     }
     return null;
   }
+  // DIAGNOSTIC (1.20-diag, TEMPORARY — his "O does nothing even from dash"
+  // report 2026-10-29): pressing O shows its full decision chain in a
+  // toast instead of navigating, so he can read back what the script
+  // sees on his real tab bar. Removed in the real fix.
+  function tabKeyDiagShow(lines) {
+    try {
+      var old = document.getElementById('tmTabKeyDiag');
+      if (old) old.remove();
+      var d = document.createElement('div');
+      d.id = 'tmTabKeyDiag';
+      d.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483647;' +
+        'background:#111827;color:#f9fafb;font:12px/1.5 monospace;padding:10px 12px;' +
+        'border-radius:8px;max-width:460px;white-space:pre-wrap;box-shadow:0 4px 16px rgba(0,0,0,.4);';
+      d.textContent = lines.join('\n');
+      (document.body || document.documentElement).appendChild(d);
+      setTimeout(function () { var x = document.getElementById('tmTabKeyDiag'); if (x) x.remove(); }, 12000);
+    } catch (e) {}
+  }
+  function tabKeyDiag(target) {
+    var lines = ['O diagnostic — page: ' + location.href.slice(-60)];
+    lines.push('currentTab(selected): [' + tabKeyCurrentTab() + ']  urlTab: [' + tabKeyUrlTab() + ']');
+    ['DASH', 'PROFILE', 'FORMS', 'ASSMNTS', 'PROG NOTES'].forEach(function (n) {
+      var f = tabKeyFind(n);
+      if (!f) { lines.push(n + ': NOT FOUND'); return; }
+      var info = n + ': ' + f.el.tagName;
+      info += f.href ? ' href=...' + f.href.slice(-45) : ' NO-HREF';
+      if (f.a && f.a !== f.el) info += ' (inner a)';
+      lines.push(info);
+    });
+    lines.push('O target would be: ' + target + '  (no navigation in diag build)');
+    return lines;
+  }
   function tabKeyGo(name) {
     window.__tmTabKeys = window.__tmTabKeys || {};
     var found = tabKeyFind(name);
@@ -512,7 +544,13 @@ var __s3mod_Hide_unused_tabs = 1;
     if (k === 'H') target = 'DASH';
     else if (k === 'P') target = 'PROFILE';
     else if (k === 'N') target = 'PROG NOTES';
-    else if (k === 'O') target = tabKeyOnForms() ? 'ASSMNTS' : 'FORMS';
+    else if (k === 'O') {
+      // DIAG BUILD: show the decision, don't navigate.
+      var diagTarget = tabKeyOnForms() ? 'ASSMNTS' : 'FORMS';
+      tabKeyDiagShow(tabKeyDiag(diagTarget));
+      try { e.preventDefault(); } catch (err2) {}
+      return;
+    }
     else return;
     tabKeyGo(target);
     try { e.preventDefault(); } catch (err) {}
