@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.21-diag
+// @version 1.22
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -426,11 +426,13 @@ var __s3mod_Hide_unused_tabs = 1;
   document.addEventListener('click', function (e) {
     if (isTabClick(e)) swapBurst();
   }, true);
-  // TAB SHORTCUTS (v1.18, his request 2026-10-29; v1.19 O-toggle fix):
+  // TAB SHORTCUTS (v1.18, his request 2026-10-29; v1.22 O fix):
   // single-key tab jumps. H dash (dasH — D is bound on the popup defaults
-  // scripts), P profile, O forms/assmnts pair (toggle: on forms → assmnts,
-  // elsewhere → forms; v1.19: toggle reads PCC's selected-tab mark, not
-  // the URL), N prog notes (prog Notes — P is profile). Same guards as the Keys
+  // scripts), P profile, O assessments tab, N prog notes (prog Notes — P
+  // is profile). The assessments tab is ONE tab with two facility labels:
+  // ASSMNTS at Boro Park, FORMS everywhere else (his 2026-10-29 correction —
+  // not a pair to toggle). O is found by the button (href pattern first,
+  // the Dot's proven approach), not by the label. Same guards as the Keys
   // scripts: isTrusted only, no modifiers, no repeat, dead while typing.
   // '0' toggles the shortcuts locally (like the Keys scripts). Claimed
   // keys (A/F/G/Q/1/2/3) are left alone — this handler ignores them.
@@ -438,100 +440,37 @@ var __s3mod_Hide_unused_tabs = 1;
   function tabKeyEditable(t) {
     return !!(t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.isContentEditable));
   }
-  function tabKeyUrlTab() {
-    var u = location.href;
-    if (/cp_residentdashboard/i.test(u)) return 'DASH';
-    if (/cp_careclientprofile/i.test(u)) return 'PROFILE';
-    if (/progressnotes/i.test(u)) return 'PROG NOTES';
-    if (/cp_assessment|assessments/i.test(u)) return 'ASSMNTS';
-    if (/forms/i.test(u)) return 'FORMS';
-    return '';
-  }
-  function tabKeyCurrentTab() {
-    // PCC's own current-tab mark in the bar (the same selected/active
-    // signal run() uses to paint the current tab). Used for the O toggle
-    // because the real forms-page URL shape is unproven — URL-sniffing
-    // alone made O a no-op there (1.18 miss, his report 2026-10-29).
-    var cands = candidates();
-    if (!cands.length) return '';
-    var bar = findBar(cands);
-    if (!bar) return '';
-    for (var i = 0; i < cands.length; i++) {
-      if (!bar.contains(cands[i].el)) continue;
-      var nm = norm(cands[i].el.textContent);
-      var el = tabElement(cands[i].el, nm);
-      var a = (el.tagName === 'A') ? el : el.querySelector('a');
-      var cls = String(el.className || '') + ' ' + (a ? String(a.className || '') : '');
-      if (/(selected|active|current)/i.test(cls) || el.getAttribute('aria-selected') === 'true') return nm;
-    }
-    return '';
-  }
-  function tabKeyOnForms() {
-    var cur = tabKeyCurrentTab();
-    if (cur) return cur === 'FORMS';
-    return tabKeyUrlTab() === 'FORMS'; // fallback: URL sniffing
-  }
+  // The assessments tab's two facility labels (his correction 2026-10-29).
+  var TAB_ALIASES = { 'FORMS': ['FORMS', 'ASSMNTS'] };
   function tabKeyFind(name) {
     var cands = candidates();
     if (!cands.length) return null;
     var bar = findBar(cands);
     if (!bar) return null;
+    var labels = TAB_ALIASES[name] || [name];
+    // Pass 1 (assessments tab): match the button by its href, like the
+    // Dot's discoverAssessUrl — facility-proof, label-proof.
+    if (labels.length > 1) {
+      var anchors = bar.querySelectorAll('a[href]');
+      for (var h = 0; h < anchors.length; h++) {
+        var href = anchors[h].getAttribute('href') || '';
+        if (/editmyprofile|myprofile/i.test(href)) continue;
+        if (/cp_assessment|assessments/i.test(href)) {
+          var ah = anchors[h];
+          return { el: ah, a: ah, href: ah.href || null };
+        }
+      }
+    }
+    // Pass 2: label match (either facility label).
     for (var i = 0; i < cands.length; i++) {
       if (!bar.contains(cands[i].el)) continue;
-      if (norm(cands[i].el.textContent) !== name) continue;
-      var el = tabElement(cands[i].el, name);
+      var nm = norm(cands[i].el.textContent);
+      if (labels.indexOf(nm) === -1) continue;
+      var el = tabElement(cands[i].el, nm);
       var a = (el.tagName === 'A') ? el : el.querySelector('a');
       return { el: el, a: a, href: (a && a.href) ? a.href : null };
     }
     return null;
-  }
-  // DIAGNOSTIC (1.20-diag, TEMPORARY — his "O does nothing even from dash"
-  // report 2026-10-29): pressing O shows its full decision chain in a
-  // toast instead of navigating, so he can read back what the script
-  // sees on his real tab bar. Removed in the real fix.
-  function tabKeyDiagShow(lines) {
-    try {
-      var old = document.getElementById('tmTabKeyDiag');
-      if (old) old.remove();
-      var d = document.createElement('div');
-      d.id = 'tmTabKeyDiag';
-      d.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483647;' +
-        'background:#111827;color:#f9fafb;font:12px/1.5 monospace;padding:10px 12px;' +
-        'border-radius:8px;max-width:460px;white-space:pre-wrap;box-shadow:0 4px 16px rgba(0,0,0,.4);';
-      d.textContent = lines.join('\n');
-      (document.body || document.documentElement).appendChild(d);
-      setTimeout(function () { var x = document.getElementById('tmTabKeyDiag'); if (x) x.remove(); }, 12000);
-    } catch (e) {}
-  }
-  function tabKeyDiag(target) {
-    var lines = ['O diagnostic — page: ' + location.href.slice(-60)];
-    lines.push('currentTab(selected): [' + tabKeyCurrentTab() + ']  urlTab: [' + tabKeyUrlTab() + ']');
-    ['DASH', 'PROFILE', 'FORMS', 'ASSMNTS', 'PROG NOTES'].forEach(function (n) {
-      var f = tabKeyFind(n);
-      if (!f) { lines.push(n + ': NOT FOUND'); return; }
-      var info = n + ': ' + f.el.tagName;
-      info += f.href ? ' href=...' + f.href.slice(-45) : ' NO-HREF';
-      if (f.a && f.a !== f.el) info += ' (inner a)';
-      lines.push(info);
-    });
-    lines.push('O target would be: ' + target + '  (no navigation in diag build)');
-    // What IS the forms tab called? Dump every tab-like label in the bar
-    // plus any element whose text mentions FORM.
-    try {
-      var c2 = candidates();
-      var bar2 = c2.length ? findBar(c2) : null;
-      var names = {};
-      if (bar2) c2.forEach(function (c) { if (bar2.contains(c.el)) names[c.name] = 1; });
-      lines.push('labels in bar: ' + Object.keys(names).join(', '));
-      var fuzzy = [];
-      var els2 = document.querySelectorAll('a,button,td,li,span,div');
-      for (var j = 0; j < els2.length && fuzzy.length < 8; j++) {
-        var tx = norm(els2[j].textContent);
-        if (/FORM/i.test(tx) && tx.length < 50 && tx.length > 0) fuzzy.push(els2[j].tagName + ':"' + tx + '"');
-      }
-      lines.push('elements w/ FORM: ' + (fuzzy.join(' | ') || 'none'));
-    } catch (e2) { lines.push('dump failed'); }
-    return lines;
   }
   function tabKeyGo(name) {
     window.__tmTabKeys = window.__tmTabKeys || {};
@@ -560,13 +499,7 @@ var __s3mod_Hide_unused_tabs = 1;
     if (k === 'H') target = 'DASH';
     else if (k === 'P') target = 'PROFILE';
     else if (k === 'N') target = 'PROG NOTES';
-    else if (k === 'O') {
-      // DIAG BUILD: show the decision, don't navigate.
-      var diagTarget = tabKeyOnForms() ? 'ASSMNTS' : 'FORMS';
-      tabKeyDiagShow(tabKeyDiag(diagTarget));
-      try { e.preventDefault(); } catch (err2) {}
-      return;
-    }
+    else if (k === 'O') target = 'FORMS'; // assessments tab (ASSMNTS at Boro Park, FORMS elsewhere)
     else return;
     tabKeyGo(target);
     try { e.preventDefault(); } catch (err) {}
