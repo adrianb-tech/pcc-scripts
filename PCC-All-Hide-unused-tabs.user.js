@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.20-diag
+// @version 1.21-diag
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -515,6 +515,22 @@ var __s3mod_Hide_unused_tabs = 1;
       lines.push(info);
     });
     lines.push('O target would be: ' + target + '  (no navigation in diag build)');
+    // What IS the forms tab called? Dump every tab-like label in the bar
+    // plus any element whose text mentions FORM.
+    try {
+      var c2 = candidates();
+      var bar2 = c2.length ? findBar(c2) : null;
+      var names = {};
+      if (bar2) c2.forEach(function (c) { if (bar2.contains(c.el)) names[c.name] = 1; });
+      lines.push('labels in bar: ' + Object.keys(names).join(', '));
+      var fuzzy = [];
+      var els2 = document.querySelectorAll('a,button,td,li,span,div');
+      for (var j = 0; j < els2.length && fuzzy.length < 8; j++) {
+        var tx = norm(els2[j].textContent);
+        if (/FORM/i.test(tx) && tx.length < 50 && tx.length > 0) fuzzy.push(els2[j].tagName + ':"' + tx + '"');
+      }
+      lines.push('elements w/ FORM: ' + (fuzzy.join(' | ') || 'none'));
+    } catch (e2) { lines.push('dump failed'); }
     return lines;
   }
   function tabKeyGo(name) {
