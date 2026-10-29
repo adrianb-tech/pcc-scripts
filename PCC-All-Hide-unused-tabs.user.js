@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.18
+// @version 1.19
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -426,10 +426,11 @@ var __s3mod_Hide_unused_tabs = 1;
   document.addEventListener('click', function (e) {
     if (isTabClick(e)) swapBurst();
   }, true);
-  // TAB SHORTCUTS (v1.18, his request 2026-10-29): single-key tab jumps.
-  // H dash (dasH — D is bound on the popup defaults scripts), P profile,
-  // O forms/assmnts pair (toggle: on forms → assmnts, elsewhere → forms),
-  // N prog notes (prog Notes — P is profile). Same guards as the Keys
+  // TAB SHORTCUTS (v1.18, his request 2026-10-29; v1.19 O-toggle fix):
+  // single-key tab jumps. H dash (dasH — D is bound on the popup defaults
+  // scripts), P profile, O forms/assmnts pair (toggle: on forms → assmnts,
+  // elsewhere → forms; v1.19: toggle reads PCC's selected-tab mark, not
+  // the URL), N prog notes (prog Notes — P is profile). Same guards as the Keys
   // scripts: isTrusted only, no modifiers, no repeat, dead while typing.
   // '0' toggles the shortcuts locally (like the Keys scripts). Claimed
   // keys (A/F/G/Q/1/2/3) are left alone — this handler ignores them.
@@ -446,7 +447,31 @@ var __s3mod_Hide_unused_tabs = 1;
     if (/forms/i.test(u)) return 'FORMS';
     return '';
   }
-  function tabKeyHref(name) {
+  function tabKeyCurrentTab() {
+    // PCC's own current-tab mark in the bar (the same selected/active
+    // signal run() uses to paint the current tab). Used for the O toggle
+    // because the real forms-page URL shape is unproven — URL-sniffing
+    // alone made O a no-op there (1.18 miss, his report 2026-10-29).
+    var cands = candidates();
+    if (!cands.length) return '';
+    var bar = findBar(cands);
+    if (!bar) return '';
+    for (var i = 0; i < cands.length; i++) {
+      if (!bar.contains(cands[i].el)) continue;
+      var nm = norm(cands[i].el.textContent);
+      var el = tabElement(cands[i].el, nm);
+      var a = (el.tagName === 'A') ? el : el.querySelector('a');
+      var cls = String(el.className || '') + ' ' + (a ? String(a.className || '') : '');
+      if (/(selected|active|current)/i.test(cls) || el.getAttribute('aria-selected') === 'true') return nm;
+    }
+    return '';
+  }
+  function tabKeyOnForms() {
+    var cur = tabKeyCurrentTab();
+    if (cur) return cur === 'FORMS';
+    return tabKeyUrlTab() === 'FORMS'; // fallback: URL sniffing
+  }
+  function tabKeyFind(name) {
     var cands = candidates();
     if (!cands.length) return null;
     var bar = findBar(cands);
@@ -456,17 +481,23 @@ var __s3mod_Hide_unused_tabs = 1;
       if (norm(cands[i].el.textContent) !== name) continue;
       var el = tabElement(cands[i].el, name);
       var a = (el.tagName === 'A') ? el : el.querySelector('a');
-      if (a && a.href) return a.href; // href as-is (the Dot's 1.1 lesson: no params appended)
-      return null;
+      return { el: el, a: a, href: (a && a.href) ? a.href : null };
     }
     return null;
   }
   function tabKeyGo(name) {
-    var href = tabKeyHref(name);
     window.__tmTabKeys = window.__tmTabKeys || {};
-    if (!href) return;
-    window.__tmTabKeys.lastNav = href;
-    location.href = href;
+    var found = tabKeyFind(name);
+    if (!found) return;
+    if (found.href) {
+      window.__tmTabKeys.lastNav = found.href; // href as-is (the Dot's 1.1 lesson: no params appended)
+      location.href = found.href;
+      return;
+    }
+    // No usable href (PCC sometimes navigates via JS, not a link) —
+    // click the tab the way he would. Hook records 'click:NAME'.
+    window.__tmTabKeys.lastNav = 'click:' + name;
+    try { (found.a || found.el).click(); } catch (err) {}
   }
   document.addEventListener('keydown', function (e) {
     if (!e.isTrusted) return;
@@ -481,7 +512,7 @@ var __s3mod_Hide_unused_tabs = 1;
     if (k === 'H') target = 'DASH';
     else if (k === 'P') target = 'PROFILE';
     else if (k === 'N') target = 'PROG NOTES';
-    else if (k === 'O') target = (tabKeyUrlTab() === 'FORMS') ? 'ASSMNTS' : 'FORMS';
+    else if (k === 'O') target = tabKeyOnForms() ? 'ASSMNTS' : 'FORMS';
     else return;
     tabKeyGo(target);
     try { e.preventDefault(); } catch (err) {}
