@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.15
+// @version      2.16
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1234,6 +1234,12 @@
     if (!e.isTrusted) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.repeat) return;
+    // Escape while typing: leave the field so letter shortcuts (F, etc.)
+    // fire instead of typing. His 2026-10-30 ruling.
+    if (e.key === 'Escape' && isEditable(e.target)) {
+      try { e.target.blur(); } catch (err) {}
+      return;
+    }
     if (isEditable(e.target)) return;  // never hijack typing
     var k = (e.key || '').toUpperCase();
     if (k.length !== 1) return;
