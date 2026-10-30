@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.24
+// @version 1.23
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -83,25 +83,6 @@ var __s3mod_Hide_unused_tabs = 1;
                 : 'width:11px;height:11px;background:' + colorHex + ';border:2.5px solid transparent;');
     return dot;
   }
-  // Key hints for tab navigation (his lock 2026-10-30)
-  var TAB_KEYS = { 'DASH': 'H', 'PROFILE': 'P', 'FORMS': 'O', 'ASSMNTS': 'O', 'PROG NOTES': 'N' };
-  function keyHintFor(el, name) {
-    var hint = null;
-    for (var i = 0; i < el.children.length; i++) {
-      if (el.children[i].classList && el.children[i].classList.contains('tmTabKey')) { hint = el.children[i]; break; }
-    }
-    var key = TAB_KEYS[name];
-    if (!key) { if (hint) hint.remove(); return; }
-    if (!hint) {
-      hint = document.createElement('span');
-      hint.className = 'tmTabKey';
-      hint.setAttribute('aria-hidden', 'true');
-      el.appendChild(hint);
-    }
-    hint.textContent = key;
-    hint.style.cssText = 'display:inline-block;font-size:11px;font-weight:600;color:#8e8e93;' +
-      'background:rgba(0,0,0,0.05);padding:2px 7px;border-radius:6px;margin-left:8px;vertical-align:middle;';
-  }
   function paintTab(el, name, isCur) {
     if (!el) return;
     el.style.borderRadius = '12px';
@@ -109,31 +90,25 @@ var __s3mod_Hide_unused_tabs = 1;
     el.style.whiteSpace = 'nowrap';
     el.style.boxSizing = 'border-box';
     el.style.lineHeight = '1.15';
-    // APPLE CALENDAR STYLE (his lock 2026-10-30): pill tabs, active = soft
-    // gray #e8e8ed (NOT black, NOT colored fill). Color dots carry identity.
     if (MAINS[name]) {
       el.style.padding = '10px 14px';
-      el.style.fontSize = '14px';
-      el.style.fontWeight = '600';
-      el.style.fontFamily = '-apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif';
+      el.style.fontSize = '16px';
+      el.style.fontWeight = '700';
       if (isCur) {
-        el.style.backgroundColor = '#e8e8ed';
-        el.style.color = '#1c1c1e';
-        el.style.border = '1px solid transparent';
-        el.style.boxShadow = 'none';
-        dotFor(el, MAINS[name], false);
-        setKids(el, '#1c1c1e', '14px');
+        el.style.backgroundColor = MAINS[name];
+        el.style.color = '#ffffff';
+        el.style.border = '1px solid ' + MAINS[name];
+        el.style.boxShadow = '0 1px 3px rgba(16,24,40,.25)';
+        dotFor(el, MAINS[name], true);
+        setKids(el, '#ffffff', '16px');
       } else {
-        el.style.backgroundColor = 'transparent';
-        el.style.color = '#1c1c1e';
-        el.style.border = '1px solid transparent';
-        el.style.boxShadow = 'none';
+        el.style.backgroundColor = '#ffffff';
+        el.style.color = '#131c2b';
+        el.style.border = '1px solid #e2e8f0';
+        el.style.boxShadow = '0 1px 2px rgba(16,24,40,.05)';
         dotFor(el, MAINS[name], false);
-        setKids(el, '#1c1c1e', '14px');
+        setKids(el, '#131c2b', '16px');
       }
-      el.onmouseenter = function() { if (!isCur) el.style.backgroundColor = '#f2f2f7'; };
-      el.onmouseleave = function() { if (!isCur) el.style.backgroundColor = 'transparent'; };
-      keyHintFor(el, name);
     } else if (SECOND[name]) {
       el.style.padding = '8px 10px';
       el.style.fontSize = '12.5px';
