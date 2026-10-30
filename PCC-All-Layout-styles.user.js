@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         PCC - Layout styles
-// @version      1.2
-// @description  His Stylus styles, recreated, plus the fixed frame: the resident header field is one fixed height on every tab, so the tab bar never moves.
+// @version      1.3
+// @description  His Stylus styles, recreated, plus the fixed frame + Apple Calendar main header (top row).
 // @match        *://*.pointclickcare.com/*
 // @run-at       document-start
 // @grant        none
@@ -64,6 +64,26 @@
     // script runs at document-start).
     '#residentHeader {\n' +
     '  min-height: 257px !important;\n' +
+    '}\n' +
+    // APPLE CALENDAR MAIN HEADER — top row only (his lock 2026-10-30).
+    // Frosted white, clean type, facility as a pill. The mega-menu nav
+    // row below is NOT touched (complex, needs live inspection).
+    '#slHeader {\n' +
+    '  background: rgba(255,255,255,0.85) !important;\n' +
+    '  backdrop-filter: blur(20px) !important;\n' +
+    '  -webkit-backdrop-filter: blur(20px) !important;\n' +
+    '  border-bottom: 1px solid rgba(0,0,0,0.06) !important;\n' +
+    '}\n' +
+    '#mainPageHeader {\n' +
+    '  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif !important;\n' +
+    '}\n' +
+    '#pccFacLink {\n' +
+    '  background: #f2f2f7 !important;\n' +
+    '  border-radius: 10px !important;\n' +
+    '  padding: 8px 14px !important;\n' +
+    '  font-weight: 500 !important;\n' +
+    '  color: #3a3a3c !important;\n' +
+    '  text-decoration: none !important;\n' +
     '}';
   var st = document.createElement('style');
   st.id = 'tmLayoutStyles';
