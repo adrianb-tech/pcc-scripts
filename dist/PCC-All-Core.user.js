@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.10.27
+// @version      2.11.0
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -7087,20 +7087,39 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			}
 			if (!cell) return;
-			var b = document.createElement("button");
-			b.id = "tmViewBtn";
-			b.type = "button";
-			b.textContent = dashView() === "main" ? "View: Mica" : "View: Main";
-			b.style.cssText = "padding:3px 12px;font-size:12px;font-weight:700;cursor:pointer;border:1px solid #7d8f69;border-radius:6px;background:#eef2e6;color:#334155;";
-			b.onclick = function() {
-				var next = dashView() === "main" ? "mica" : "main";
-				try {
-					localStorage.setItem("tmDashView2", next);
-				} catch (e) {}
-				b.textContent = next === "main" ? "View: Mica" : "View: Main";
-				processedSig = {};
-				fit();
-			};
+			var seg = document.createElement("div");
+			seg.id = "tmViewSeg";
+			seg.style.cssText = "display:inline-flex;background:#e9e9ee;border-radius:10px;padding:2px;gap:2px;";
+			var cur = dashView();
+			[{
+				val: "main",
+				label: "Mica's view"
+			}, {
+				val: "mica",
+				label: "Main view"
+			}].forEach(function(o) {
+				var btn = document.createElement("button");
+				btn.type = "button";
+				btn.textContent = o.label;
+				var isActive = cur === o.val;
+				btn.style.cssText = "border:none;background:" + (isActive ? "#fff" : "transparent") + ";font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;font-size:13px;font-weight:600;padding:7px 16px;border-radius:8px;cursor:pointer;color:" + (isActive ? "#1c1c1e" : "#3a3a3c") + ";" + (isActive ? "box-shadow:0 1px 2px rgba(0,0,0,0.08);" : "");
+				btn.onclick = function() {
+					try {
+						localStorage.setItem("tmDashView2", o.val);
+					} catch (e) {}
+					var btns = seg.querySelectorAll("button");
+					for (var i = 0; i < btns.length; i++) {
+						var isThis = btns[i] === btn;
+						btns[i].style.background = isThis ? "#fff" : "transparent";
+						btns[i].style.color = isThis ? "#1c1c1e" : "#3a3a3c";
+						btns[i].style.boxShadow = isThis ? "0 1px 2px rgba(0,0,0,0.08)" : "none";
+					}
+					processedSig = {};
+					fit();
+				};
+				seg.appendChild(btn);
+			});
+			var b = seg;
 			var placed = false;
 			var pv = document.getElementById("idPrintableViewBtn");
 			if (!pv) {
@@ -9289,6 +9308,41 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return null;
 		}
+		function readDemographicsPage(doc) {
+			function selVal(name) {
+				var el = doc.querySelector("select[name=\"" + name + "\"]");
+				if (!el) return "";
+				var opt = el.querySelector("option[selected]") || el.options[el.selectedIndex];
+				if (!opt) return "";
+				var t = (opt.textContent || "").trim();
+				if (!t || t === "\xA0" || /declined/i.test(t)) return "";
+				return t;
+			}
+			function raceVal() {
+				var el = doc.querySelector("select[name=\"race_id\"]");
+				if (el) {
+					var vals = [];
+					for (var i = 0; i < el.options.length; i++) if (el.options[i].selected) {
+						var t = (el.options[i].textContent || "").trim();
+						if (t && t !== "\xA0") vals.push(t);
+					}
+					if (vals.length) return vals.join(", ");
+				}
+				return "";
+			}
+			var marital = selVal("marital_status_id");
+			var religion = selVal("religion_id");
+			var ethnicity = selVal("ethnicity_id");
+			var race = raceVal();
+			var lang = selVal("primary_lang_id");
+			var raceEth = ethnicity || race || "";
+			var parts = [];
+			if (marital) parts.push(marital.toLowerCase());
+			if (religion) parts.push(religion.toLowerCase());
+			if (raceEth) parts.push(raceEth.toLowerCase());
+			if (lang) parts.push(lang.toLowerCase());
+			return parts.length ? parts.join(", ") : null;
+		}
 		function readWeightsPage(doc) {
 			if (!/Weights and Vitals/i.test(doc.title || "")) return null;
 			var tables = doc.querySelectorAll("table");
@@ -9357,6 +9411,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				series: wp,
 				summary: wp.length + " dated weights; latest " + wp[0].weight + " lbs on " + wp[0].date
 			});
+			try {
+				var demo = readDemographicsPage(document);
+				if (demo) {
+					land("demographics", {
+						source: "Demographics",
+						at: nowT(),
+						summary: demo
+					});
+					feedEvent({ demographics: demo });
+				}
+			} catch (e) {}
 			try {
 				parseAssessments(document);
 			} catch (e) {}
@@ -10903,8 +10968,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		"use strict";
 		var BTN_ID = "tmMoreLessBtn";
 		var STYLE_ID = "tmTilesStyle";
-		var shown = false;
 		var TILE_CSS = "#residentHeaderExtended .residentHeaderPropsFlexGrid.tmTilesOn{display:flex!important;justify-content:flex-start!important;gap:12px!important;}#residentHeaderExtended .residentHeaderPropsFlexGrid.tmTilesOn .residentHeaderPropsFlexGridCol{flex:0 1 auto!important;max-width:660px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 1px 3px rgba(15,23,42,.05);padding:16px 18px;}";
+		var UNDO_CSS = "body.tmUndo #tmCardsRow{display:none!important;}body.tmUndo #tmFirstLineBtns .band-btn,body.tmUndo #tmFirstLineBtns #tmSBtn,body.tmUndo #tmFirstLineBtns #tmGBtn{display:none!important;}body.tmUndo #tmFaceBtn{display:none!important;}body.tmUndo .tm-tile{display:none!important;}";
+		(function injectUndoCss() {
+			if (document.getElementById("tmUndoCss")) return;
+			var st = document.createElement("style");
+			st.id = "tmUndoCss";
+			st.textContent = UNDO_CSS;
+			(document.head || document.documentElement).appendChild(st);
+		})();
 		function targets() {
 			var out = [];
 			var cp = document.querySelector("#residentHeaderButtons [data-testid=\"care-profile\"]");
@@ -10920,24 +10992,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		function apply() {
 			targets().forEach(function(el) {
-				el.style.display = shown ? "" : "none";
+				el.style.display = "none";
 			});
 			var b = document.getElementById(BTN_ID);
-			if (b) b.textContent = shown ? "Less" : "More";
+			if (b) b.textContent = "More";
 			var st = document.getElementById(STYLE_ID);
 			var grid = tilesGrid();
-			if (!shown) {
-				if (!st) {
-					st = document.createElement("style");
-					st.id = STYLE_ID;
-					st.textContent = TILE_CSS;
-					document.head.appendChild(st);
-				}
-				if (grid) grid.classList.add("tmTilesOn");
-			} else {
-				if (grid) grid.classList.remove("tmTilesOn");
-				if (st) st.remove();
+			if (!st) {
+				st = document.createElement("style");
+				st.id = STYLE_ID;
+				st.textContent = TILE_CSS;
+				document.head.appendChild(st);
 			}
+			if (grid) grid.classList.add("tmTilesOn");
 		}
 		function triggerS() {
 			document.dispatchEvent(new KeyboardEvent("keydown", {
@@ -11630,6 +11697,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					value: d.rel || ""
 				}
 			});
+			var demoVal = d.demographics || "";
+			mkSpec(1, "demographics", "Demographics", demoVal, {
+				band: 1,
+				bandW: 200,
+				pad: "6px 8px",
+				size: 13,
+				natW: true,
+				maxW: 320,
+				fit: true,
+				click: {
+					label: "Demographics",
+					value: demoVal
+				},
+				fill: {
+					label: "Family/Social Hx",
+					value: demoVal
+				}
+			});
 			var medsChip = String(d.meds === "- none" ? 0 : d.meds ? d.meds.split("\n").length : 0);
 			if (d.medsFill !== null && d.medsFill !== void 0) mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				band: 1,
@@ -11852,6 +11937,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				"weight",
 				"bims",
 				"rel",
+				"demographics",
 				"meds"
 			],
 			2: [
@@ -12696,10 +12782,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				b.type = "button";
 				b.id = BTN_ID;
 				b.className = "rh-header-btn";
-				b.textContent = "More";
+				b.textContent = "↩";
+				b.title = "UNDO — strip to vanilla PCC (click again to restore)";
+				b.style.cssText = "font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;font-size:14px;font-weight:700;width:38px;height:38px;border-radius:12px;border:none;background:#f2f2f7;color:#1c1c1e;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;";
 				b.addEventListener("click", function() {
-					shown = !shown;
-					apply();
+					var undone = document.body.classList.toggle("tmUndo");
+					b.style.background = undone ? "#0a84ff" : "#f2f2f7";
+					b.style.color = undone ? "#fff" : "#1c1c1e";
+					try {
+						window.dispatchEvent(new CustomEvent("tmUndoToggle", { detail: { undone } }));
+					} catch (e) {}
 				});
 				plantBtn(b);
 			}
