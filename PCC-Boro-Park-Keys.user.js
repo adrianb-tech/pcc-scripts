@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.16
+// @version      2.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1234,6 +1234,23 @@
     if (!e.isTrusted) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.repeat) return;
+    // F14: typing-exempt Save (his 2026-10-30 spec). Fires even while
+    // typing in a note field. On form pages clicks Save; elsewhere
+    // degrades to the normal F action (typing still blocks there).
+    if (e.key === 'F14') {
+      var saveBtn = null;
+      try {
+        saveBtn = findSaveSignExit() || findSaveExit() || findSaveSignLockExit();
+      } catch (err) {}
+      if (saveBtn) {
+        fireSaveClick(saveBtn);
+        e.preventDefault();
+        return;
+      }
+      if (isEditable(e.target)) return;
+      if (doFAction()) e.preventDefault();
+      return;
+    }
     // Escape while typing: leave the field so letter shortcuts (F, etc.)
     // fire instead of typing. His 2026-10-30 ruling.
     if (e.key === 'Escape' && isEditable(e.target)) {
