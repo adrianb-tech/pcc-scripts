@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC - Layout styles
-// @version      1.2
+// @version      1.4
 // @description  His Stylus styles, recreated, plus the fixed frame: the resident header field is one fixed height on every tab, so the tab bar never moves.
 // @match        *://*.pointclickcare.com/*
 // @run-at       document-start
