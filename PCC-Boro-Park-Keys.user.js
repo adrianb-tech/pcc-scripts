@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.17
+// @version      2.18
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -572,6 +572,39 @@
     } catch (e) {}
     return null;
   }
+  // NEW (his 2026-11-02, Boro Park only): does the assessments list contain
+  // ANY psychiatric consultation rows? Decides whether F goes on NEW.
+  function hasPsychConsults() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var rows = docs[d].querySelectorAll('table tr');
+        for (var i = 0; i < rows.length; i++) {
+          if (!leafRow(rows[i])) continue;
+          var txt = (rows[i].innerText || '').toLowerCase();
+          if (txt.indexOf('psych') === -1) continue;
+          if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+  // NEW (his 2026-11-02, Boro Park only): the NEW button on the assessments
+  // list (input[type=button][value=New] with launchNewAssessment onclick).
+  function findNewAssessmentButton() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var btns = docs[d].querySelectorAll('input[type="button"][value="New"]');
+        for (var i = 0; i < btns.length; i++) {
+          var oc = btns[i].getAttribute('onclick') || '';
+          if (oc.indexOf('launchNewAssessment') !== -1 && visible(btns[i])) return btns[i];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
   function findInProgressEditLink() {
     try {
       var docs = allDocs();
@@ -855,6 +888,11 @@
     if (edit) { fireClick(edit); return true; }
     var copy = findMostRecentCopyLink();
     if (copy) { fireClick(copy); return true; }
+    // NEW (his 2026-11-02, Boro Park only): no psych consults at all → F clicks NEW
+    if (!hasPsychConsults()) {
+      var nw = findNewAssessmentButton();
+      if (nw) { fireClick(nw); return true; }
+    }
     // Signed section status page (Boro Park): F clicks Lock, not view — check before view
     if (isBoroPark() && isSignedSectionPage()) {
       var lk = findLockButton();
@@ -919,7 +957,19 @@
   function applyFEditBadge() {
     try {
       if (!shouldRun()) return;
-      // Assessments list: F on Adrian's own In Progress edit, else on copy
+      // NEW (his 2026-11-02, Boro Park only): if psych consults exist, remove
+      // any stale NEW badge (F must NOT be on NEW when consults exist).
+      if (hasPsychConsults()) {
+        try {
+          var docs = allDocs();
+          for (var d = 0; d < docs.length; d++) {
+            var stale = docs[d].querySelectorAll('.' + FBTN_CLASS + '-new');
+            for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
+          }
+        } catch (e3) {}
+      }
+      // Assessments list: F on Adrian's own In Progress edit, else on copy,
+      // else (no psych consults at all) on the NEW button
       var target = findInProgressEditLink();
       var label = 'Edit In Progress form (same as F key)';
       var badgeCls = FBTN_CLASS + '-edit';
@@ -927,6 +977,11 @@
         target = findMostRecentCopyLink();
         label = 'Copy most recent form (same as F key)';
         badgeCls = FBTN_CLASS + '-copy';
+      }
+      if (!target && !hasPsychConsults()) {
+        target = findNewAssessmentButton();
+        label = 'New assessment (same as F key)';
+        badgeCls = FBTN_CLASS + '-new';
       }
       if (!target || !target.parentNode) return;
       if (target.parentNode.querySelector('.' + badgeCls)) return;
