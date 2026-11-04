@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.39
+// @version      1.40
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1235,21 +1235,29 @@
     try {
       if (!shouldRun()) return;
       var target = findViewAllButton();
-      // The button may live in an iframe (PCC loads Progress Notes content in
-      // frames). Plant the badge in the button's own document so fixed
-      // positioning tracks correctly.
+      // ONLY on the Progress Notes TAB (has the VIEW ALL button).
+      // On the View All PAGE (the list), F belongs on the patient name
+      // (applyFResidentProfileBadge) — not a second floating badge.
+      // The tab's button has the testid; the page does not.
+      var isTab = false;
+      try {
+        var docs = allDocs();
+        for (var d = 0; d < docs.length && !isTab; d++) {
+          if (docs[d].querySelector('[data-testid="pn-view-all-btn"]')) isTab = true;
+        }
+      } catch (e2) {}
       var tDoc = target ? target.ownerDocument : null;
       var badge = tDoc ? tDoc.getElementById(VA_BADGE_ID) : null;
       // Hide badges in other documents
       try {
-        var docs = allDocs();
-        for (var d = 0; d < docs.length; d++) {
-          if (docs[d] === tDoc) continue;
-          var ob = docs[d].getElementById(VA_BADGE_ID);
+        var docs2 = allDocs();
+        for (var d2 = 0; d2 < docs2.length; d2++) {
+          if (docs2[d2] === tDoc) continue;
+          var ob = docs2[d2].getElementById(VA_BADGE_ID);
           if (ob) ob.style.display = 'none';
         }
-      } catch (e2) {}
-      if (!isProgressNotesPage()) { if (badge) badge.style.display = 'none'; return; }
+      } catch (e3) {}
+      if (!isTab || !isProgressNotesPage()) { if (badge) badge.style.display = 'none'; return; }
       if (!target || !tDoc) { if (badge) badge.style.display = 'none'; return; }
       if (!badge) {
         badge = makeFBadge('View All (same as F key)', function() { doFAction(); }, tDoc);
@@ -1571,6 +1579,9 @@
   setTimeout(applyFViewAllBadge, 350); setTimeout(applyFViewAllBadge, 800); setTimeout(applyFViewAllBadge, 1500);
   setTimeout(applyFViewAllBadge, 4000);
   setTimeout(applyFViewAllBadge, 8000);
+  ensureHistButtons();
+  setTimeout(ensureHistButtons, 1500);
+  setTimeout(ensureHistButtons, 4000);
   // The evergreen Progress Notes page renders late and can
   // re-render its toolbar, wiping this badge after the load
   // passes end (his capture, 2026-10-15: button present, badge
@@ -1708,8 +1719,144 @@
 
   // ---- Keyboard shortcuts ----
   var enabled = true;
-  // H: history fill (his 2026-11-04). Finds the section's H link, fetches the
-  // most recent history entry from questioncompare.jsp, fills the textarea.
+  // 1/2/3 buttons (his 2026-11-04): replace H-key guessing. Three fixed
+  // buttons fill specific sections directly:
+  //   1 → MSE (Mental Status Examination, section II.1)
+  //   2 → HPI (section I.2)
+  //   3 → Impression (section 5)
+  var HIST_BTN_IDS = ['tmHistBtn1', 'tmHistBtn2', 'tmHistBtn3'];
+  function ensureHistButtons() {
+    try {
+      if (!shouldRun()) return;
+      // Only on form pages with history links
+      if (!document.querySelector('a.history')) return;
+      // Don't duplicate
+      if (document.getElementById(HIST_BTN_IDS[0])) return;
+      var labels = ['1', '2', '3'];
+      var titles = ['Fill MSE from history', 'Fill HPI from history', 'Fill Impression from history'];
+      for (var i = 0; i < 3; i++) {
+        (function (idx) {
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.id = HIST_BTN_IDS[idx];
+          b.textContent = labels[idx];
+          b.title = titles[idx];
+          b.setAttribute('style',
+            'position:fixed;right:12px;z-index:999998;width:36px;height:36px;' +
+            'top:' + (120 + idx * 44) + 'px;' +
+            'font:700 16px -apple-system,sans-serif;color:#fff;background:#0a84ff;' +
+            'border:none;border-radius:50%;cursor:pointer;' +
+            'box-shadow:0 2px 8px rgba(10,132,255,.4);');
+          b.addEventListener('click', function (e) {
+            e.preventDefault(); e.stopPropagation();
+            fillSectionByIndex(idx);
+          });
+          (document.body || document.documentElement).appendChild(b);
+        })(i);
+      }
+    } catch (e) {}
+  }
+  // Section question-key patterns (in order: MSE, HPI, Impression)
+  function fillSectionByIndex(idx) {
+    try {
+      // Find the textarea for this section by its label
+      var ta = null, qkey = null;
+      var docs = allDocs();
+      if (idx === 0) {
+        // MSE: label contains "Mental Status Examination"
+        for (var d = 0; d < docs.length && !ta; d++) {
+          var tas = docs[d].querySelectorAll('textarea');
+          for (var i = 0; i < tas.length; i++) {
+            var row = tas[i].closest('tr');
+            var labelTxt = '';
+            if (row) {
+              var prev = row.previousElementSibling;
+              // Walk up to find the section label
+              var container = tas[i].closest('table');
+              if (container) labelTxt = (container.textContent || '').toLowerCase();
+            }
+            // Simpler: check if a nearby label has MSE text
+            var parent = tas[i].parentElement;
+            while (parent && parent !== docs[d].body) {
+              var pt = (parent.textContent || '').toLowerCase();
+              if (pt.indexOf('mental status examination') !== -1 && pt.indexOf('hpi') === -1) {
+                // This container is the MSE section
+                ta = tas[i];
+                break;
+              }
+              // Don't go too far up
+              if (parent.tagName === 'TABLE') break;
+              parent = parent.parentElement;
+            }
+            if (ta) break;
+          }
+        }
+      } else if (idx === 1) {
+        // HPI: textarea with id linkCust_2_I_2 or name Cust_2_I_2
+        for (var d2 = 0; d2 < docs.length && !ta; d2++) {
+          ta = docs[d2].getElementById('linkCust_2_I_2') || docs[d2].querySelector('textarea[name="Cust_2_I_2"]');
+        }
+      } else if (idx === 2) {
+        // Impression: label contains "Impression/Diagnosis/Recommendation"
+        for (var d3 = 0; d3 < docs.length && !ta; d3++) {
+          var tas3 = docs[d3].querySelectorAll('textarea');
+          for (var j = 0; j < tas3.length; j++) {
+            var p3 = tas3[j].parentElement;
+            while (p3 && p3 !== docs[d3].body) {
+              var t3 = (p3.textContent || '').toLowerCase();
+              if (t3.indexOf('impression/diagnosis/recommendation') !== -1) {
+                ta = tas3[j];
+                break;
+              }
+              if (p3.tagName === 'TABLE') break;
+              p3 = p3.parentElement;
+            }
+            if (ta) break;
+          }
+        }
+      }
+      if (!ta) return false;
+      // Get question key from textarea id/name
+      var tid = ta.getAttribute('id') || ta.getAttribute('name') || '';
+      var qm = tid.match(/(Cust_[\w_]+)/);
+      if (qm) qkey = qm[1];
+      // Find the H link with this question key
+      var hlink = null;
+      for (var d4 = 0; d4 < docs.length && !hlink; d4++) {
+        var hs = docs[d4].querySelectorAll('a.history');
+        for (var k = 0; k < hs.length; k++) {
+          var href = hs[k].getAttribute('href') || '';
+          if (href.indexOf('questioncompare.jsp') === -1) continue;
+          if (qkey && href.indexOf(qkey) === -1) continue;
+          hlink = hs[k];
+          break;
+        }
+      }
+      if (!hlink) return false;
+      var href2 = hlink.getAttribute('href') || '';
+      var um = href2.match(/openPopup\('([^']+)'/);
+      if (!um) return false;
+      var url = um[1].replace(/&amp;/g, '&');
+      fetch(url, { credentials: 'same-origin' })
+        .then(function (resp) { return resp.text(); })
+        .then(function (html) {
+          var txt = extractRecentHistory(html);
+          if (!txt) return;
+          ta.focus();
+          ta.value = txt;
+          try {
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (e2) {}
+          var o = ta.style.background;
+          ta.style.background = '#e6f4ea';
+          setTimeout(function () { ta.style.background = o; }, 800);
+        })
+        .catch(function () {});
+      return true;
+    } catch (e) {}
+    return false;
+  }
   function fillFromHistory() {
     try {
       var tDoc = document;
