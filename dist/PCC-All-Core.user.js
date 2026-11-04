@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.4
+// @version      2.11.5
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -10110,8 +10110,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			return !!t.closest("a[href]");
 		}
 		document.addEventListener("click", function(e) {
+			// Throttle: full gather max once per 2s on non-nav clicks.
+			// Nav clicks always gather (page changed). (Perf fix 2026-11-04)
+			var now = Date.now();
+			var isNav = false;
+			try { isNav = isNavClick(e); } catch (e2) {}
+			if (!isNav) {
+				if (window.__tmLastGather && now - window.__tmLastGather < 2000) {
+					// Skip heavy gather, but still publish (cheap)
+					try { publish(true); } catch (e3) {}
+					return;
+				}
+			}
+			try { window.__tmLastGather = now; } catch (e4) {}
 			gatherPage();
-			if (isNavClick(e)) abortFetches();
+			if (isNav) abortFetches();
 			else gatherFetches();
 			feedFromPacket(true);
 			publish(true);
