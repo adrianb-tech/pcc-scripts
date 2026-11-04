@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.13
+// @version      2.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1217,10 +1217,10 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // Sticky TYPE: restore his last filter (once PCC has rendered the select)
+  // Sticky TYPE: restore his last filter ONCE on load, then leave him alone.
+  // (His 2026-11-04: "no fighting me" — delayed restores were resetting his
+  // manual TYPE changes.)
   restoreStickyType();
-  setTimeout(restoreStickyType, 1500);
-  setTimeout(restoreStickyType, 4000);
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
