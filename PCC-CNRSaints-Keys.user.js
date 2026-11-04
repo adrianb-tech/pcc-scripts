@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.40
+// @version      1.41
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1725,11 +1725,33 @@
   //   2 → HPI (section I.2)
   //   3 → Impression (section 5)
   var HIST_BTN_IDS = ['tmHistBtn1', 'tmHistBtn2', 'tmHistBtn3'];
+  // Question keys for the three sections (Psychiatry MD Evaluation form)
+  var HIST_QKEYS = ['Cust_2_II_1', 'Cust_2_I_2', 'Cust_2_II_5']; // MSE, HPI, Impression
+  function isEvalForm() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+        // The eval form has this header; the referral/consult form does not
+        if (t.indexOf('psychiatry md - evaluation and recommendation') !== -1) return true;
+        // Or has the HPI textarea
+        if (docs[d].getElementById('linkCust_2_I_2')) return true;
+      }
+    } catch (e) {}
+    return false;
+  }
   function ensureHistButtons() {
     try {
       if (!shouldRun()) return;
-      // Only on form pages with history links
-      if (!document.querySelector('a.history')) return;
+      // ONLY on the Psychiatry MD Evaluation form — not the referral page
+      if (!isEvalForm()) {
+        // Remove if present (navigated away)
+        for (var r = 0; r < HIST_BTN_IDS.length; r++) {
+          var old = document.getElementById(HIST_BTN_IDS[r]);
+          if (old) old.remove();
+        }
+        return;
+      }
       // Don't duplicate
       if (document.getElementById(HIST_BTN_IDS[0])) return;
       var labels = ['1', '2', '3'];
@@ -1759,75 +1781,23 @@
   // Section question-key patterns (in order: MSE, HPI, Impression)
   function fillSectionByIndex(idx) {
     try {
-      // Find the textarea for this section by its label
-      var ta = null, qkey = null;
+      var qkey = HIST_QKEYS[idx];
+      if (!qkey) return false;
       var docs = allDocs();
-      if (idx === 0) {
-        // MSE: label contains "Mental Status Examination"
-        for (var d = 0; d < docs.length && !ta; d++) {
-          var tas = docs[d].querySelectorAll('textarea');
-          for (var i = 0; i < tas.length; i++) {
-            var row = tas[i].closest('tr');
-            var labelTxt = '';
-            if (row) {
-              var prev = row.previousElementSibling;
-              // Walk up to find the section label
-              var container = tas[i].closest('table');
-              if (container) labelTxt = (container.textContent || '').toLowerCase();
-            }
-            // Simpler: check if a nearby label has MSE text
-            var parent = tas[i].parentElement;
-            while (parent && parent !== docs[d].body) {
-              var pt = (parent.textContent || '').toLowerCase();
-              if (pt.indexOf('mental status examination') !== -1 && pt.indexOf('hpi') === -1) {
-                // This container is the MSE section
-                ta = tas[i];
-                break;
-              }
-              // Don't go too far up
-              if (parent.tagName === 'TABLE') break;
-              parent = parent.parentElement;
-            }
-            if (ta) break;
-          }
-        }
-      } else if (idx === 1) {
-        // HPI: textarea with id linkCust_2_I_2 or name Cust_2_I_2
-        for (var d2 = 0; d2 < docs.length && !ta; d2++) {
-          ta = docs[d2].getElementById('linkCust_2_I_2') || docs[d2].querySelector('textarea[name="Cust_2_I_2"]');
-        }
-      } else if (idx === 2) {
-        // Impression: label contains "Impression/Diagnosis/Recommendation"
-        for (var d3 = 0; d3 < docs.length && !ta; d3++) {
-          var tas3 = docs[d3].querySelectorAll('textarea');
-          for (var j = 0; j < tas3.length; j++) {
-            var p3 = tas3[j].parentElement;
-            while (p3 && p3 !== docs[d3].body) {
-              var t3 = (p3.textContent || '').toLowerCase();
-              if (t3.indexOf('impression/diagnosis/recommendation') !== -1) {
-                ta = tas3[j];
-                break;
-              }
-              if (p3.tagName === 'TABLE') break;
-              p3 = p3.parentElement;
-            }
-            if (ta) break;
-          }
-        }
+      // Find the textarea by question key
+      var ta = null;
+      for (var d = 0; d < docs.length && !ta; d++) {
+        ta = docs[d].getElementById('link' + qkey) || docs[d].querySelector('textarea[name="' + qkey + '"]');
       }
       if (!ta) return false;
-      // Get question key from textarea id/name
-      var tid = ta.getAttribute('id') || ta.getAttribute('name') || '';
-      var qm = tid.match(/(Cust_[\w_]+)/);
-      if (qm) qkey = qm[1];
       // Find the H link with this question key
       var hlink = null;
-      for (var d4 = 0; d4 < docs.length && !hlink; d4++) {
-        var hs = docs[d4].querySelectorAll('a.history');
+      for (var d2 = 0; d2 < docs.length && !hlink; d2++) {
+        var hs = docs[d2].querySelectorAll('a.history');
         for (var k = 0; k < hs.length; k++) {
           var href = hs[k].getAttribute('href') || '';
           if (href.indexOf('questioncompare.jsp') === -1) continue;
-          if (qkey && href.indexOf(qkey) === -1) continue;
+          if (href.indexOf(qkey) === -1) continue;
           hlink = hs[k];
           break;
         }
