@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.34
+// @version      1.35
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1231,17 +1231,30 @@
   function applyFViewAllBadge() {
     try {
       if (!shouldRun()) return;
-      var badge = document.getElementById(VA_BADGE_ID);
-      if (!isProgressNotesPage()) { if (badge) badge.style.display = 'none'; return; }
       var target = findViewAllButton();
-      if (!target || target.ownerDocument !== document) { if (badge) badge.style.display = 'none'; return; }
+      // The button may live in an iframe (PCC loads Progress Notes content in
+      // frames). Plant the badge in the button's own document so fixed
+      // positioning tracks correctly.
+      var tDoc = target ? target.ownerDocument : null;
+      var badge = tDoc ? tDoc.getElementById(VA_BADGE_ID) : null;
+      // Hide badges in other documents
+      try {
+        var docs = allDocs();
+        for (var d = 0; d < docs.length; d++) {
+          if (docs[d] === tDoc) continue;
+          var ob = docs[d].getElementById(VA_BADGE_ID);
+          if (ob) ob.style.display = 'none';
+        }
+      } catch (e2) {}
+      if (!isProgressNotesPage()) { if (badge) badge.style.display = 'none'; return; }
+      if (!target || !tDoc) { if (badge) badge.style.display = 'none'; return; }
       if (!badge) {
-        badge = makeFBadge('View All (same as F key)', function() { doFAction(); }, document);
+        badge = makeFBadge('View All (same as F key)', function() { doFAction(); }, tDoc);
         badge.id = VA_BADGE_ID;
         badge.style.position = 'fixed';
         badge.style.zIndex = '999999';
         badge.style.marginLeft = '0';
-        (document.body || document.documentElement).appendChild(badge);
+        (tDoc.body || tDoc.documentElement).appendChild(badge);
       }
       var r = target.getClientRects()[0];
       if (!r) { badge.style.display = 'none'; return; }
@@ -1266,7 +1279,7 @@
         var track = function () {
           frames++;
           var t2 = findViewAllButton();
-          var rr = (t2 && t2.ownerDocument === document) ? t2.getClientRects()[0] : null;
+          var rr = (t2 && t2.ownerDocument === tDoc) ? t2.getClientRects()[0] : null;
           if (rr) {
             place(rr);
             var key = rr.left + ',' + rr.top + ',' + rr.width;
