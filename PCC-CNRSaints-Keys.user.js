@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.55
+// @version      1.56
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1851,15 +1851,30 @@
           // Find the matching textarea
           var ta = docs[d].getElementById('link' + qkey) || docs[d].querySelector('textarea[name="' + qkey + '"]');
           if (!ta || !visible(ta)) continue;
+          // SCOPE: only MSE, HPI, Impression — identified by nearby label text.
+          // (His 2026-11-04: "largest 3" grabbed demographics.)
+          var isMain = false;
+          try {
+            // Walk up to find the section container, check its text
+            var el = ta;
+            for (var up = 0; up < 6 && el && el !== docs[d].body; up++) {
+              var t = (el.textContent || '').toLowerCase();
+              // Must contain the section label AND be reasonably scoped
+              // (not the whole page)
+              if (t.length < 2000) {
+                if (t.indexOf('mental status examination') !== -1) { isMain = true; break; }
+                if (t.indexOf('hpi / cc / progress') !== -1) { isMain = true; break; }
+                if (t.indexOf('impression/diagnosis/recommendation') !== -1) { isMain = true; break; }
+              }
+              el = el.parentElement;
+            }
+          } catch (e2) {}
+          if (!isMain) continue;
           var r = ta.getBoundingClientRect();
-          // SCOPE: prefer the 3 largest textareas (main sections). Small fields
-          // like vitals/contacts are skipped. (His 2026-11-04: H was filling everything.)
-          sections.push({ ta: ta, hlink: hs[i], qkey: qkey, top: r.top, height: r.height });
+          sections.push({ ta: ta, hlink: hs[i], qkey: qkey, top: r.top });
         }
       }
-      // Sort by height descending (largest first), take max 3, then sort by position
-      sections.sort(function (a, b) { return b.height - a.height; });
-      if (sections.length > 3) sections = sections.slice(0, 3);
+      // Sort by vertical position (top to bottom)
       sections.sort(function (a, b) { return a.top - b.top; });
     } catch (e) {}
     return sections;
