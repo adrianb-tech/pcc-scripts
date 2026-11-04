@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.47
+// @version      1.48
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -169,12 +169,8 @@
           var t = (links[i].textContent || '').toLowerCase().trim();
           if (t.indexOf('resident profile') !== -1 && visible(links[i])) return links[i];
         }
-        // Fallback: on the View All page, the breadcrumb has a link back to
-        // the chart (patient name). Look for breadcrumb-style links.
-        var crumbs = docs[d].querySelectorAll('[class*="breadcrumb"] a, [class*="crumb"] a, nav a');
-        for (var j = 0; j < crumbs.length; j++) {
-          if (visible(crumbs[j])) return crumbs[j];
-        }
+        // REMOVED 2026-11-04: breadcrumb fallback was matching the main
+        // header nav on all pages. Only explicit "resident profile" text.
       }
     } catch (e) {}
     return null;
@@ -1358,7 +1354,17 @@
   function applyFResidentProfileBadge() {
     try {
       if (!shouldRun()) return;
-      // Only on Progress Notes - View All page (has the resident profile breadcrumb)
+      // ONLY on the Progress Notes View All page. Not on the main header.
+      // Detect via "Views: All Notes" text.
+      var isViewAll = false;
+      try {
+        var docs = allDocs();
+        for (var d = 0; d < docs.length && !isViewAll; d++) {
+          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          if (t.indexOf('views:') !== -1 && t.indexOf('all notes') !== -1) isViewAll = true;
+        }
+      } catch (e2) {}
+      if (!isViewAll) return;
       var target = findResidentProfileLink();
       if (!target || !target.parentNode) return;
       var badgeCls = FBTN_CLASS + '-resprofile';
