@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.41
+// @version      1.42
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -168,6 +168,12 @@
         for (var i = 0; i < links.length; i++) {
           var t = (links[i].textContent || '').toLowerCase().trim();
           if (t.indexOf('resident profile') !== -1 && visible(links[i])) return links[i];
+        }
+        // Fallback: on the View All page, the breadcrumb has a link back to
+        // the chart (patient name). Look for breadcrumb-style links.
+        var crumbs = docs[d].querySelectorAll('[class*="breadcrumb"] a, [class*="crumb"] a, nav a');
+        for (var j = 0; j < crumbs.length; j++) {
+          if (visible(crumbs[j])) return crumbs[j];
         }
       }
     } catch (e) {}
