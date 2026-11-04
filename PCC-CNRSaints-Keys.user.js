@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.54
+// @version      1.55
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1851,25 +1851,16 @@
           // Find the matching textarea
           var ta = docs[d].getElementById('link' + qkey) || docs[d].querySelector('textarea[name="' + qkey + '"]');
           if (!ta || !visible(ta)) continue;
-          // SCOPE: only the 3 main sections (large textareas). Skip small fields
-          // like vitals, contacts, etc. (His 2026-11-04: H was filling everything.)
           var r = ta.getBoundingClientRect();
-          if (r.height < 150) continue; // Main sections are tall (>150px)
-          // Backup: check label keywords for the 3 main sections
-          var labelOk = false;
-          try {
-            var container = ta.closest('table') || ta.parentElement;
-            var ct = (container ? container.textContent : '').toLowerCase();
-            if (ct.indexOf('mental status') !== -1 || ct.indexOf('hpi') !== -1 || ct.indexOf('impression') !== -1) labelOk = true;
-          } catch (e2) {}
-          // Include if tall OR label matches (belt and suspenders)
-          if (r.height < 150 && !labelOk) continue;
-          sections.push({ ta: ta, hlink: hs[i], qkey: qkey, top: r.top });
+          // SCOPE: prefer the 3 largest textareas (main sections). Small fields
+          // like vitals/contacts are skipped. (His 2026-11-04: H was filling everything.)
+          sections.push({ ta: ta, hlink: hs[i], qkey: qkey, top: r.top, height: r.height });
         }
       }
-      // Sort by vertical position (top to bottom), take max 3
-      sections.sort(function (a, b) { return a.top - b.top; });
+      // Sort by height descending (largest first), take max 3, then sort by position
+      sections.sort(function (a, b) { return b.height - a.height; });
       if (sections.length > 3) sections = sections.slice(0, 3);
+      sections.sort(function (a, b) { return a.top - b.top; });
     } catch (e) {}
     return sections;
   }
