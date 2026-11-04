@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.11
+// @version      2.12
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -476,6 +476,36 @@
     }
     return out.length ? out : [document];
   }
+  // NEW (his 2026-11-04, Crown Heights): F on NEW button when no psych consults
+  function hasPsychConsults() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var rows = docs[d].querySelectorAll('table tr');
+        for (var i = 0; i < rows.length; i++) {
+          if (!leafRow(rows[i])) continue;
+          var txt = (rows[i].innerText || '').toLowerCase();
+          if (txt.indexOf('psych') === -1) continue;
+          if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
+          return true;
+        }
+      }
+    } catch (e) {}
+    return false;
+  }
+  function findNewAssessmentButton() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var btns = docs[d].querySelectorAll('input[type="button"][value="New"]');
+        for (var i = 0; i < btns.length; i++) {
+          var oc = btns[i].getAttribute('onclick') || '';
+          if (oc.indexOf('launchNewAssessment') !== -1 && visible(btns[i])) return btns[i];
+        }
+      }
+    } catch (e) {}
+    return null;
+  }
   function findMostRecentCopyLink() {
     try {
       var docs = allDocs();
@@ -802,6 +832,11 @@
     if (edit) { fireClick(edit); return true; }
     var copy = findMostRecentCopyLink();
     if (copy) { fireClick(copy); return true; }
+    // NEW (his 2026-11-04, Crown Heights): no psych consults at all → F clicks NEW
+    if (!hasPsychConsults()) {
+      var nw = findNewAssessmentButton();
+      if (nw) { fireClick(nw); return true; }
+    }
     // Signed section status page (Boro Park): F clicks Lock, not view — check before view
     if (isBoroPark() && isSignedSectionPage()) {
       var lk = findLockButton();
@@ -870,6 +905,17 @@
   function applyFEditBadge() {
     try {
       if (!shouldRun()) return;
+      // NEW (his 2026-11-04, Crown Heights): if psych consults exist, remove
+      // any stale NEW badge (F must NOT be on NEW when consults exist).
+      if (hasPsychConsults()) {
+        try {
+          var docs = allDocs();
+          for (var d = 0; d < docs.length; d++) {
+            var stale = docs[d].querySelectorAll('.' + FBTN_CLASS + '-new');
+            for (var s = 0; s < stale.length; s++) { try { stale[s].remove(); } catch (e2) {} }
+          }
+        } catch (e3) {}
+      }
       // Assessments list: F on Adrian's own In Progress edit, else on copy
       var target = findInProgressEditLink();
       var label = 'Edit In Progress form (same as F key)';
@@ -878,6 +924,11 @@
         target = findMostRecentCopyLink();
         label = 'Copy most recent form (same as F key)';
         badgeCls = FBTN_CLASS + '-copy';
+      }
+      if (!target && !hasPsychConsults()) {
+        target = findNewAssessmentButton();
+        label = 'New assessment (same as F key)';
+        badgeCls = FBTN_CLASS + '-new';
       }
       if (!target || !target.parentNode) return;
       // ONLY the current state's badge may exist (his rule, 2026-10-14:
