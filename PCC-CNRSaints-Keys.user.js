@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.50
+// @version      1.51
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -242,7 +242,9 @@
           var isForm = t.indexOf('save & exit') !== -1 || t.indexOf('save & sign') !== -1;
           var isList = t.indexOf('view all') !== -1 || t.indexOf('add progress note') !== -1;
           var isAssess = docs[d].querySelector('a.history');
-          if (!isForm && !isList && !isAssess && !isProgressNotesPage()) return true;
+          var isFormsList = false;
+          try { isFormsList = isFormsListPage(); } catch (e2) {}
+          if (!isForm && !isList && !isAssess && !isFormsList && !isProgressNotesPage()) return true;
           return false;
         }
       }
@@ -429,6 +431,9 @@
   function restoreStickyType() {
     try {
       if (!shouldRun()) return;
+      // If the user manually changed the filter, don't override (his 2026-11-04:
+      // sticky was trapping him on BIMS when he tried psych consult).
+      if (window.__tmUserChangedType) return;
       var saved = null;
       try { saved = localStorage.getItem(STICKY_TYPE_KEY); } catch (e) {}
       findInFrames(window.top || window, function(doc) {
@@ -1163,7 +1168,9 @@
           var isForm = t.indexOf('save & exit') !== -1 || t.indexOf('save & sign') !== -1;
           var isList = t.indexOf('view all') !== -1 || t.indexOf('add progress note') !== -1;
           var isAssess = docs[d].querySelector('a.history');
-          if (!isForm && !isList && !isAssess && !isProgressNotesPage()) return false;
+          var isFormsList = false;
+          try { isFormsList = isFormsListPage(); } catch (e2) {}
+          if (!isForm && !isList && !isAssess && !isFormsList && !isProgressNotesPage()) return false;
           break;
         }
       }
