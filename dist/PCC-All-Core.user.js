@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.5
+// @version      2.11.6
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9348,41 +9348,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return null;
 		}
-		function readDemographicsPage(doc) {
-			function selVal(name) {
-				var el = doc.querySelector("select[name=\"" + name + "\"]");
-				if (!el) return "";
-				var opt = el.querySelector("option[selected]") || el.options[el.selectedIndex];
-				if (!opt) return "";
-				var t = (opt.textContent || "").trim();
-				if (!t || t === "\xA0" || /declined/i.test(t)) return "";
-				return t;
-			}
-			function raceVal() {
-				var el = doc.querySelector("select[name=\"race_id\"]");
-				if (el) {
-					var vals = [];
-					for (var i = 0; i < el.options.length; i++) if (el.options[i].selected) {
-						var t = (el.options[i].textContent || "").trim();
-						if (t && t !== "\xA0") vals.push(t);
-					}
-					if (vals.length) return vals.join(", ");
-				}
-				return "";
-			}
-			var marital = selVal("marital_status_id");
-			var religion = selVal("religion_id");
-			var ethnicity = selVal("ethnicity_id");
-			var race = raceVal();
-			var lang = selVal("primary_lang_id");
-			var raceEth = ethnicity || race || "";
-			var parts = [];
-			if (marital) parts.push(marital.toLowerCase());
-			if (religion) parts.push(religion.toLowerCase());
-			if (raceEth) parts.push(raceEth.toLowerCase());
-			if (lang) parts.push(lang.toLowerCase());
-			return parts.length ? parts.join(", ") : null;
-		}
 		function readWeightsPage(doc) {
 			if (!/Weights and Vitals/i.test(doc.title || "")) return null;
 			var tables = doc.querySelectorAll("table");
@@ -9451,17 +9416,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				series: wp,
 				summary: wp.length + " dated weights; latest " + wp[0].weight + " lbs on " + wp[0].date
 			});
-			try {
-				var demo = readDemographicsPage(document);
-				if (demo) {
-					land("demographics", {
-						source: "Demographics",
-						at: nowT(),
-						summary: demo
-					});
-					feedEvent({ demographics: demo });
-				}
-			} catch (e) {}
 			try {
 				parseAssessments(document);
 			} catch (e) {}
@@ -11756,24 +11710,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					value: d.rel || ""
 				}
 			});
-			var demoVal = d.demographics || "";
-			mkSpec(1, "demographics", "Demographics", demoVal, {
-				band: 1,
-				bandW: 200,
-				pad: "6px 8px",
-				size: 13,
-				natW: true,
-				maxW: 320,
-				fit: true,
-				click: {
-					label: "Demographics",
-					value: demoVal
-				},
-				fill: {
-					label: "Family/Social Hx",
-					value: demoVal
-				}
-			});
 			var medsChip = String(d.meds === "- none" ? 0 : d.meds ? d.meds.split("\n").length : 0);
 			if (d.medsFill !== null && d.medsFill !== void 0) mkSpec(1, "meds", "Psych meds", d.meds || "", {
 				band: 1,
@@ -11996,7 +11932,6 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				"weight",
 				"bims",
 				"rel",
-				"demographics",
 				"meds"
 			],
 			2: [
