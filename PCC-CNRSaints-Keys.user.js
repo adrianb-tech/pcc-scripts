@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.44
+// @version      1.45
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1323,9 +1323,6 @@
       // Only on Progress Notes - View All page (has the resident profile breadcrumb)
       var target = findResidentProfileLink();
       if (!target || !target.parentNode) return;
-      // Store for the F key to use directly
-      try { window.__tmResidentProfileLink = target; } catch (e0) {}
-      try { var tw = window.top || window; tw.__tmResidentProfileLink = target; } catch (e0b) {}
       var badgeCls = FBTN_CLASS + '-resprofile';
       if (target.parentNode.querySelector('.' + badgeCls)) return;
       var badge = makeFBadge('Resident Profile (same as F key)', function() { doFAction(); }, target.ownerDocument);
@@ -1987,17 +1984,8 @@
     }
     if (k === 'F') {
       // On the View All page: F goes straight back to the chart.
-      // Use the stored link from the badge (same target the badge clicks).
+      // Bypass the doFAction chain (which can get lost in edit-link matching).
       try {
-        var stored = null;
-        try { stored = window.__tmResidentProfileLink; } catch (e0) {}
-        if (!stored) { try { stored = (window.top || window).__tmResidentProfileLink; } catch (e0b) {} }
-        if (stored && stored.ownerDocument && stored.isConnected !== false) {
-          fireClick(stored);
-          e.preventDefault();
-          return;
-        }
-        // Fallback: detect View All page by text, find link fresh
         var isVA = false;
         var docs = allDocs();
         for (var vd = 0; vd < docs.length && !isVA; vd++) {
