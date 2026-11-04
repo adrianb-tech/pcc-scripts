@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.38
+// @version      1.39
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -894,6 +894,8 @@
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         try {
+          // Direct: the View All button's testid (input value isn't in innerText)
+          if (docs[d].querySelector('[data-testid="pn-view-all-btn"]')) return true;
           var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
           // VIEW ALL button is the key indicator — be lenient
           if (t.indexOf('view all') !== -1) {
@@ -902,6 +904,12 @@
           }
           if (t.indexOf('add progress note') !== -1) return true;
           if (t.indexOf('progress notes - view all') !== -1) return true;
+          // Check input values too (View All is <input value="View All">)
+          var inputs = docs[d].querySelectorAll('input[type="button"]');
+          for (var i = 0; i < inputs.length; i++) {
+            if (((inputs[i].value || '').toLowerCase().indexOf('view all') !== -1) &&
+                (t.indexOf('progress note') !== -1 || t.indexOf('effective date') !== -1)) return true;
+          }
         } catch (e2) {}
       }
     } catch (e) {}
@@ -1702,13 +1710,32 @@
   var enabled = true;
   // H: history fill (his 2026-11-04). Finds the section's H link, fetches the
   // most recent history entry from questioncompare.jsp, fills the textarea.
-  var lastClickXY = null;
-  document.addEventListener('click', function (e) {
-    if (e.isTrusted) lastClickXY = { x: e.clientX, y: e.clientY };
-  }, true);
   function fillFromHistory() {
     try {
-      // Find candidate H links (visible, with questioncompare URL)
+      var tDoc = document;
+      // Find the most prominent textarea in the viewport (the one he's working in).
+      // Match its question key to the H link, instead of guessing by click position.
+      var bestTa = null, bestScore = -1;
+      var tas = tDoc.querySelectorAll('textarea[id^="linkCust"], textarea[name^="Cust_"]');
+      for (var ti = 0; ti < tas.length; ti++) {
+        var ta = tas[ti];
+        if (!visible(ta)) continue;
+        var r = ta.getBoundingClientRect();
+        // Score: larger visible area + closer to viewport center = better
+        var area = r.width * r.height;
+        var cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+        var dx = (r.left + r.width / 2) - cx, dy = (r.top + r.height / 2) - cy;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        var score = area / (1 + dist / 500);
+        if (score > bestScore) { bestScore = score; bestTa = ta; }
+      }
+      var qkey = null;
+      if (bestTa) {
+        var tid = bestTa.getAttribute('id') || bestTa.getAttribute('name') || '';
+        var qm = tid.match(/(Cust_[\w_]+)/);
+        if (qm) qkey = qm[1];
+      }
+      // Find the H link with matching question key
       var links = [];
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
@@ -1717,33 +1744,28 @@
           var href = as[i].getAttribute('href') || '';
           if (href.indexOf('questioncompare.jsp') === -1) continue;
           if (!visible(as[i])) continue;
+          // If we have a question key, only match that one
+          if (qkey && href.indexOf(qkey) === -1) continue;
           links.push(as[i]);
         }
       }
       if (!links.length) return false;
-      // Pick: nearest to last click, else first in viewport
       var pick = links[0];
-      if (lastClickXY && links.length > 1) {
-        var best = Infinity;
-        for (var j = 0; j < links.length; j++) {
-          var r = links[j].getBoundingClientRect();
-          var dx = (r.left + r.width / 2) - lastClickXY.x;
-          var dy = (r.top + r.height / 2) - lastClickXY.y;
-          var dist = dx * dx + dy * dy;
-          if (dist < best) { best = dist; pick = links[j]; }
-        }
-      }
       var href2 = pick.getAttribute('href') || '';
-      var m = href2.match(/ESOLquestionkey=([^&'"]+)/);
-      if (!m) return false;
-      var qkey = m[1];
       // Extract the popup URL from the javascript: href
       var um = href2.match(/openPopup\('([^']+)'/);
       if (!um) return false;
       var url = um[1].replace(/&amp;/g, '&');
-      // Find the textarea: id="link" + questionkey
-      var tDoc = pick.ownerDocument;
-      var ta = tDoc.getElementById('link' + qkey) || tDoc.querySelector('textarea[name="' + qkey + '"]');
+      // Use the textarea we already identified (bestTa)
+      var ta = bestTa;
+      if (!ta) {
+        // Fallback: find by question key from href
+        var m = href2.match(/ESOLquestionkey=([^&'"]+)/);
+        if (!m) return false;
+        var qk2 = m[1];
+        var tDoc = pick.ownerDocument;
+        ta = tDoc.getElementById('link' + qk2) || tDoc.querySelector('textarea[name="' + qk2 + '"]');
+      }
       if (!ta) return false;
       // Fetch history, take most recent, fill
       fetch(url, { credentials: 'same-origin' })
