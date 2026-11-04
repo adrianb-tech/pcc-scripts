@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.46
+// @version      1.47
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -233,6 +233,25 @@
       }
     } catch (e) {}
     return [];
+  }
+  // True if we're on a main chart tab page (not a form, list, or progress notes).
+  // F badges/keys stand down here — Hide-tabs owns H/P/O/N navigation.
+  function isMainTabPage() {
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var hasTabs = docs[d].querySelector('[data-testid="tab-link"]');
+        if (hasTabs) {
+          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          var isForm = t.indexOf('save & exit') !== -1 || t.indexOf('save & sign') !== -1;
+          var isList = t.indexOf('view all') !== -1 || t.indexOf('add progress note') !== -1;
+          var isAssess = docs[d].querySelector('a.history');
+          if (!isForm && !isList && !isAssess && !isProgressNotesPage()) return true;
+          return false;
+        }
+      }
+    } catch (e) {}
+    return false;
   }
   function applyFButton() {
     try {
@@ -1123,6 +1142,25 @@
   }
   function doFAction() {
     if (!shouldRun()) return false;
+    // F does NOT fire on main chart tab pages (Clinical, Profile, Dashboard,
+    // etc.) — that's Hide-tabs' H/P/O/N territory. F is for forms, lists,
+    // and Progress Notes only. (His 2026-11-04: F in clinical breaks nav keys.)
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        // If we're on a tab page with the tab bar visible and NOT on a
+        // form/list/progress-notes page, stand down.
+        var hasTabs = docs[d].querySelector('[data-testid="tab-link"]');
+        if (hasTabs) {
+          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          var isForm = t.indexOf('save & exit') !== -1 || t.indexOf('save & sign') !== -1;
+          var isList = t.indexOf('view all') !== -1 || t.indexOf('add progress note') !== -1;
+          var isAssess = docs[d].querySelector('a.history');
+          if (!isForm && !isList && !isAssess && !isProgressNotesPage()) return false;
+          break;
+        }
+      }
+    } catch (e) {}
     // One press, ONE action (his discovery + rule, 2026-10-14): F was
     // firing twice on the section list — sign AND a second target in the
     // same press — and the two navigations raced his signing onto PCC's
@@ -1334,6 +1372,7 @@
   function applyFViewBadge() {
     try {
       if (!shouldRun()) return;
+      if (isMainTabPage()) return; // No F badges on tab pages (Hide-tabs territory)
       var target = findViewLink();
       if (!target || !target.parentNode) return;
       var tdoc = target.ownerDocument || document;
