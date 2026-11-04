@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.35
+// @version      1.34
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1705,6 +1705,107 @@
 
   // ---- Keyboard shortcuts ----
   var enabled = true;
+  // H: history fill (his 2026-11-04). Finds the section's H link, fetches the
+  // most recent history entry from questioncompare.jsp, fills the textarea.
+  var lastClickXY = null;
+  document.addEventListener('click', function (e) {
+    if (e.isTrusted) lastClickXY = { x: e.clientX, y: e.clientY };
+  }, true);
+  function fillFromHistory() {
+    try {
+      // Find candidate H links (visible, with questioncompare URL)
+      var links = [];
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var as = docs[d].querySelectorAll('a.history');
+        for (var i = 0; i < as.length; i++) {
+          var href = as[i].getAttribute('href') || '';
+          if (href.indexOf('questioncompare.jsp') === -1) continue;
+          if (!visible(as[i])) continue;
+          links.push(as[i]);
+        }
+      }
+      if (!links.length) return false;
+      // Pick: nearest to last click, else first in viewport
+      var pick = links[0];
+      if (lastClickXY && links.length > 1) {
+        var best = Infinity;
+        for (var j = 0; j < links.length; j++) {
+          var r = links[j].getBoundingClientRect();
+          var dx = (r.left + r.width / 2) - lastClickXY.x;
+          var dy = (r.top + r.height / 2) - lastClickXY.y;
+          var dist = dx * dx + dy * dy;
+          if (dist < best) { best = dist; pick = links[j]; }
+        }
+      }
+      var href2 = pick.getAttribute('href') || '';
+      var m = href2.match(/ESOLquestionkey=([^&'"]+)/);
+      if (!m) return false;
+      var qkey = m[1];
+      // Extract the popup URL from the javascript: href
+      var um = href2.match(/openPopup\('([^']+)'/);
+      if (!um) return false;
+      var url = um[1].replace(/&amp;/g, '&');
+      // Find the textarea: id="link" + questionkey
+      var tDoc = pick.ownerDocument;
+      var ta = tDoc.getElementById('link' + qkey) || tDoc.querySelector('textarea[name="' + qkey + '"]');
+      if (!ta) return false;
+      // Fetch history, take most recent, fill
+      fetch(url, { credentials: 'same-origin' })
+        .then(function (resp) { return resp.text(); })
+        .then(function (html) {
+          var txt = extractRecentHistory(html);
+          if (!txt) return;
+          ta.focus();
+          ta.value = txt;
+          try {
+            ta.dispatchEvent(new Event('input', { bubbles: true }));
+            ta.dispatchEvent(new Event('change', { bubbles: true }));
+          } catch (e2) {}
+          // Flash confirm
+          var o = ta.style.background;
+          ta.style.background = '#e6f4ea';
+          setTimeout(function () { ta.style.background = o; }, 800);
+        })
+        .catch(function () {});
+      return true;
+    } catch (e) {}
+    return false;
+  }
+  // Extract the most recent answer from questioncompare.jsp HTML.
+  // Lenient: tries table rows first, falls back to largest text block.
+  function extractRecentHistory(html) {
+    try {
+      var div = document.createElement('div');
+      div.innerHTML = html;
+      // Look for history entries: table rows with dates, newest first
+      var rows = div.querySelectorAll('tr');
+      var best = null, bestDate = 0;
+      for (var i = 0; i < rows.length; i++) {
+        var txt = (rows[i].textContent || '').trim();
+        if (txt.length < 20) continue;
+        // Find a date in the row
+        var dm = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+        if (!dm) continue;
+        var dt = new Date(parseInt(dm[3], 10), parseInt(dm[1], 10) - 1, parseInt(dm[2], 10)).getTime();
+        if (dt > bestDate) {
+          bestDate = dt;
+          // The answer is the row's text minus the date/metadata
+          best = txt.replace(/^\s*\d{1,2}\/\d{1,2}\/\d{4}[^\n]*\n?/, '').trim();
+        }
+      }
+      if (best) return best;
+      // Fallback: largest paragraph
+      var ps = div.querySelectorAll('p, td');
+      var longest = '';
+      for (var j = 0; j < ps.length; j++) {
+        var pt = (ps[j].textContent || '').trim();
+        if (pt.length > longest.length && pt.length > 50) longest = pt;
+      }
+      return longest || null;
+    } catch (e) {}
+    return null;
+  }
   if (shouldRun()) document.addEventListener('keydown', function(e) {
     // Ignore synthetic events (Snippety, etc.) — only real keypresses
     if (!e.isTrusted) return;
@@ -1751,6 +1852,13 @@
     }
     if (k === '1' || k === '2') {
       if (handleNumberKey(k)) e.preventDefault();
+      return;
+    }
+    // H: fill from history (his 2026-11-04 ask, CNR follow-up form).
+    // Finds the H (history) link for the section he's working in, fetches
+    // the most recent history entry, fills the textarea. No popup/copy/paste.
+    if (k === 'H') {
+      if (fillFromHistory()) e.preventDefault();
       return;
     }
   }, true);
