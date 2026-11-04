@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.37
+// @version      1.38
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1773,52 +1773,17 @@
     try {
       var div = document.createElement('div');
       div.innerHTML = html;
-      var fullText = (div.textContent || '').trim();
-      if (!fullText) return null;
-      // Split by date patterns to find entry boundaries.
-      // History entries are typically separated by dates (M/D/YYYY).
-      // Take ONLY the first entry (most recent).
-      var dateRe = /(\d{1,2}\/\d{1,2}\/\d{4})/g;
-      var dates = [];
-      var m;
-      while ((m = dateRe.exec(fullText)) !== null) {
-        dates.push({ date: m[1], index: m.index });
+      // The popup has a PAST RESPONSES table. Each data row has:
+      // Date | Description | Status | Response (textarea) | Assessment
+      // The first data row is the most recent. Grab its textarea directly.
+      var textareas = div.querySelectorAll('textarea[readonly]');
+      for (var i = 0; i < textareas.length; i++) {
+        var val = (textareas[i].value || '').trim();
+        if (val.length > 20) return val;
       }
-      if (dates.length >= 2) {
-        // Multiple entries: take text between first and second date,
-        // then strip the leading date/metadata line.
-        var firstEntry = fullText.substring(dates[0].index, dates[1].index).trim();
-        // Remove the date line and any metadata (author, etc.) up to the first newline
-        var lines = firstEntry.split('\n');
-        // Skip lines that look like metadata (date, name, short labels)
-        var contentStart = 0;
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i].trim();
-          if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(line)) continue;
-          if (line.length < 3) continue;
-          // If line looks like a name (2-3 words, no sentence structure), skip
-          if (/^[A-Z][a-z]+ [A-Z][a-z]+$/.test(line)) continue;
-          contentStart = i;
-          break;
-        }
-        var result = lines.slice(contentStart).join('\n').trim();
-        return result || null;
-      } else if (dates.length === 1) {
-        // Single entry: strip the date line, return the rest
-        var single = fullText.substring(dates[0].index).trim();
-        var slines = single.split('\n');
-        var sStart = 0;
-        for (var s = 0; s < slines.length; s++) {
-          var sline = slines[s].trim();
-          if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(sline)) continue;
-          if (sline.length < 3) continue;
-          if (/^[A-Z][a-z]+ [A-Z][a-z]+$/.test(sline)) continue;
-          sStart = s;
-          break;
-        }
-        return slines.slice(sStart).join('\n').trim() || null;
-      }
-      // No dates found: return null rather than everything (safer)
+      // Fallback: any textarea
+      var anyTa = div.querySelector('textarea');
+      if (anyTa && (anyTa.value || '').trim().length > 20) return anyTa.value.trim();
       return null;
     } catch (e) {}
     return null;
