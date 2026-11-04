@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.49
+// @version      1.50
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1138,6 +1138,17 @@
   }
   function doFAction() {
     if (!shouldRun()) return false;
+    // One press, ONE action stamp (must be first, before any early returns)
+    try {
+      var tw = window.top || window;
+      var nowF = Date.now();
+      if (tw.__pccFAt && nowF - tw.__pccFAt < 1200) return true;
+      tw.__pccFAt = nowF;
+    } catch (e) {}
+    // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities.
+    // This runs BEFORE the tab-page guard (admission record is a legit F target on tab pages).
+    var adm = findAdmissionRecord();
+    if (adm) { fireClick(adm); return true; }
     // F does NOT fire on main chart tab pages (Clinical, Profile, Dashboard,
     // etc.) — that's Hide-tabs' H/P/O/N territory. F is for forms, lists,
     // and Progress Notes only. (His 2026-11-04: F in clinical breaks nav keys.)
@@ -1161,16 +1172,6 @@
     // firing twice on the section list — sign AND a second target in the
     // same press — and the two navigations raced his signing onto PCC's
     // error page. The script runs once per frame, so the first F action
-    // stamps the top window and every other hearer stands down briefly.
-    try {
-      var tw = window.top || window;
-      var nowF = Date.now();
-      if (tw.__pccFAt && nowF - tw.__pccFAt < 1200) return true;
-      tw.__pccFAt = nowF;
-    } catch (e) {}
-    // Profile tab: F opens Admission Record (Face Sheet at Boro Park) — all facilities
-    var adm = findAdmissionRecord();
-    if (adm) { fireClick(adm); return true; }
     // CNR/Saints section list (v1.7, his three-state rule, 2026-10-14):
     // a sign link is waiting -> F clicks SIGN; both psych lines signed/green
     // -> F deliberately does nothing on this page; otherwise -> VIEW (as before)
