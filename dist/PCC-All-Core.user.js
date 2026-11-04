@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.6
+// @version      2.11.7
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -12771,25 +12771,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var el = document.getElementById(id);
 				if (el && el.parentNode && el.parentNode.id !== "tmFirstLineBtns") plantBtn(el);
 			});
-			if (!document.getElementById(BTN_ID)) {
-				var b = document.createElement("button");
-				b.type = "button";
-				b.id = BTN_ID;
-				b.className = "rh-header-btn";
-				b.textContent = "↩";
-				b.title = "UNDO — strip to vanilla PCC (click again to restore)";
-				b.style.cssText = "font-family:-apple-system,BlinkMacSystemFont,\"SF Pro Text\",sans-serif;font-size:14px;font-weight:700;width:38px;height:38px;border-radius:12px;border:none;background:#f2f2f7;color:#1c1c1e;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;";
-				b.addEventListener("click", function() {
-					var undone = document.body.classList.toggle("tmUndo");
-					b.style.background = undone ? "#0a84ff" : "#f2f2f7";
-					b.style.color = undone ? "#fff" : "#1c1c1e";
-					try {
-						window.dispatchEvent(new CustomEvent("tmUndoToggle", { detail: { undone } }));
-					} catch (e) {}
-				});
-				plantBtn(b);
-			}
-			document.getElementById(BTN_ID);
+						document.getElementById(BTN_ID);
 			if (!document.getElementById("tmSBtn")) {
 				var s = document.createElement("button");
 				s.type = "button";
