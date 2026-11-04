@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.17
+// @version      1.18
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -339,11 +339,14 @@
   // taken over), but a grab he makes AFTER touching applies — pressing G
   // is the explicit instruction.
   var touchedAt = 0;
-  ['mousedown', 'keydown'].forEach(function (ev) {
+  // Track TYPING only, not focusing. Clicking into the note field after
+  // clicking a tile was updating touchedAt and blocking the transfer.
+  // (Fix 2026-11-04: was ['mousedown', 'keydown'])
+  ['keydown'].forEach(function (ev) {
     document.addEventListener(ev, function (e) {
       if (!e.isTrusted) return;
       var tg = e.target;
-      if (tg && tg.closest && tg.closest('textarea, input, select, button, a, label, [contenteditable]')) {
+      if (tg && tg.closest && tg.closest('textarea, input, select, [contenteditable]')) {
         touchedAt = Date.now();
       }
     }, true);
