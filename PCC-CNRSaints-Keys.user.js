@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.45
+// @version      1.46
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1730,9 +1730,17 @@
   //   1 → MSE (Mental Status Examination, section II.1)
   //   2 → HPI (section I.2)
   //   3 → Impression (section 5)
-  var HIST_BTN_IDS = ['tmHistBtn1', 'tmHistBtn2', 'tmHistBtn3'];
+  // 1/2/3 buttons REMOVED 2026-11-04: H now fills all sections at once.
+  var HIST_BTN_IDS = [];
+  function ensureHistButtons() { try { 
+    // Remove any lingering buttons
+    for (var i = 1; i <= 3; i++) {
+      var b = document.getElementById('tmHistBtn' + i);
+      if (b) b.remove();
+    }
+  } catch (e) {} }
+  function fillSectionByIndex(idx) { return false; }
   // Dynamically discovered: pairs of (textarea, H link), sorted by page position.
-  // Button 1 = first section, 2 = second, 3 = third. No hardcoded keys.
   function discoverHistSections() {
     var sections = [];
     try {
@@ -1842,81 +1850,36 @@
     } catch (e) {}
     return false;
   }
+  // H: fill ALL history sections at once (his 2026-11-04).
+  // Finds every (textarea, H link) pair on the form, fetches each section's
+  // most recent history entry, fills all. One press, done.
   function fillFromHistory() {
     try {
-      var tDoc = document;
-      // Find the most prominent textarea in the viewport (the one he's working in).
-      // Match its question key to the H link, instead of guessing by click position.
-      var bestTa = null, bestScore = -1;
-      var tas = tDoc.querySelectorAll('textarea[id^="linkCust"], textarea[name^="Cust_"]');
-      for (var ti = 0; ti < tas.length; ti++) {
-        var ta = tas[ti];
-        if (!visible(ta)) continue;
-        var r = ta.getBoundingClientRect();
-        // Score: larger visible area + closer to viewport center = better
-        var area = r.width * r.height;
-        var cx = window.innerWidth / 2, cy = window.innerHeight / 2;
-        var dx = (r.left + r.width / 2) - cx, dy = (r.top + r.height / 2) - cy;
-        var dist = Math.sqrt(dx * dx + dy * dy);
-        var score = area / (1 + dist / 500);
-        if (score > bestScore) { bestScore = score; bestTa = ta; }
-      }
-      var qkey = null;
-      if (bestTa) {
-        var tid = bestTa.getAttribute('id') || bestTa.getAttribute('name') || '';
-        var qm = tid.match(/(Cust_[\w_]+)/);
-        if (qm) qkey = qm[1];
-      }
-      // Find the H link with matching question key
-      var links = [];
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var as = docs[d].querySelectorAll('a.history');
-        for (var i = 0; i < as.length; i++) {
-          var href = as[i].getAttribute('href') || '';
-          if (href.indexOf('questioncompare.jsp') === -1) continue;
-          if (!visible(as[i])) continue;
-          // If we have a question key, only match that one
-          if (qkey && href.indexOf(qkey) === -1) continue;
-          links.push(as[i]);
-        }
-      }
-      if (!links.length) return false;
-      var pick = links[0];
-      var href2 = pick.getAttribute('href') || '';
-      // Extract the popup URL from the javascript: href
-      var um = href2.match(/openPopup\('([^']+)'/);
-      if (!um) return false;
-      var url = um[1].replace(/&amp;/g, '&');
-      // Use the textarea we already identified (bestTa)
-      var ta = bestTa;
-      if (!ta) {
-        // Fallback: find by question key from href
-        var m = href2.match(/ESOLquestionkey=([^&'"]+)/);
-        if (!m) return false;
-        var qk2 = m[1];
-        var tDoc = pick.ownerDocument;
-        ta = tDoc.getElementById('link' + qk2) || tDoc.querySelector('textarea[name="' + qk2 + '"]');
-      }
-      if (!ta) return false;
-      // Fetch history, take most recent, fill
-      fetch(url, { credentials: 'same-origin' })
-        .then(function (resp) { return resp.text(); })
-        .then(function (html) {
-          var txt = extractRecentHistory(html);
-          if (!txt) return;
-          ta.focus();
-          ta.value = txt;
-          try {
-            ta.dispatchEvent(new Event('input', { bubbles: true }));
-            ta.dispatchEvent(new Event('change', { bubbles: true }));
-          } catch (e2) {}
-          // Flash confirm
-          var o = ta.style.background;
-          ta.style.background = '#e6f4ea';
-          setTimeout(function () { ta.style.background = o; }, 800);
-        })
-        .catch(function () {});
+      var sections = discoverHistSections();
+      if (!sections.length) return false;
+      sections.forEach(function (sec) {
+        var ta = sec.ta;
+        var hlink = sec.hlink;
+        var href2 = hlink.getAttribute('href') || '';
+        var um = href2.match(/openPopup\('([^']+)'/);
+        if (!um) return;
+        var url = um[1].replace(/&amp;/g, '&');
+        fetch(url, { credentials: 'same-origin' })
+          .then(function (resp) { return resp.text(); })
+          .then(function (html) {
+            var txt = extractRecentHistory(html);
+            if (!txt) return;
+            ta.value = txt;
+            try {
+              ta.dispatchEvent(new Event('input', { bubbles: true }));
+              ta.dispatchEvent(new Event('change', { bubbles: true }));
+            } catch (e2) {}
+            var o = ta.style.background;
+            ta.style.background = '#e6f4ea';
+            setTimeout(function () { ta.style.background = o; }, 800);
+          })
+          .catch(function () {});
+      });
       return true;
     } catch (e) {}
     return false;
