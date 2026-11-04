@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.36
+// @version      1.34
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -795,20 +795,15 @@
         // carries a stable testid (his capture, 2026-10-15).
         var exact = docs[d].querySelector('[data-testid="pn-view-all-btn"]');
         if (exact && visible(exact)) return exact;
-        // First try standard clickable elements (lenient match)
-        var els = docs[d].querySelectorAll('a, button, input[type="button"], input[type="submit"]');
+        // Try all clickable elements (lenient: any tag, contains "view all")
+        var els = docs[d].querySelectorAll('a, button, input, div, span, [role="button"]');
         for (var i = 0; i < els.length; i++) {
-          var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
-          if (label.indexOf('view all') !== -1 && visible(els[i])) return els[i];
-        }
-        // Fallback: any element with "view all" text that looks clickable
-        var all = docs[d].querySelectorAll('div, span');
-        for (var k = 0; k < all.length; k++) {
-          var t = (all[k].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-          if (t === 'view all' && visible(all[k])) {
-            // Must not be a container with lots of other text
-            if ((all[k].innerHTML || '').length < 200) return all[k];
-          }
+          var el = els[i];
+          // Skip if it contains other clickable children (we want the leaf)
+          if (el.querySelector('a, button')) continue;
+          var label = ((el.value || '') + ' ' + (el.textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
+          // Must be primarily "view all" — not a container with lots of text
+          if (label.indexOf('view all') !== -1 && label.length < 30 && visible(el)) return el;
         }
       }
     } catch (e) {}
@@ -1778,31 +1773,53 @@
     try {
       var div = document.createElement('div');
       div.innerHTML = html;
-      // Look for history entries: table rows with dates, newest first
-      var rows = div.querySelectorAll('tr');
-      var best = null, bestDate = 0;
-      for (var i = 0; i < rows.length; i++) {
-        var txt = (rows[i].textContent || '').trim();
-        if (txt.length < 20) continue;
-        // Find a date in the row
-        var dm = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (!dm) continue;
-        var dt = new Date(parseInt(dm[3], 10), parseInt(dm[1], 10) - 1, parseInt(dm[2], 10)).getTime();
-        if (dt > bestDate) {
-          bestDate = dt;
-          // The answer is the row's text minus the date/metadata
-          best = txt.replace(/^\s*\d{1,2}\/\d{1,2}\/\d{4}[^\n]*\n?/, '').trim();
+      var fullText = (div.textContent || '').trim();
+      if (!fullText) return null;
+      // Split by date patterns to find entry boundaries.
+      // History entries are typically separated by dates (M/D/YYYY).
+      // Take ONLY the first entry (most recent).
+      var dateRe = /(\d{1,2}\/\d{1,2}\/\d{4})/g;
+      var dates = [];
+      var m;
+      while ((m = dateRe.exec(fullText)) !== null) {
+        dates.push({ date: m[1], index: m.index });
+      }
+      if (dates.length >= 2) {
+        // Multiple entries: take text between first and second date,
+        // then strip the leading date/metadata line.
+        var firstEntry = fullText.substring(dates[0].index, dates[1].index).trim();
+        // Remove the date line and any metadata (author, etc.) up to the first newline
+        var lines = firstEntry.split('\n');
+        // Skip lines that look like metadata (date, name, short labels)
+        var contentStart = 0;
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(line)) continue;
+          if (line.length < 3) continue;
+          // If line looks like a name (2-3 words, no sentence structure), skip
+          if (/^[A-Z][a-z]+ [A-Z][a-z]+$/.test(line)) continue;
+          contentStart = i;
+          break;
         }
+        var result = lines.slice(contentStart).join('\n').trim();
+        return result || null;
+      } else if (dates.length === 1) {
+        // Single entry: strip the date line, return the rest
+        var single = fullText.substring(dates[0].index).trim();
+        var slines = single.split('\n');
+        var sStart = 0;
+        for (var s = 0; s < slines.length; s++) {
+          var sline = slines[s].trim();
+          if (/^\d{1,2}\/\d{1,2}\/\d{4}/.test(sline)) continue;
+          if (sline.length < 3) continue;
+          if (/^[A-Z][a-z]+ [A-Z][a-z]+$/.test(sline)) continue;
+          sStart = s;
+          break;
+        }
+        return slines.slice(sStart).join('\n').trim() || null;
       }
-      if (best) return best;
-      // Fallback: largest paragraph
-      var ps = div.querySelectorAll('p, td');
-      var longest = '';
-      for (var j = 0; j < ps.length; j++) {
-        var pt = (ps[j].textContent || '').trim();
-        if (pt.length > longest.length && pt.length > 50) longest = pt;
-      }
-      return longest || null;
+      // No dates found: return null rather than everything (safer)
+      return null;
     } catch (e) {}
     return null;
   }
