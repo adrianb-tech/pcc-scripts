@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.51
+// @version      1.53
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -431,8 +431,13 @@
   function restoreStickyType() {
     try {
       if (!shouldRun()) return;
-      // If the user manually changed the filter, don't override (his 2026-11-04:
-      // sticky was trapping him on BIMS when he tried psych consult).
+      // ONLY on the forms list page — never on a form. (His 2026-11-04:
+      // the retries were firing after the psych consult form loaded,
+      // clicking Apply and bouncing him back to the list.)
+      var onList = false;
+      try { onList = isFormsListPage(); } catch (e2) {}
+      if (!onList) return;
+      // If the user manually changed the filter, don't override.
       if (window.__tmUserChangedType) return;
       var saved = null;
       try { saved = localStorage.getItem(STICKY_TYPE_KEY); } catch (e) {}
@@ -441,7 +446,11 @@
         if (!sel) return null;
         if (!sel.__stickyAttached) {
           sel.__stickyAttached = true;
-          sel.addEventListener('change', function() { saveStickyType(sel); });
+          sel.addEventListener('change', function() {
+            try { window.__tmUserChangedType = true; } catch (e3) {}
+            try { (window.top || window).__tmUserChangedType = true; } catch (e4) {}
+            saveStickyType(sel);
+          });
         }
         if (!saved) return true;
         var cur = stickyTypeText(sel);
@@ -1916,7 +1925,18 @@
       if (!um) return false;
       var url = um[1].replace(/&amp;/g, '&');
       fetch(url, { credentials: 'same-origin' })
-        .then(function (resp) { return resp.text(); })
+        .then(function (resp) { return resp.arrayBuffer(); })
+        .then(function (buf) {
+          // PCC popups may be Windows-1252, not UTF-8. Try UTF-8 strict first,
+          // fallback to Windows-1252 (decodes any byte, no �).
+          var html;
+          try {
+            html = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+          } catch (e) {
+            html = new TextDecoder('windows-1252').decode(buf);
+          }
+          return html;
+        })
         .then(function (html) {
           var txt = extractRecentHistory(html);
           if (!txt) return;
@@ -1950,7 +1970,16 @@
         if (!um) return;
         var url = um[1].replace(/&amp;/g, '&');
         fetch(url, { credentials: 'same-origin' })
-          .then(function (resp) { return resp.text(); })
+          .then(function (resp) { return resp.arrayBuffer(); })
+          .then(function (buf) {
+            var html;
+            try {
+              html = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+            } catch (e) {
+              html = new TextDecoder('windows-1252').decode(buf);
+            }
+            return html;
+          })
           .then(function (html) {
             var txt = extractRecentHistory(html);
             if (!txt) return;
