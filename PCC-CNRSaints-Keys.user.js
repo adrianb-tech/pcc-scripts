@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.48
+// @version      1.49
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1775,14 +1775,46 @@
   //   1 → MSE (Mental Status Examination, section II.1)
   //   2 → HPI (section I.2)
   //   3 → Impression (section 5)
-  // 1/2/3 buttons REMOVED 2026-11-04: H now fills all sections at once.
-  var HIST_BTN_IDS = [];
+  // Single large H button (his 2026-11-04): fills all history sections at once.
+  // Design language: Apple-style — SF font, system blue, soft shadow,
+  // generous radius. Fixed right edge, larger tap target (48px).
+  var HIST_H_BTN_ID = 'tmHistBtnH';
   function ensureHistButtons() { try { 
-    // Remove any lingering buttons
+    // Remove any lingering 1/2/3 buttons
     for (var i = 1; i <= 3; i++) {
       var b = document.getElementById('tmHistBtn' + i);
       if (b) b.remove();
     }
+    if (!shouldRun()) return;
+    // Only on the eval form
+    if (!isEvalForm()) {
+      var oldH = document.getElementById(HIST_H_BTN_ID);
+      if (oldH) oldH.remove();
+      return;
+    }
+    if (document.getElementById(HIST_H_BTN_ID)) return;
+    var h = document.createElement('button');
+    h.type = 'button';
+    h.id = HIST_H_BTN_ID;
+    h.textContent = 'H';
+    h.title = 'Fill all sections from history';
+    h.setAttribute('style',
+      'position:fixed;right:12px;top:120px;z-index:999998;' +
+      'width:48px;height:48px;' +
+      'font:700 20px -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;' +
+      'color:#fff;background:#0a84ff;' +
+      'border:none;border-radius:50%;cursor:pointer;' +
+      'box-shadow:0 4px 12px rgba(10,132,255,.35);' +
+      'display:flex;align-items:center;justify-content:center;');
+    h.addEventListener('click', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      fillFromHistory();
+    });
+    // Subtle press feedback
+    h.addEventListener('mousedown', function () { h.style.transform = 'scale(0.94)'; });
+    h.addEventListener('mouseup', function () { h.style.transform = 'scale(1)'; });
+    h.addEventListener('mouseleave', function () { h.style.transform = 'scale(1)'; });
+    (document.body || document.documentElement).appendChild(h);
   } catch (e) {} }
   function fillSectionByIndex(idx) { return false; }
   // Dynamically discovered: pairs of (textarea, H link), sorted by page position.
