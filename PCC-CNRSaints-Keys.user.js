@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.42
+// @version      1.43
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1731,8 +1731,33 @@
   //   2 → HPI (section I.2)
   //   3 → Impression (section 5)
   var HIST_BTN_IDS = ['tmHistBtn1', 'tmHistBtn2', 'tmHistBtn3'];
-  // Question keys for the three sections (Psychiatry MD Evaluation form)
-  var HIST_QKEYS = ['Cust_2_II_1', 'Cust_2_I_2', 'Cust_2_II_5']; // MSE, HPI, Impression
+  // Dynamically discovered: pairs of (textarea, H link), sorted by page position.
+  // Button 1 = first section, 2 = second, 3 = third. No hardcoded keys.
+  function discoverHistSections() {
+    var sections = [];
+    try {
+      var docs = allDocs();
+      for (var d = 0; d < docs.length; d++) {
+        var hs = docs[d].querySelectorAll('a.history');
+        for (var i = 0; i < hs.length; i++) {
+          var href = hs[i].getAttribute('href') || '';
+          if (href.indexOf('questioncompare.jsp') === -1) continue;
+          if (!visible(hs[i])) continue;
+          var qm = href.match(/ESOLquestionkey=([^&'"]+)/);
+          if (!qm) continue;
+          var qkey = qm[1];
+          // Find the matching textarea
+          var ta = docs[d].getElementById('link' + qkey) || docs[d].querySelector('textarea[name="' + qkey + '"]');
+          if (!ta || !visible(ta)) continue;
+          var r = ta.getBoundingClientRect();
+          sections.push({ ta: ta, hlink: hs[i], qkey: qkey, top: r.top });
+        }
+      }
+      // Sort by vertical position (top to bottom)
+      sections.sort(function (a, b) { return a.top - b.top; });
+    } catch (e) {}
+    return sections;
+  }
   function isEvalForm() {
     try {
       var docs = allDocs();
@@ -1761,7 +1786,7 @@
       // Don't duplicate
       if (document.getElementById(HIST_BTN_IDS[0])) return;
       var labels = ['1', '2', '3'];
-      var titles = ['Fill MSE from history', 'Fill HPI from history', 'Fill Impression from history'];
+      var titles = ['Fill first section from history', 'Fill second section from history', 'Fill third section from history'];
       for (var i = 0; i < 3; i++) {
         (function (idx) {
           var b = document.createElement('button');
@@ -1784,31 +1809,15 @@
       }
     } catch (e) {}
   }
-  // Section question-key patterns (in order: MSE, HPI, Impression)
+  // Section fill by index: 0=MSE (first), 1=HPI (second), 2=Impression (third).
+  // Uses dynamically discovered sections — no hardcoded question keys.
   function fillSectionByIndex(idx) {
     try {
-      var qkey = HIST_QKEYS[idx];
-      if (!qkey) return false;
-      var docs = allDocs();
-      // Find the textarea by question key
-      var ta = null;
-      for (var d = 0; d < docs.length && !ta; d++) {
-        ta = docs[d].getElementById('link' + qkey) || docs[d].querySelector('textarea[name="' + qkey + '"]');
-      }
-      if (!ta) return false;
-      // Find the H link with this question key
-      var hlink = null;
-      for (var d2 = 0; d2 < docs.length && !hlink; d2++) {
-        var hs = docs[d2].querySelectorAll('a.history');
-        for (var k = 0; k < hs.length; k++) {
-          var href = hs[k].getAttribute('href') || '';
-          if (href.indexOf('questioncompare.jsp') === -1) continue;
-          if (href.indexOf(qkey) === -1) continue;
-          hlink = hs[k];
-          break;
-        }
-      }
-      if (!hlink) return false;
+      var sections = discoverHistSections();
+      if (idx < 0 || idx >= sections.length) return false;
+      var sec = sections[idx];
+      var ta = sec.ta;
+      var hlink = sec.hlink;
       var href2 = hlink.getAttribute('href') || '';
       var um = href2.match(/openPopup\('([^']+)'/);
       if (!um) return false;
@@ -1974,6 +1983,20 @@
       return;
     }
     if (k === 'F') {
+      // On the View All page: F goes straight back to the chart.
+      // Bypass the doFAction chain (which can get lost in edit-link matching).
+      try {
+        var isVA = false;
+        var docs = allDocs();
+        for (var vd = 0; vd < docs.length && !isVA; vd++) {
+          var vt = (docs[vd].body ? docs[vd].body.innerText : '').toLowerCase();
+          if (vt.indexOf('views:') !== -1 && vt.indexOf('all notes') !== -1) isVA = true;
+        }
+        if (isVA) {
+          var rp = findResidentProfileLink();
+          if (rp) { fireClick(rp); e.preventDefault(); return; }
+        }
+      } catch (err) {}
       if (doFAction()) e.preventDefault();
       return;
     }
