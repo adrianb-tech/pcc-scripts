@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.12
+// @version      2.13
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -485,6 +485,9 @@
         for (var i = 0; i < rows.length; i++) {
           if (!leafRow(rows[i])) continue;
           var txt = (rows[i].innerText || '').toLowerCase();
+          // Skip filter/UI rows (contain "standard forms", "filter", etc.)
+          if (txt.indexOf('standard forms') !== -1) continue;
+          if (txt.indexOf('filter') !== -1 && txt.indexOf('type:') !== -1) continue;
           if (txt.indexOf('psych') === -1) continue;
           if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
           return true;
