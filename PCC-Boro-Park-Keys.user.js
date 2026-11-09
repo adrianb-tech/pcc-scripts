@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.21
+// @version      2.22
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -397,7 +397,12 @@
   function saveStickyType(sel) {
     try {
       var t = stickyTypeText(sel);
-      if (t) { try { localStorage.setItem(STICKY_TYPE_KEY, t); } catch (e2) {} }
+      if (!t) return;
+      // Never save a retired TYPE (his 2026-11-09: the retired BIMS
+      // page is the wrong page). A retired save poisons every later
+      // restore, so refuse it at the source.
+      if (/retired/i.test(t)) return;
+      try { localStorage.setItem(STICKY_TYPE_KEY, t); } catch (e2) {}
     } catch (e) {}
   }
   // Sticky TYPE guard (2.21): once the user changes the TYPE on this page
@@ -410,6 +415,13 @@
       if (__tmUserChangedType) return true; // he already chose — leave it alone
       var saved = null;
       try { saved = localStorage.getItem(STICKY_TYPE_KEY); } catch (e) {}
+      // Retired poison (his 2026-11-09): if the saved TYPE is retired,
+      // clear it and never restore it. The retired BIMS page is the
+      // wrong page — do not land him on it again.
+      if (saved && /retired/i.test(saved)) {
+        try { localStorage.removeItem(STICKY_TYPE_KEY); } catch (e) {}
+        saved = null;
+      }
       var done = findInFrames(window.top || window, function(doc) {
         var sel = findTypeSelect(doc);
         if (!sel) return null;
@@ -417,16 +429,63 @@
           sel.__stickyAttached = true;
           sel.addEventListener('change', function() { __tmUserChangedType = true; saveStickyType(sel); });
         }
-        if (!saved) return true;
         var cur = stickyTypeText(sel);
+        // Retired current page (his 2026-11-09 screenshot): if the
+        // select is sitting on a retired BIMS TYPE and a live BIMS
+        // TYPE exists, correct to the live one. Runs before the saved
+        // checks so it fires even when the saved value was just
+        // cleared as poison.
+        if (/retired/i.test(cur) && /bims/i.test(cur)) {
+          var liveBims0 = null;
+          try { liveBims0 = pickTypeOption(sel, 'bims'); } catch (e7) {}
+          if (liveBims0 && !/retired/i.test(liveBims0.text || '')) {
+            var jj0;
+            for (jj0 = 0; jj0 < sel.options.length; jj0++) sel.options[jj0].selected = (sel.options[jj0] === liveBims0);
+            try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e8) {}
+            saveStickyType(sel);
+            var apply0 = findApply(doc);
+            if (apply0) fireClick(apply0);
+            return true;
+          }
+        }
+        if (!saved) return true;
         if (cur.toUpperCase() === saved.toUpperCase()) return true;
+        // PCC already filtered (his 2026-11-09: "first the bims page
+        // loads then it automatically goes to the psych consult").
+        // PCC loads the list with its own session filter; if the
+        // select already shows a specific TYPE, that IS where he is —
+        // adopt it as the new sticky and do NOT restore over it.
+        // Only restore when the select is at the default (first
+        // option 'All', or the MD type PCC opens on).
+        var isDefault = false;
+        try {
+          var firstOpt = sel.options[0];
+          var firstTxt = firstOpt ? (firstOpt.text || '').replace(/\s+/g, ' ').trim() : '';
+          if (cur.toUpperCase() === firstTxt.toUpperCase()) isDefault = true;
+          if (!isDefault) {
+            var mdOpt = pickTypeOption(sel, 'md');
+            if (mdOpt && cur.toUpperCase() === (mdOpt.text || '').replace(/\s+/g, ' ').trim().toUpperCase()) isDefault = true;
+          }
+        } catch (e2) {}
+        if (!isDefault) {
+          // PCC/user already filtered — adopt it as the new sticky
+          // (unless retired; a retired save would re-poison).
+          if (!/retired/i.test(cur)) saveStickyType(sel);
+          return true;
+        }
         var opts = sel.options, found = null, i, j;
         for (i = 0; i < opts.length; i++) {
           if ((opts[i].text || '').replace(/\s+/g, ' ').trim().toUpperCase() === saved.toUpperCase()) { found = opts[i]; break; }
         }
         if (!found) return null; // select not ready yet — retry
+        // Belt and suspenders: never restore a retired option (the
+        // option text is the authority, not the saved string).
+        if (/retired/i.test(found.text || '')) {
+          try { localStorage.removeItem(STICKY_TYPE_KEY); } catch (e5) {}
+          return true;
+        }
         for (j = 0; j < opts.length; j++) opts[j].selected = (opts[j] === found);
-        try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e2) {}
+        try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e6) {}
         saveStickyType(sel);
         var apply = findApply(doc);
         if (apply) fireClick(apply);
