@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.25
+// @version 1.26
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -410,7 +410,7 @@ var __s3mod_Hide_unused_tabs = 1;
       if (barOk && bandOk) { swapTimer = null; return; }
       if (!barOk) { try { run(); } catch (e) {} }
       if (!bandOk) { try { if (window.__tmCore && window.__tmCore.replant) window.__tmCore.replant(); } catch (e) {} }
-      if (swapTries >= 20) { swapTimer = null; return; }
+      if (swapTries >= 8) { swapTimer = null; return; }
       swapTimer = setTimeout(tick, 500);
     };
     swapTimer = setTimeout(tick, 500);
