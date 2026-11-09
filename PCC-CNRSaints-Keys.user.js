@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.57
+// @version      1.58
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -14,7 +14,14 @@
   // Facility guard: only run at Boro Park
   // Returns true if at Boro Park, false if at another known facility, null if unknown (still loading)
   // Facility guard: only run at CNR (Downtown Brooklyn) or Saints (Saints Joachim & Anne)
+  // Perf 2026-11-09 (round 2): cache definitive verdicts per URL — the
+  // facility cannot change without navigation, but this read body.innerText
+  // of EVERY frame (layout-forcing) on EVERY shouldRun() call, i.e. every
+  // badge function and every F press. null (no facility text yet) is NEVER
+  // cached — the next call rechecks.
+  var _facCache = { url: '', val: null };
   function checkCNRSaintsFacility() {
+    try { if (_facCache.val !== null && location.href === _facCache.url) return _facCache.val; } catch (e0) {}
     try {
       var docs = allDocs();
       var foundCNRSaints = false;
@@ -28,8 +35,8 @@
           if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) foundOther = true;
         } catch (e2) {}
       }
-      if (foundCNRSaints) return true;
-      if (foundOther) return false;
+      if (foundCNRSaints) { try { _facCache = { url: location.href, val: true }; } catch (e6) {} return true; }
+      if (foundOther) { try { _facCache = { url: location.href, val: false }; } catch (e6) {} return false; }
     } catch (e) {}
     return null; // unknown
   }
@@ -310,6 +317,14 @@
     try {
       var els = doc.querySelectorAll('a, button, input[type="button"], input[type="submit"], span, td, div, li');
       for (var i = 0; i < els.length; i++) {
+        // Perf 2026-11-09 (round 2): elText() regex-normalizes the
+        // FULL textContent of every element — container divs/tds hold
+        // kilobytes. A true match's raw text is at most ~200 chars
+        // longer than the target (whitespace runs); skip longer raws
+        // without normalizing. (Empty raws still fall through to
+        // elText's value/aria fallback.)
+        var _raw = els[i].textContent || '';
+        if (_raw.length > text.length + 200) continue;
         if (elText(els[i]) === text && visible(els[i])) out.push(els[i]);
       }
       out.sort(function(a, b) { return elDepth(b, doc) - elDepth(a, doc); });
@@ -537,7 +552,22 @@
   // Per-document page tests (v1.10). The window-wide tests scan every frame
   // from window.top; badge vetoes must be judged on the page that OWNS the
   // target, or a sibling frame's content vetoes this page's badge.
-  function docText(doc) { try { return (doc.body ? doc.body.innerText : '').toLowerCase(); } catch (e) { return ''; } }
+  // Perf 2026-11-09 (round 2): cache each doc's lowercased body text for
+  // 1000ms. Every per-doc helper (isResidentListDoc, isProgressNotesDoc,
+  // isFormsListDoc, isFormsGridDoc, isSectionListDoc) and the page-level
+  // predicates read body.innerText (layout-forcing) through docText —
+  // one read per doc per second instead of one per call per F press.
+  var _docTextCache = { ts: 0, map: [] };
+  function docText(doc) {
+    try {
+      var now = Date.now();
+      if (now - _docTextCache.ts > 1000) _docTextCache = { ts: now, map: [] };
+      for (var i = 0; i < _docTextCache.map.length; i++) if (_docTextCache.map[i].doc === doc) return _docTextCache.map[i].text;
+      var t = (doc.body ? doc.body.innerText : '').toLowerCase();
+      _docTextCache.map.push({ doc: doc, text: t });
+      return t;
+    } catch (e) { return ''; }
+  }
   function isResidentListDoc(doc) { var t = docText(doc); return t.indexOf('search current residents') !== -1 || (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1); }
   function isProgressNotesDoc(doc) { try { if (doc.querySelector('[data-testid="pn-view-all-btn"], [data-testid="pn-add-progress-note-btn"]')) return true; } catch (e) {} var t = docText(doc); if (t.indexOf('view all') !== -1 && (t.indexOf('progress note') !== -1 || t.indexOf('effective date') !== -1)) return true; return t.indexOf('add progress note') !== -1 || t.indexOf('progress notes - view all') !== -1; }
   function isFormsListDoc(doc) { var t = docText(doc); return (t.indexOf('forms list') !== -1 || t.indexOf('in progress list') !== -1) && t.indexOf('form type') !== -1 && t.indexOf('created by') !== -1; }
@@ -560,7 +590,12 @@
     var f2 = findByExactText(doc, 'FACE SHEET');
     return f2[0] || null;
   }
+  // Perf 2026-11-09 (round 2): memoize the frame walk (1000ms TTL) —
+  // every finder called allDocs(), so one badge wave / F press walked
+  // the frame tree 10+ times. Frames only appear as PCC loads them.
+  var _docsCache = { docs: null, ts: 0 };
   function allDocs() {
+    try { var _dn = Date.now(); if (_docsCache.docs && _dn - _docsCache.ts < 1000) return _docsCache.docs; } catch (e0) {}
     var docs = [];
     try {
       var top = window.top || window;
@@ -581,40 +616,78 @@
     for (var d = 0; d < docs.length; d++) {
       if (seen.indexOf(docs[d]) === -1) { seen.push(docs[d]); out.push(docs[d]); }
     }
-    return out.length ? out : [document];
+    var _res = out.length ? out : [document];
+    try { _docsCache = { docs: _res, ts: Date.now() }; } catch (e5) {}
+    return _res;
   }
-  function findMostRecentCopyLink() {
+  // ---- Perf 2026-11-09 (round 2): ONE shared assess-row scan ----
+  // findMostRecentCopyLink + findMostRecentEditLink + findInProgressEditLink
+  // (tier 1 only — CNR has no tier 2) + isSignedSectionPage each did their
+  // own full querySelectorAll('table tr') + innerText-per-row pass. One pass
+  // now reads each leaf row's text ONCE and answers all four. Same
+  // predicates, same order, same first-match / max-key rules as the
+  // originals. Cached 1500ms, ONLY when rowsSeen > 0: an empty table means
+  // PCC hasn't rendered yet. Cached links are re-validated with isConnected:
+  // if PCC re-rendered the list, the old link elements are detached and the
+  // cache is dropped.
+  var _rowScanCache = { data: null, ts: 0 };
+  function scanAssessRows() {
     try {
+      var now = Date.now();
+      if (_rowScanCache.data && now - _rowScanCache.ts < 1500) {
+        var _cd = _rowScanCache.data;
+        var _ok = true;
+        if (_cd.copyLink && !_cd.copyLink.isConnected) _ok = false;
+        if (_cd.mostRecentEdit && !_cd.mostRecentEdit.isConnected) _ok = false;
+        if (_cd.inProgressEdit && !_cd.inProgressEdit.isConnected) _ok = false;
+        if (_ok) return _cd;
+      }
       var docs = allDocs();
-      var best = null, bestDate = null;
+      var out = { copyLink: null, copyDate: null, mostRecentEdit: null, bestKey: null, inProgressEdit: null, signedSection: false, rowsSeen: 0 };
       for (var d = 0; d < docs.length; d++) {
-      var rows = docs[d].querySelectorAll('table tr');
-      for (var i = 0; i < rows.length; i++) {
-        if (!leafRow(rows[i])) continue;
-        var txt = (rows[i].innerText || '');
-        var low = txt.toLowerCase();
-        if (low.indexOf('psych') === -1) continue;
-        if (low.indexOf('consult') === -1 && low.indexOf('psychiatry') === -1) continue;
-        // Parse Form Date (M/D/YYYY) from the row
-        var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (!m) continue;
-        var dt = new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
-        if (isNaN(dt.getTime())) continue;
-        if (bestDate && dt <= bestDate) continue;
-        // Find the copy link in this row
-        var links = rows[i].querySelectorAll('a');
-        for (var j = 0; j < links.length; j++) {
-          var lt = (links[j].textContent || '').trim().toLowerCase();
-          if (lt === 'copy' && visible(links[j])) {
-            best = links[j];
-            bestDate = dt;
-            break;
+        var rows = docs[d].querySelectorAll('table tr');
+        for (var i = 0; i < rows.length; i++) {
+          var row = rows[i];
+          if (row.getElementsByTagName('tr').length) continue; // layout wrapper, not a leaf row (same as leafRow)
+          var txt = (row.innerText || '');
+          var low = txt.toLowerCase();
+          out.rowsSeen++;
+          var isPsych = low.indexOf('psych') !== -1 && (low.indexOf('consult') !== -1 || low.indexOf('psychiatry') !== -1);
+          if (low.indexOf('psych') !== -1 && !(low.indexOf('section') !== -1 && low.indexOf('description') !== -1) && (low.indexOf('balestra') !== -1 || low.indexOf('adrian') !== -1)) out.signedSection = true;
+          if (!isPsych) continue;
+          var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (m) {
+            var dt = new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+            if (!isNaN(dt.getTime()) && (!out.copyDate || dt > out.copyDate)) {
+              var links = row.querySelectorAll('a');
+              for (var j = 0; j < links.length; j++) {
+                if ((links[j].textContent || '').trim().toLowerCase() === 'copy' && visible(links[j])) { out.copyLink = links[j]; out.copyDate = dt; break; }
+              }
+            }
           }
+          // Most-recent edit (CNR rule): in-progress beats completed, latest
+          // date wins; missing/invalid date counts as epoch 0; ties keep first.
+          var editLink = null;
+          var linksE = row.querySelectorAll('a');
+          for (var k = 0; k < linksE.length; k++) {
+            if ((linksE[k].textContent || '').trim().toLowerCase() === 'edit' && visible(linksE[k])) { editLink = linksE[k]; break; }
+          }
+          if (editLink) {
+            var dt2 = m ? new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10)) : new Date(0);
+            if (isNaN(dt2.getTime())) dt2 = new Date(0);
+            var key = (low.indexOf('in progress') !== -1 ? 1e13 : 0) + dt2.getTime();
+            if (out.bestKey === null || key > out.bestKey) { out.mostRecentEdit = editLink; out.bestKey = key; }
+          }
+          if (!out.inProgressEdit && low.indexOf('in progress') !== -1 && low.indexOf('abalestra') !== -1 && editLink) out.inProgressEdit = editLink;
         }
       }
-      }
-      return best;
+      if (out.rowsSeen > 0) _rowScanCache = { data: out, ts: now };
+      return out;
     } catch (e) {}
+    return { copyLink: null, copyDate: null, mostRecentEdit: null, bestKey: null, inProgressEdit: null, signedSection: false, rowsSeen: 0 };
+  }
+  function findMostRecentCopyLink() {
+    try { return scanAssessRows().copyLink; } catch (e) {}
     return null;
   }
   // CNR/Saints: F goes on the MOST RECENT edit button of a psych consult row.
@@ -622,33 +695,7 @@
   // so there is NO creator restriction here. In Progress rows beat completed ones;
   // within a group, latest Form Date wins. No copy fallback (rows have no copy link).
   function findMostRecentEditLink() {
-    try {
-      var docs = allDocs();
-      var best = null, bestKey = null;
-      for (var d = 0; d < docs.length; d++) {
-        var rows = docs[d].querySelectorAll('table tr');
-        for (var i = 0; i < rows.length; i++) {
-          if (!leafRow(rows[i])) continue;
-          var txt = (rows[i].innerText || '');
-          var low = txt.toLowerCase();
-          if (low.indexOf('psych') === -1) continue;
-          if (low.indexOf('consult') === -1 && low.indexOf('psychiatry') === -1) continue;
-          var editLink = null;
-          var links = rows[i].querySelectorAll('a');
-          for (var j = 0; j < links.length; j++) {
-            var lt = (links[j].textContent || '').trim().toLowerCase();
-            if (lt === 'edit' && visible(links[j])) { editLink = links[j]; break; }
-          }
-          if (!editLink) continue;
-          var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-          var dt = m ? new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10)) : new Date(0);
-          if (isNaN(dt.getTime())) dt = new Date(0);
-          var key = (low.indexOf('in progress') !== -1 ? 1e13 : 0) + dt.getTime();
-          if (bestKey === null || key > bestKey) { best = editLink; bestKey = key; }
-        }
-      }
-      return best;
-    } catch (e) {}
+    try { return scanAssessRows().mostRecentEdit; } catch (e) {}
     return null;
   }
   // CNR/Saints section list page: "Sign All" toolbar + section table with Signed By.
@@ -658,7 +705,7 @@
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         try {
-          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          var t = docText(docs[d]);
           // Section table headers are real text: "Signed By" + "Signed Date"
           if (t.indexOf('signed by') !== -1 && t.indexOf('signed date') !== -1) return true;
           // Fallback: a "Sign All" control (its label is an input value, not page text)
@@ -680,7 +727,7 @@
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         try {
-          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          var t = docText(docs[d]);
           if ((t.indexOf('assessment date') !== -1 || t.indexOf('form date') !== -1) && t.indexOf('created by') !== -1) return true;
         } catch (e2) {}
       }
@@ -688,28 +735,7 @@
     return false;
   }
   function findInProgressEditLink() {
-    try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-      var rows = docs[d].querySelectorAll('table tr');
-      for (var i = 0; i < rows.length; i++) {
-        if (!leafRow(rows[i])) continue;
-        var txt = (rows[i].innerText || '').toLowerCase();
-        // Row must be an In Progress psych consult form (any variant: "Psych: Consult",
-        // "Consult Form - Psychiatry", "Consult-Psychiatry", etc.)
-        if (txt.indexOf('in progress') === -1) continue;
-        if (txt.indexOf('psych') === -1) continue;
-        if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
-        // Only Adrian's own In Progress rows (created by abalestra) — skip other users'
-        if (txt.indexOf('abalestra') === -1) continue;
-        var links = rows[i].querySelectorAll('a');
-        for (var j = 0; j < links.length; j++) {
-          var lt = (links[j].textContent || '').trim().toLowerCase();
-          if (lt === 'edit' && visible(links[j])) return links[j];
-        }
-      }
-      }
-    } catch (e) {}
+    try { return scanAssessRows().inProgressEdit; } catch (e) {}
     return null;
   }
   function findViewLink() {
@@ -901,7 +927,7 @@
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         try {
-          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          var t = docText(docs[d]);
           if (t.indexOf('search current residents') !== -1) return true;
           if (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1) return true;
         } catch (e2) {}
@@ -916,7 +942,7 @@
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         try {
-          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          var t = docText(docs[d]);
           if ((t.indexOf('forms list') !== -1 || t.indexOf('in progress list') !== -1) &&
               t.indexOf('form type') !== -1 && t.indexOf('created by') !== -1) return true;
         } catch (e2) {}
@@ -931,7 +957,7 @@
         try {
           // Direct: the View All button's testid (input value isn't in innerText)
           if (docs[d].querySelector('[data-testid="pn-view-all-btn"]')) return true;
-          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+          var t = docText(docs[d]);
           // VIEW ALL button is the key indicator — be lenient
           if (t.indexOf('view all') !== -1) {
             // Confirm it's the progress notes context (not just any "view all")
@@ -951,22 +977,9 @@
     return false;
   }
   // Detect signed section status page: a Psych section row with a signer in Signed By
+  // Detect signed section status page: a Psych section row with a signer in Signed By
   function isSignedSectionPage() {
-    try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var rows = docs[d].querySelectorAll('table tr');
-        for (var i = 0; i < rows.length; i++) {
-          if (!leafRow(rows[i])) continue;
-          var txt = (rows[i].innerText || '').toLowerCase();
-          // Must be a psych section row (not header)
-          if (txt.indexOf('psych') === -1) continue;
-          if (txt.indexOf('section') !== -1 && txt.indexOf('description') !== -1) continue; // header row
-          // Signed = row contains a signer name
-          if (txt.indexOf('balestra') !== -1 || txt.indexOf('adrian') !== -1) return true;
-        }
-      }
-    } catch (e) {}
+    try { return scanAssessRows().signedSection; } catch (e) {}
     return false;
   }
   function findSaveExit() {
