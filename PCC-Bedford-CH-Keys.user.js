@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.15
+// @version      2.16
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -477,8 +477,15 @@
     return out.length ? out : [document];
   }
   // NEW (his 2026-11-04, Crown Heights): F on NEW button when no psych consults
+  // Perf 2026-11-09: cache the result for 5s. hasPsychConsults scans
+  // every table row in every frame reading innerText (layout-forcing);
+  // applyFEditBadge + doFAction call it several times per pass.
+  var _hpcCache = { val: null, ts: 0 };
   function hasPsychConsults() {
     try {
+      var now = Date.now();
+      if (_hpcCache.val !== null && now - _hpcCache.ts < 5000) return _hpcCache.val;
+      var result = false;
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
         var rows = docs[d].querySelectorAll('table tr');
@@ -490,9 +497,13 @@
           if (txt.indexOf('filter') !== -1 && txt.indexOf('type:') !== -1) continue;
           if (txt.indexOf('psych') === -1) continue;
           if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
-          return true;
+          result = true;
+          break;
         }
+        if (result) break;
       }
+      _hpcCache = { val: result, ts: now };
+      return result;
     } catch (e) {}
     return false;
   }
