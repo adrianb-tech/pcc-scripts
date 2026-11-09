@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.10
+// @version      2.11.12
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9155,7 +9155,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						changed = true;
 					}
 				});
-				if (changed) { try { publishCache.dirty = true; } catch (e) {} publish(); }
+				if (changed) { saveDirty = true; try { publishCache.dirty = true; } catch (e) {} publish(); }
 			} catch (e) {}
 		}
 		function feedBimsTile(stop) {
@@ -9173,10 +9173,21 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}));
 			} catch (e) {}
 		}
+		// Perf 2026-11-09 (round 2): saveStored() stringified the whole
+		// packet on EVERY land() before the dedup check ran — the stringify
+		// itself was the cost, not the write. Only stringify when a land
+		// (or merge) actually changed the packet, or the store key changed.
+		var saveDirty = false, savedKey = null;
+		// Stops landed by THIS page load (not restored from storage).
+		// gatherPage skips re-parsing a stop already landed native here:
+		// land() could not upgrade it anyway (native cannot beat native),
+		// so re-scanning the DOM for it is pure waste.
+		var landedHere = {};
 		function saveStored() {
 			try {
 				if (!storeKey) storeKey = residentKey();
 				if (!storeKey) return;
+				if (!saveDirty && storeKey === savedKey) return;
 				var out = {
 					v: packet.v,
 					startedAt: packet.startedAt,
@@ -9200,6 +9211,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					window.__tmLastSaved = { key: storeKey, json: json };
 				} catch (e6) {}
 				localStorage.setItem("tmGatherV2:" + storeKey, json);
+				savedKey = storeKey;
+				saveDirty = false;
 			} catch (e) {}
 		}
 		var settleOpen = true;
@@ -9236,6 +9249,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			data.status = "landed";
 			packet.stops[key] = data;
+			try { landedHere[key] = true; } catch (e) {}
+			saveDirty = true;
 			try { publishCache.dirty = true; } catch (e) {}
 			publish();
 			saveStored();
@@ -9255,15 +9270,22 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return out.join(", ");
 		}
+		// Perf 2026-11-09: the giant element scan (up to 25k nodes) ran
+		// on every gather. The facility cannot change without navigation,
+		// so cache per URL.
+		var _chCache = { url: "", val: false };
 		function isCrownHeights(doc) {
 			try {
+				if (doc === document && location.href === _chCache.url) return _chCache.val;
 				var els = doc.querySelectorAll("select, button, a, span, div, td");
 				for (var i = 0; i < els.length; i++) {
 					var tx = (els[i].textContent || "").trim();
 					if (tx.length > 90 || tx.length < 6) continue;
 					if (!/crown\s*heights/i.test(tx)) continue;
+					if (doc === document) _chCache = { url: location.href, val: true };
 					return true;
 				}
+				if (doc === document) _chCache = { url: location.href, val: false };
 			} catch (e) {}
 			return false;
 		}
@@ -9411,19 +9433,23 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (stopped) return;
 			mergeStored();
 			curStrength = "native";
-			var h = selfHeader(document);
+			// Perf 2026-11-09: skip re-reading stops already landed native
+			// in this page load — land() could not upgrade them anyway.
+			var h = landedHere.header ? {} : selfHeader(document);
 			if (Object.keys(h).length >= 2) land("header", {
 				source: "Dash",
 				at: nowT(),
 				facts: h
 			});
-			var b = readTile(/^Behaviors?\b/i, 700);
-			var behBox = document.getElementById("pnBehBox");
-			if (behBox) b = norm(behBox.textContent).slice(0, 700);
-			var bev = [];
-			try {
-				bev = window.__tmBehEvents ? window.__tmBehEvents.extract(document) : [];
-			} catch (e) {}
+			var b = "", bev = [];
+			if (!landedHere.behaviors) {
+				b = readTile(/^Behaviors?\b/i, 700);
+				var behBox = document.getElementById("pnBehBox");
+				if (behBox) b = norm(behBox.textContent).slice(0, 700);
+				try {
+					bev = window.__tmBehEvents ? window.__tmBehEvents.extract(document) : [];
+				} catch (e) {}
+			}
 			if (b || bev.length) land("behaviors", {
 				source: "Progress Notes",
 				at: nowT(),
@@ -9438,14 +9464,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				at: nowT(),
 				summary: dx
 			});
-			var wp = readWeightsPage(document);
+			var wp = landedHere.weights ? null : readWeightsPage(document);
 			if (wp) land("weights", {
 				source: "Wts/Vitals",
 				at: nowT(),
 				series: wp,
 				summary: wp.length + " dated weights; latest " + wp[0].weight + " lbs on " + wp[0].date
 			});
-			try {
+			// Assessments lands bims + ownnotes (+ hisnotes via merge).
+			// Skip only when both are already native in this load.
+			if (!(landedHere.bims && landedHere.ownnotes)) try {
 				parseAssessments(document);
 			} catch (e) {}
 			try {
@@ -9454,16 +9482,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			try {
 				parseOpenedConsult(document);
 			} catch (e) {}
-			try {
+			if (!landedHere.labs) try {
 				parseLabReport(document);
 			} catch (e) {}
-			try {
+			if (!landedHere.relations) try {
 				parseProfile(document);
 			} catch (e) {}
-			try {
+			if (!landedHere.orders) try {
 				parseOrders(document);
 			} catch (e) {}
-			try {
+			if (!landedHere.labs) try {
 				parseResults(document);
 			} catch (e) {}
 		}
@@ -9472,6 +9500,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				land,
 				publish,
 				saveStored,
+				touchSave: function() { saveDirty = true; },
 				nowT,
 				norm,
 				txt,
@@ -10168,6 +10197,40 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 	})();
 	(function() {
 		"use strict";
+		// Perf 2026-11-09: getElementsByTagName is ~6x faster than a
+		// per-element querySelector (jsdom) and equally fast in browsers.
+		function hasJunkEl(el) {
+			try {
+				return !!(el.getElementsByTagName("script").length || el.getElementsByTagName("style").length || el.getElementsByTagName("pre").length);
+			} catch (e) { return true; }
+		}
+		function cellText(el, junk) {
+			if (!el) return "";
+			// Perf 2026-11-09: ctxt() clones every cell (cloneNode(true) +
+			// a junk scan) — on the assessments list that is 13k clones per
+			// gather (~6s). PCC data cells never contain script/style/pre.
+			// junk === false (proven by a per-table check) skips the per-cell
+			// selector check entirely; otherwise fall back to the exact
+			// per-cell check. Output is identical to ctxt() either way.
+			try {
+				if (junk === false) return (el.textContent || "").replace(/\s+/g, " ").trim();
+				if (!hasJunkEl(el)) return (el.textContent || "").replace(/\s+/g, " ").trim();
+			} catch (e) {}
+			return ctxt(el);
+		}
+		// Perf 2026-11-09: the junk flag must be per TABLE, not per document
+		// — real PCC pages put <script> inside the header table's cells, so
+		// a doc-level flag is always true and the fast path never engages.
+		// Rows of one table are contiguous; cache the last table's flag.
+		function rowJunk(row, cache) {
+			var tb = null;
+			try { tb = row.closest ? row.closest("table") : null; } catch (e) {}
+			if (tb === cache.table) return cache.junk;
+			cache.table = tb;
+			cache.junk = true;
+			try { if (tb && !hasJunkEl(tb)) cache.junk = false; } catch (e) {}
+			return cache.junk;
+		}
 		function ctxt(el) {
 			if (!el) return "";
 			var c = el.cloneNode(true);
@@ -10187,19 +10250,26 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		var MDACK_RE = /MD:\s*Psychiatry\s+Consult\s+Ack/i;
 		var SCORE_RE = /^\d{1,2}(\.\d+)?$/;
 		function bimsPointsFromList(doc) {
-			var heads = doc.querySelectorAll("th, td");
+			// Perf 2026-11-09: Score scan per table (a <th>/<td> always has
+			// a table ancestor in parsed HTML), each with its own junk flag.
 			var hasScore = false;
-			for (var i = 0; i < heads.length; i++) if (/^Score$/i.test(ctxt(heads[i]))) {
-				hasScore = true;
-				break;
+			var tables = doc.querySelectorAll("table");
+			for (var ti = 0; ti < tables.length && !hasScore; ti++) {
+				var tjunk = hasJunkEl(tables[ti]);
+				var heads = tables[ti].querySelectorAll("th, td");
+				for (var i = 0; i < heads.length; i++) if (/^Score$/i.test(cellText(heads[i], tjunk))) {
+					hasScore = true;
+					break;
+				}
 			}
 			if (!hasScore) return null;
 			var points = [], rowsSeen = 0;
+			var jc = { table: null, junk: true };
 			var rows = doc.querySelectorAll("tr");
 			for (var r = 0; r < rows.length; r++) {
 				var row = rows[r];
-				if (!row.cells || row.cells.length < 6 || row.querySelector("tr")) continue;
-				var t = Array.prototype.map.call(row.cells, ctxt);
+				if (!row.cells || row.cells.length < 6 || row.getElementsByTagName("tr").length) continue;
+				var t = Array.prototype.map.call(row.cells, function(c) { return cellText(c, rowJunk(row, jc)); });
 				var dateStr = firstDate(t);
 				if (!dateStr) continue;
 				var rowText = t.join(" | ");
@@ -10227,6 +10297,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			};
 		}
 		function parseAssessments(doc, G) {
+			var junk = true;
+			var jc = { table: null, junk: true };
 			var bp = bimsPointsFromList(doc);
 			if (!bp) {
 				try {
@@ -10242,8 +10314,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var rows = doc.querySelectorAll("tr");
 			for (var r = 0; r < rows.length; r++) {
 				var row = rows[r];
-				if (!row.cells || row.cells.length < 6 || row.querySelector("tr")) continue;
-				var t = Array.prototype.map.call(row.cells, ctxt);
+				if (!row.cells || row.cells.length < 6 || row.getElementsByTagName("tr").length) continue;
+				junk = rowJunk(row, jc);
+				var t = Array.prototype.map.call(row.cells, function(c) { return cellText(c, junk); });
 				var dateStr = firstDate(t);
 				if (!dateStr) continue;
 				var rowText = t.join(" | ");
@@ -10333,6 +10406,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			return sum;
 		}
 		function findBimsViewLinks(doc) {
+			var junk = true;
+			var jc = { table: null, junk: true };
 			var census = {
 				rows: 0,
 				carriers: 0,
@@ -10342,9 +10417,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var rows = doc.querySelectorAll("tr");
 			for (var r = 0; r < rows.length; r++) {
 				var row = rows[r];
-				if (!row.cells || row.cells.length < 5 || row.querySelector("tr")) continue;
+				if (!row.cells || row.cells.length < 5 || row.getElementsByTagName("tr").length) continue;
+				junk = rowJunk(row, jc);
 				census.rows++;
-				var t = Array.prototype.map.call(row.cells, ctxt);
+				var t = Array.prototype.map.call(row.cells, function(c) { return cellText(c, junk); });
 				var dateStr = firstDate(t);
 				if (!dateStr) continue;
 				var rowText = t.join(" | ");
@@ -10485,6 +10561,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				G.land("hisnotes", rec);
 				return;
 			}
+			// Perf 2026-11-09: the merge above rewrote + published + saved
+			// on EVERY gather even with identical entries. Skip when the
+			// merged list is unchanged.
+			try {
+				if (cur.list && JSON.stringify(list) === JSON.stringify(cur.list)) return;
+			} catch (e) {}
 			var inc = G.strength || "copy";
 			var RANK = {
 				weak: 0,
@@ -10496,6 +10578,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			rec.status = "landed";
 			G.packet.stops.hisnotes = rec;
 			G.publish();
+			try { if (G.touchSave) G.touchSave(); } catch (e) {}
 			G.saveStored();
 		}
 		function parseOpenedConsult(doc, G) {
@@ -10754,11 +10837,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			var tables = doc.querySelectorAll("table");
 			for (var ti = 0; ti < tables.length; ti++) {
 				var rows = tables[ti].querySelectorAll("tr");
+				var tjunk = hasJunkEl(tables[ti]);
 				var hdr = -1, nameCol = -1, relCol = -1;
 				for (var i = 0; i < rows.length; i++) {
 					var cells = rows[i].querySelectorAll("td, th");
 					var texts = [];
-					for (var c0 = 0; c0 < cells.length; c0++) texts.push(ctxt(cells[c0]));
+					for (var c0 = 0; c0 < cells.length; c0++) texts.push(cellText(cells[c0], tjunk));
 					var n = -1;
 					for (var c1 = 0; c1 < texts.length; c1++) if (/^name\b/i.test(texts[c1])) {
 						n = c1;
@@ -10790,7 +10874,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				for (var j = hdr + 1; j < rows.length; j++) {
 					var tds = rows[j].querySelectorAll("td");
 					if (tds.length <= nameCol) continue;
-					add(relLabelFor(relCol > -1 && tds[relCol] ? ctxt(tds[relCol]) : "", ctxt(tds[nameCol]), G));
+					add(relLabelFor(relCol > -1 && tds[relCol] ? cellText(tds[relCol], tjunk) : "", cellText(tds[nameCol], tjunk), G));
 				}
 				if (!order.length) continue;
 				return order.map(function(cn) {
@@ -10816,6 +10900,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (!val) {
 				var els = doc.querySelectorAll("div, span, td");
 				for (var i = 0; i < els.length; i++) {
+					// Perf 2026-11-09: textContent substring pre-filter
+					// before closest()+innerText (17k elements on the
+					// assessments list). innerText "Relationships" implies
+					// textContent contains it, so nothing is missed.
+					if ((els[i].textContent || "").toLowerCase().indexOf("relationships") === -1) continue;
 					if (els[i].closest && els[i].closest("tm-tile")) continue;
 					if (/^Relationships$/i.test(G.txt(els[i])) && els[i].parentElement) {
 						var pt = G.txt(els[i].parentElement);
@@ -10869,11 +10958,29 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 		}
 		function parseResults(doc, G) {
+			var junk = true;
+			var jc = { table: null, junk: true };
 			var reports = [];
+			// Perf 2026-11-09: one selector query for the report links
+			// instead of a querySelector per row (1210 rows on the
+			// assessments list, ~550ms). Same rows, same order: every
+			// ancestor tr of a hit is marked, then rows are walked in
+			// document order exactly as before.
+			var hits = doc.querySelectorAll("[onclick*=\"viewReportPopup\"]");
+			if (!hits.length) return;
+			var marked = [];
+			for (var hi = 0; hi < hits.length; hi++) {
+				var anc = hits[hi];
+				while (anc) {
+					if (anc.tagName && anc.tagName.toLowerCase() === "tr" && marked.indexOf(anc) === -1) marked.push(anc);
+					anc = anc.parentElement;
+				}
+			}
 			var rows = doc.querySelectorAll("tr");
 			for (var i = 0; i < rows.length; i++) {
-				if (!rows[i].querySelector("[onclick*=\"viewReportPopup\"]")) continue;
-				var cells = rows[i].cells ? Array.prototype.map.call(rows[i].cells, ctxt) : [];
+				if (marked.indexOf(rows[i]) === -1) continue;
+				junk = rowJunk(rows[i], jc);
+				var cells = rows[i].cells ? Array.prototype.map.call(rows[i].cells, function(c) { return cellText(c, junk); }) : [];
 				var date = firstDate(cells);
 				var name = "";
 				for (var k = 0; k < cells.length; k++) if (cells[k].length > name.length && !/Actions/i.test(cells[k])) name = cells[k];
@@ -10890,6 +10997,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 		}
 		function parseLabReport(doc, G) {
+			var junk = true;
 			var tables = doc.querySelectorAll("table");
 			var tbl = null;
 			for (var i = 0; i < tables.length; i++) {
@@ -10909,9 +11017,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (any) date = any[1];
 			}
 			var analytes = [];
+			// Perf 2026-11-09: the lab table is one table — its own junk flag.
+			if (tbl) junk = hasJunkEl(tbl);
 			var rows = tbl.querySelectorAll("tr");
 			for (var r2 = 1; r2 < rows.length; r2++) {
-				var cells = rows[r2].cells ? Array.prototype.map.call(rows[r2].cells, ctxt) : [];
+				var cells = rows[r2].cells ? Array.prototype.map.call(rows[r2].cells, function(c) { return cellText(c, junk); }) : [];
 				if (cells.length < 6) continue;
 				var name = cells[1] || "";
 				var value = cells[2] || "";
@@ -10944,20 +11054,28 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				native: 2
 			};
 			if ((RANK[inc] || 0) < (RANK[cur.strength || "copy"] || 0)) return;
+			// Perf 2026-11-09: skip the rewrite when the analytes are unchanged.
+			try {
+				if (cur.analytes && JSON.stringify(analytes) === JSON.stringify(cur.analytes) && rec.summary === cur.summary) return;
+			} catch (e) {}
 			rec.strength = inc;
 			rec.status = "landed";
 			G.packet.stops.labs = rec;
 			G.publish();
+			try { if (G.touchSave) G.touchSave(); } catch (e) {}
 			G.saveStored();
 		}
 		var PSYCH_MED_RE = /alprazolam|xanax|citalopram|celexa|escitalopram|lexapro|sertraline|zoloft|fluoxetine|prozac|paroxetine|paxil|fluvoxamine|venlafaxine|effexor|duloxetine|cymbalta|desvenlafaxine|bupropion|wellbutrin|mirtazapine|remeron|trazodone|nefazodone|vilazodone|vortioxetine|clozapine|clozaril|olanzapine|zyprexa|quetiapine|seroquel|risperidone|risperdal|paliperidone|invega|aripiprazole|abilify|ziprasidone|geodon|lurasidone|latuda|cariprazine|brexpiprazole|haloperidol|haldol|fluphenazine|chlorpromazine|perphenazine|loxapine|asenapine|iloperidone|divalproex|depakote|valproate|lamotrigine|lamictal|carbamazepine|tegretol|oxcarbazepine|lithium|gabapentin|neurontin|pregabalin|lyrica|topiramate|hydroxyzine|vistaril|buspirone|clonazepam|klonopin|lorazepam|ativan|diazepam|valium|temazepam|zolpidem|ambien|eszopiclone|zaleplon|ramelteon|suvorexant|doxepin|amitriptyline|nortriptyline|imipramine|clomipramine|methylphenidate|amphetamine|adderall|lisdexamfetamine|vyvanse|atomoxetine|guanfacine|clonidine|prazosin|propranolol|benztropine|donepezil|memantine|rivastigmine|galantamine|naltrexone|acamprosate|disulfiram|methadone|buprenorphine/i;
 		function parseOrders(doc, G) {
+			var junk = true;
+			var jc = { table: null, junk: true };
 			var active = [], psych = [];
 			var rows = doc.querySelectorAll("tr");
 			for (var i = 0; i < rows.length; i++) {
 				var row = rows[i];
 				if (!row.cells || row.cells.length < 5) continue;
-				var t = Array.prototype.map.call(row.cells, ctxt);
+				junk = rowJunk(row, jc);
+				var t = Array.prototype.map.call(row.cells, function(c) { return cellText(c, junk); });
 				var statusIdx = t.findIndex(function(c) {
 					return /^Active$/i.test(c);
 				});
@@ -11084,8 +11202,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			return out.join(", ");
 		}
+		var _chCacheR = { url: "", val: false };
 		function isCrownHeights() {
 			try {
+				if (location.href === _chCacheR.url) return _chCacheR.val;
 				var els = document.querySelectorAll("select, button, a, span, div, td");
 				for (var i = 0; i < els.length; i++) {
 					var tx = (els[i].textContent || "").trim();
@@ -11095,8 +11215,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					try {
 						r = els[i].getBoundingClientRect();
 					} catch (e) {}
-					if (r && r.top >= -50 && r.top < 300) return true;
+					if (r && r.top >= -50 && r.top < 300) { _chCacheR = { url: location.href, val: true }; return true; }
 				}
+				_chCacheR = { url: location.href, val: false };
 			} catch (e) {}
 			return false;
 		}
@@ -11123,7 +11244,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				return "";
 			}
 		}
+		// Perf 2026-11-09: selfData re-read the whole body + the giant
+		// facility scan on every call (cardData + readmit chip call it
+		// several times per build). Memoize per URL; callers only read.
+		var _sdCache = { url: "", val: null };
 		function selfData() {
+			try { if (location.href === _sdCache.url && _sdCache.val) return Object.assign({}, _sdCache.val); } catch (e) {}
 			var out = {};
 			try {
 				var txt = document.body && document.body.textContent ? document.body.textContent : "";
@@ -11149,6 +11275,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var a3 = txt.match(/Discharge Date\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{2,4})/i);
 				if (a3) out.admDischarge = a3[1];
 			} catch (e) {}
+			try { _sdCache = { url: location.href, val: out }; } catch (e) {}
 			return out;
 		}
 		function cardData() {
@@ -11575,6 +11702,19 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			};
 			if (d.meds) d.meds = medsLast(d.meds);
 			if (d.medsFill) d.medsFill = medsLast(d.medsFill);
+			// Unify (2026-11-09, Zoloft case h240): the verdict (tmTileChart.meds)
+			// and the tile click value (d.medsFill) must agree with what the tile
+			// DISPLAYS (d.meds). A stale button attr / stale packet feed made
+			// medsFill "- none" while the tile showed Zoloft — so the tile never
+			// went red (note "- none" matched chart "- none") and the click queued
+			// "- none" (a no-op). The displayed value is the live panel's truth;
+			// when it has real meds and the fill is none/missing, the fill is stale.
+			(function() {
+				var noneLike = function(s) {
+					return !s || /^\s*-\s*none\s*$/i.test(String(s).trim());
+				};
+				if (!noneLike(d.meds) && noneLike(d.medsFill)) d.medsFill = d.meds;
+			})();
 			document.getElementById(ROW_ID);
 			if (!d) return;
 			try {
@@ -12503,16 +12643,24 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}, wait);
 		}
 		var lastStops = null;
+		var lastPktText = null;
 		function pullFromPacket(fromSettleEvent) {
 			try {
 				if (!fromSettleEvent && window.__tmCore && window.__tmCore.settled && window.__tmCore.settled()) return;
 				var n = document.getElementById("tmGatherPacket");
-				try {
-					var pk = JSON.parse(n && n.textContent || "{}");
-					if (pk && pk.stops) lastStops = pk.stops;
-				} catch (e) {}
 				if (!n) return;
-				var pkt = JSON.parse(n.textContent || "{}");
+				// Perf 2026-11-09: pullFromPacket ran on every click (via
+				// publish(true) -> tm-gather-update) and parsed the whole
+				// packet JSON TWICE. Parse once, and skip entirely when the
+				// node text is unchanged since the last pull.
+				var t = n.textContent || "";
+				if (t === lastPktText && lastStops) return;
+				lastPktText = t;
+				var pkt;
+				try {
+					pkt = JSON.parse(t || "{}");
+				} catch (e) { return; }
+				if (pkt && pkt.stops) lastStops = pkt.stops;
 				if (!pkt.stops) return;
 				var changed = false;
 				var rel = pkt.stops.relations;
@@ -12599,14 +12747,20 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (feedRel) return feedRel;
 			return scopedFeed("tmRelFor:");
 		}
+		// Perf 2026-11-09: same giant scan as isCrownHeights, cached per
+		// URL + pattern. The facility cannot change without navigation.
+		var _facCache = {};
 		function facilityNameHere(re) {
 			try {
+				var ck = location.href + "|" + re.source;
+				if (_facCache[ck] !== undefined) return _facCache[ck];
 				var els = document.querySelectorAll("select, button, a, span, div, td");
 				for (var i = 0; i < els.length; i++) {
 					var tx = (els[i].textContent || "").trim();
 					if (tx.length > 90 || tx.length < 6) continue;
-					if (re.test(tx)) return true;
+					if (re.test(tx)) { _facCache[ck] = true; return true; }
 				}
+				_facCache[ck] = false;
 			} catch (e) {}
 			return false;
 		}
@@ -12614,15 +12768,9 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			return facilityNameHere(/bedford/i);
 		}
 		function isCrownHeightsHere() {
-			try {
-				var els = document.querySelectorAll("select, button, a, span, div, td");
-				for (var i = 0; i < els.length; i++) {
-					var tx = (els[i].textContent || "").trim();
-					if (tx.length > 90 || tx.length < 6) continue;
-					if (/crown\s*heights/i.test(tx)) return true;
-				}
-			} catch (e) {}
-			return false;
+			// Perf 2026-11-09: was a duplicate giant scan; delegate to the
+			// cached facilityNameHere (same regex, same result).
+			return facilityNameHere(/crown\s*heights/i);
 		}
 		function chartNumMatch() {
 			try {
