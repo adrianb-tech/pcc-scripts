@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.16
+// @version      2.17
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -12,14 +12,21 @@
   'use strict';
 
   // Facility guard: only run at Bedford or Crown Heights
+  // Perf 2026-11-09 (round 2): cache definitive verdicts per URL — the
+  // facility cannot change without navigation, but this read the whole
+  // body's innerText (layout-forcing) on EVERY shouldRun() call, i.e.
+  // every badge function and every F press. null (no facility text yet)
+  // is NEVER cached — the next call rechecks.
+  var _facCache = { url: '', val: null };
   function checkBedfordCHFacility() {
+    try { if (_facCache.val !== null && location.href === _facCache.url) return _facCache.val; } catch (e0) {}
     try {
       var ft = (document.body ? document.body.innerText : '').toLowerCase();
-      if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) return true;
-      if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) return false;
-      if (ft.indexOf('saint joachim') !== -1 || ft.indexOf('saints') !== -1) return false;
+      if (ft.indexOf('bedford') !== -1 || ft.indexOf('crown heights') !== -1) { try { _facCache = { url: location.href, val: true }; } catch (e6) {} return true; }
+      if (ft.indexOf('boro park') !== -1 || ft.indexOf('bpcnr') !== -1) { try { _facCache = { url: location.href, val: false }; } catch (e6) {} return false; }
+      if (ft.indexOf('saint joachim') !== -1 || ft.indexOf('saints') !== -1) { try { _facCache = { url: location.href, val: false }; } catch (e6) {} return false; }
       // CNR excluded too (same omission as Boro Park's gate, 2026-10-13).
-      if (ft.indexOf('downtown brooklyn') !== -1 || /(^|[^a-z])cnr([^a-z]|$)/.test(ft)) return false;
+      if (ft.indexOf('downtown brooklyn') !== -1 || /(^|[^a-z])cnr([^a-z]|$)/.test(ft)) { try { _facCache = { url: location.href, val: false }; } catch (e6) {} return false; }
     } catch (e) {}
     return null; // unknown
   }
@@ -241,6 +248,15 @@
     try {
       var els = doc.querySelectorAll('a, button, input[type="button"], input[type="submit"], span, td, div, li');
       for (var i = 0; i < els.length; i++) {
+        // Perf 2026-11-09 (round 2): elText() regex-normalizes the
+        // FULL textContent of every element — container divs/tds hold
+        // kilobytes (findAdmissionRecord alone cost ~400ms/F press on
+        // the 1200-row list). A true match's raw text is at most ~200
+        // chars longer than the target (whitespace runs); skip longer
+        // raws without normalizing. (Empty raws still fall through to
+        // elText's value/aria fallback.)
+        var _raw = els[i].textContent || '';
+        if (_raw.length > text.length + 200) continue;
         if (elText(els[i]) === text && visible(els[i])) out.push(els[i]);
       }
       out.sort(function(a, b) { return elDepth(b, doc) - elDepth(a, doc); });
@@ -453,7 +469,12 @@
       return f[0] || null;
     });
   }
+  // Perf 2026-11-09 (round 2): memoize the frame walk (1000ms TTL) —
+  // every finder called allDocs(), so one badge wave / F press walked
+  // the frame tree 10+ times. Frames only appear as PCC loads them.
+  var _docsCache = { docs: null, ts: 0 };
   function allDocs() {
+    try { var _dn = Date.now(); if (_docsCache.docs && _dn - _docsCache.ts < 1000) return _docsCache.docs; } catch (e0) {}
     var docs = [];
     try {
       var top = window.top || window;
@@ -474,37 +495,94 @@
     for (var d = 0; d < docs.length; d++) {
       if (seen.indexOf(docs[d]) === -1) { seen.push(docs[d]); out.push(docs[d]); }
     }
-    return out.length ? out : [document];
+    var _res = out.length ? out : [document];
+    try { _docsCache = { docs: _res, ts: Date.now() }; } catch (e5) {}
+    return _res;
   }
-  // NEW (his 2026-11-04, Crown Heights): F on NEW button when no psych consults
-  // Perf 2026-11-09: cache the result for 5s. hasPsychConsults scans
-  // every table row in every frame reading innerText (layout-forcing);
-  // applyFEditBadge + doFAction call it several times per pass.
-  var _hpcCache = { val: null, ts: 0 };
-  function hasPsychConsults() {
+  // ---- Perf 2026-11-09 (round 2): ONE shared assess-row scan ----
+  // findMostRecentCopyLink + hasPsychConsults + findInProgressEditLink
+  // (both tiers) + isSignedSectionPage each did their own full
+  // querySelectorAll('table tr') + innerText-per-row pass — 3-4 full scans
+  // per F press and per badge wave. One pass now reads each leaf row's
+  // text ONCE and answers all four. Same predicates, same order, same
+  // first-match rules as the four originals. Cached 1500ms, ONLY when
+  // rowsSeen > 0: an empty table means PCC hasn't rendered yet, and caching
+  // that false would plant F on NEW wrongly and starve the late-render
+  // retries (the round-1 5s hasPsychConsults cache bug — removed here).
+  // Cached links are re-validated with isConnected: if PCC re-rendered the
+  // list, the old link elements are detached and the cache is dropped.
+  var _rowScanCache = { data: null, ts: 0 };
+  function scanAssessRows() {
     try {
       var now = Date.now();
-      if (_hpcCache.val !== null && now - _hpcCache.ts < 5000) return _hpcCache.val;
-      var result = false;
+      if (_rowScanCache.data && now - _rowScanCache.ts < 1500) {
+        var _cd = _rowScanCache.data;
+        var _ok = true;
+        if (_cd.copyLink && !_cd.copyLink.isConnected) _ok = false;
+        if (_cd.inProgressEdit && !_cd.inProgressEdit.isConnected) _ok = false;
+        if (_cd.inProgressEdit2 && !_cd.inProgressEdit2.isConnected) _ok = false;
+        if (_ok) return _cd;
+      }
       var docs = allDocs();
+      var out = { copyLink: null, copyDate: null, hasPsych: false, inProgressEdit: null, inProgressEdit2: null, signedSection: false, rowsSeen: 0 };
       for (var d = 0; d < docs.length; d++) {
         var rows = docs[d].querySelectorAll('table tr');
         for (var i = 0; i < rows.length; i++) {
-          if (!leafRow(rows[i])) continue;
-          var txt = (rows[i].innerText || '').toLowerCase();
-          // Skip filter/UI rows (contain "standard forms", "filter", etc.)
-          if (txt.indexOf('standard forms') !== -1) continue;
-          if (txt.indexOf('filter') !== -1 && txt.indexOf('type:') !== -1) continue;
-          if (txt.indexOf('psych') === -1) continue;
-          if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
-          result = true;
-          break;
+          var row = rows[i];
+          if (row.getElementsByTagName('tr').length) continue; // layout wrapper, not a leaf row (same as leafRow)
+          var txt = (row.innerText || '');
+          var low = txt.toLowerCase();
+          out.rowsSeen++;
+          var hasPsychSub = low.indexOf('psych') !== -1;
+          var isPsych = hasPsychSub && (low.indexOf('consult') !== -1 || low.indexOf('psychiatry') !== -1);
+          var isFilterRow = low.indexOf('standard forms') !== -1 || (low.indexOf('filter') !== -1 && low.indexOf('type:') !== -1);
+          if (isPsych && !isFilterRow) out.hasPsych = true;
+          if (hasPsychSub && !(low.indexOf('section') !== -1 && low.indexOf('description') !== -1) && (low.indexOf('balestra') !== -1 || low.indexOf('adrian') !== -1)) out.signedSection = true;
+          // Tier 2 (OLD semantics, h252): psych substring + exact
+          // 'In Progress' cell + visible edit link — NO consult /
+          // psychiatry requirement. Runs here, before the isPsych
+          // gate: e.g. the Psychotropic Medication Use Summary row
+          // has psych via 'Psychotropic' but no 'consult'.
+          if (hasPsychSub && !out.inProgressEdit2) {
+            var cells = row.querySelectorAll('td');
+            var isIP = false;
+            for (var c = 0; c < cells.length; c++) {
+              if ((cells[c].textContent || '').trim().toLowerCase() === 'in progress') { isIP = true; break; }
+            }
+            if (isIP) {
+              var links2 = row.querySelectorAll('a');
+              for (var k2 = 0; k2 < links2.length; k2++) {
+                if ((links2[k2].textContent || '').trim().toLowerCase() === 'edit' && visible(links2[k2])) { out.inProgressEdit2 = links2[k2]; break; }
+              }
+            }
+          }
+          if (!isPsych) continue;
+          var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+          if (m) {
+            var dt = new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
+            if (!isNaN(dt.getTime()) && (!out.copyDate || dt > out.copyDate)) {
+              var links = row.querySelectorAll('a');
+              for (var j = 0; j < links.length; j++) {
+                if ((links[j].textContent || '').trim().toLowerCase() === 'copy' && visible(links[j])) { out.copyLink = links[j]; out.copyDate = dt; break; }
+              }
+            }
+          }
+          if (!out.inProgressEdit && low.indexOf('in progress') !== -1 && low.indexOf('abalestra') !== -1) {
+            var links1 = row.querySelectorAll('a');
+            for (var k = 0; k < links1.length; k++) {
+              if ((links1[k].textContent || '').trim().toLowerCase() === 'edit' && visible(links1[k])) { out.inProgressEdit = links1[k]; break; }
+            }
+          }
         }
-        if (result) break;
       }
-      _hpcCache = { val: result, ts: now };
-      return result;
+      if (out.rowsSeen > 0) _rowScanCache = { data: out, ts: now };
+      return out;
     } catch (e) {}
+    return { copyLink: null, copyDate: null, hasPsych: false, inProgressEdit: null, inProgressEdit2: null, signedSection: false, rowsSeen: 0 };
+  }
+  // NEW (his 2026-11-04, Crown Heights): F on NEW button when no psych consults
+  function hasPsychConsults() {
+    try { return scanAssessRows().hasPsych; } catch (e) {}
     return false;
   }
   function findNewAssessmentButton() {
@@ -521,90 +599,11 @@
     return null;
   }
   function findMostRecentCopyLink() {
-    try {
-      var docs = allDocs();
-      var best = null, bestDate = null;
-      for (var d = 0; d < docs.length; d++) {
-      var rows = docs[d].querySelectorAll('table tr');
-      for (var i = 0; i < rows.length; i++) {
-        if (!leafRow(rows[i])) continue;
-        var txt = (rows[i].innerText || '');
-        var low = txt.toLowerCase();
-        if (low.indexOf('psych') === -1) continue;
-        if (low.indexOf('consult') === -1 && low.indexOf('psychiatry') === -1) continue;
-        // Parse Form Date (M/D/YYYY) from the row
-        var m = txt.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-        if (!m) continue;
-        var dt = new Date(parseInt(m[3], 10), parseInt(m[1], 10) - 1, parseInt(m[2], 10));
-        if (isNaN(dt.getTime())) continue;
-        if (bestDate && dt <= bestDate) continue;
-        // Find the copy link in this row
-        var links = rows[i].querySelectorAll('a');
-        for (var j = 0; j < links.length; j++) {
-          var lt = (links[j].textContent || '').trim().toLowerCase();
-          if (lt === 'copy' && visible(links[j])) {
-            best = links[j];
-            bestDate = dt;
-            break;
-          }
-        }
-      }
-      }
-      return best;
-    } catch (e) {}
+    try { return scanAssessRows().copyLink; } catch (e) {}
     return null;
   }
   function findInProgressEditLink() {
-    try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-      var rows = docs[d].querySelectorAll('table tr');
-      for (var i = 0; i < rows.length; i++) {
-        if (!leafRow(rows[i])) continue;
-        var txt = (rows[i].innerText || '').toLowerCase();
-        // Row must be an In Progress psych consult form (any variant: "Psych: Consult",
-        // "Consult Form - Psychiatry", "Consult-Psychiatry", etc.)
-        if (txt.indexOf('in progress') === -1) continue;
-        if (txt.indexOf('psych') === -1) continue;
-        if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
-        // Only Adrian's own In Progress rows (created by abalestra) — skip other users'
-        if (txt.indexOf('abalestra') === -1) continue;
-        var links = rows[i].querySelectorAll('a');
-        for (var j = 0; j < links.length; j++) {
-          var lt = (links[j].textContent || '').trim().toLowerCase();
-          if (lt === 'edit' && visible(links[j])) return links[j];
-        }
-      }
-      }
-    } catch (e) {}
-
-      // Tier 2 (chip evidence, 2026-10-14): the strict whole-row gates
-      // above can miss the real row on the live page — several rows
-      // contain 'in progress', and the true row's whole-row text failed
-      // a substring gate while its Status CELL reads exactly
-      // 'In Progress'. Judge by the cell: exact 'In Progress' status,
-      // psych in the row, a visible edit link.
-      try {
-        var docs2 = allDocs();
-        for (var d2 = 0; d2 < docs2.length; d2++) {
-          var rows2 = docs2[d2].querySelectorAll('table tr');
-          for (var i2 = 0; i2 < rows2.length; i2++) {
-            if (!leafRow(rows2[i2])) continue;
-            var rtxt = (rows2[i2].innerText || '').toLowerCase();
-            if (rtxt.indexOf('psych') === -1) continue;
-            var cells = rows2[i2].querySelectorAll('td');
-            var isIP = false;
-            for (var c = 0; c < cells.length; c++) {
-              if ((cells[c].textContent || '').trim().toLowerCase() === 'in progress') { isIP = true; break; }
-            }
-            if (!isIP) continue;
-            var links2 = rows2[i2].querySelectorAll('a');
-            for (var j2 = 0; j2 < links2.length; j2++) {
-              if ((links2[j2].textContent || '').trim().toLowerCase() === 'edit' && visible(links2[j2])) return links2[j2];
-            }
-          }
-        }
-      } catch (e2) {}
+    try { var s = scanAssessRows(); return s.inProgressEdit || s.inProgressEdit2; } catch (e) {}
     return null;
   }
   function findViewLink() {
@@ -662,12 +661,12 @@
   // Section list page (e.g. Boro Park Psych: Consult sections): F on the section edit link
   function findSectionEditLink() {
     try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var txt = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
+      var pts = pageTexts();
+      for (var d = 0; d < pts.length; d++) {
+        var txt = pts[d].text;
         // Must be a section list page (has Section/Description headers, not the assessments/forms table)
         if (txt.indexOf('in progress') !== -1 && (txt.indexOf('assessment date') !== -1 || txt.indexOf('form date') !== -1)) continue;
-        var links = docs[d].querySelectorAll('a');
+        var links = pts[d].doc.querySelectorAll('a');
         for (var j = 0; j < links.length; j++) {
           var lt = (links[j].textContent || '').trim().toLowerCase();
           if (lt === 'edit' && visible(links[j])) {
@@ -726,16 +725,41 @@
     return null;
   }
 
+  // ---- Perf 2026-11-09 (round 2): shared page-text cache ----
+  // isProgressNotesPage / isResidentListPage / findSectionEditLink's guard
+  // each read body.innerText of EVERY doc (layout-forcing) — 3-4x per F
+  // press plus every badge wave. One read per doc per 1000ms, shared.
+  // Testid checks stay live (cheap querySelector, not text).
+  var _pageTextCache = { ts: 0, texts: null };
+  function pageTexts() {
+    try {
+      var now = Date.now();
+      if (_pageTextCache.texts && now - _pageTextCache.ts < 1000) return _pageTextCache.texts;
+      var docs = allDocs();
+      var out = [];
+      for (var d = 0; d < docs.length; d++) {
+        try { out.push({ doc: docs[d], text: (docs[d].body ? docs[d].body.innerText : '').toLowerCase() }); } catch (e2) {}
+      }
+      _pageTextCache = { ts: now, texts: out };
+      return out;
+    } catch (e) {}
+    return [];
+  }
+  function docText(doc) {
+    try {
+      var ts = pageTexts();
+      for (var i = 0; i < ts.length; i++) if (ts[i].doc === doc) return ts[i].text;
+    } catch (e) {}
+    return '';
+  }
   // Resident census/search list — no F badges here at all
   function isResidentListPage() {
     try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        try {
-          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
-          if (t.indexOf('search current residents') !== -1) return true;
-          if (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1) return true;
-        } catch (e2) {}
+      var ts = pageTexts();
+      for (var d = 0; d < ts.length; d++) {
+        var t = ts[d].text;
+        if (t.indexOf('search current residents') !== -1) return true;
+        if (t.indexOf('all residents') !== -1 && t.indexOf('waiting list') !== -1) return true;
       }
     } catch (e) {}
     return false;
@@ -743,38 +767,22 @@
   // Progress Notes tab / View All — no F badges here (checks all iframes, PCC loads content in frames)
   function isProgressNotesPage() {
     try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
+      var pts = pageTexts();
+      for (var d = 0; d < pts.length; d++) {
         // Evergreen buttons carry labels in value= (invisible
         // to innerText - probe-proven 2026-10-15): testids first.
-        try { if (docs[d].querySelector('[data-testid="pn-view-all-btn"], [data-testid="pn-add-progress-note-btn"]')) return true; } catch (e5) {}
-        try {
-          var t = (docs[d].body ? docs[d].body.innerText : '').toLowerCase();
-          if (t.indexOf('view all') !== -1 && t.indexOf('effective date') !== -1) return true;
-          if (t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1) return true;
-          if (t.indexOf('progress notes - view all') !== -1) return true;
-        } catch (e2) {}
+        try { if (pts[d].doc.querySelector('[data-testid="pn-view-all-btn"], [data-testid="pn-add-progress-note-btn"]')) return true; } catch (e5) {}
+        var t = pts[d].text;
+        if (t.indexOf('view all') !== -1 && t.indexOf('effective date') !== -1) return true;
+        if (t.indexOf('add progress note') !== -1 && t.indexOf('effective date') !== -1) return true;
+        if (t.indexOf('progress notes - view all') !== -1) return true;
       }
     } catch (e) {}
     return false;
   }
   // Detect signed section status page: a Psych section row with a signer in Signed By
   function isSignedSectionPage() {
-    try {
-      var docs = allDocs();
-      for (var d = 0; d < docs.length; d++) {
-        var rows = docs[d].querySelectorAll('table tr');
-        for (var i = 0; i < rows.length; i++) {
-          if (!leafRow(rows[i])) continue;
-          var txt = (rows[i].innerText || '').toLowerCase();
-          // Must be a psych section row (not header)
-          if (txt.indexOf('psych') === -1) continue;
-          if (txt.indexOf('section') !== -1 && txt.indexOf('description') !== -1) continue; // header row
-          // Signed = row contains a signer name
-          if (txt.indexOf('balestra') !== -1 || txt.indexOf('adrian') !== -1) return true;
-        }
-      }
-    } catch (e) {}
+    try { return scanAssessRows().signedSection; } catch (e) {}
     return false;
   }
   function findSaveExit() {
@@ -1067,7 +1075,7 @@
       }
       // Assessments/Forms list: F goes on copy/edit, not view — skip here (also clean stale)
       try {
-        var bt = (document.body ? document.body.innerText : '').toLowerCase();
+        var bt = docText(document);
         if ((bt.indexOf('assessment date') !== -1 || bt.indexOf('form date') !== -1) && bt.indexOf('created by') !== -1) {
           removeStaleViewBadges();
           return;
