@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.18
+// @version      2.19
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -30,9 +30,10 @@
           // Boro-Park-only 3 badge there (his reports, 2026-10-13 + 14;
           // CNR was caught only because 'downtown brooklyn' is exact).
           if (ft.indexOf('saints joachim') !== -1 || ft.indexOf('joachim & anne') !== -1 || ft.indexOf('joachim and anne') !== -1) foundOther = true;
-          // CNR/Saints' own form name — present on the very list pages
-          // the badges land on, even when no frame shows a facility name.
-          if (ft.indexOf('consult form - psychiatry') !== -1) foundOther = true;
+          // NOTE (2026-11-09): 'consult form - psychiatry' was removed
+          // as a marker — it is the PCC template name for the psych
+          // consult form at ALL facilities incl. Boro Park, and it vetoed
+          // this script on form pages that lack the facility footer.
           // CNR was missing here — this script ran at CNR and planted its
           // 1/2/3 badges there (his report, 2026-10-13). CNR's header name
           // is "Downtown Brooklyn..."; a standalone CNR counts too (the
@@ -582,6 +583,9 @@
         for (var i = 0; i < rows.length; i++) {
           if (!leafRow(rows[i])) continue;
           var txt = (rows[i].innerText || '').toLowerCase();
+          // Skip filter/UI rows (contain "standard forms" / filter text)
+          if (txt.indexOf('standard forms') !== -1) continue;
+          if (txt.indexOf('filter') !== -1 && txt.indexOf('type:') !== -1) continue;
           if (txt.indexOf('psych') === -1) continue;
           if (txt.indexOf('consult') === -1 && txt.indexOf('psychiatry') === -1) continue;
           return true;
@@ -1268,10 +1272,10 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // Sticky TYPE: restore his last filter (once PCC has rendered the select)
-  restoreStickyType();
-  setTimeout(restoreStickyType, 1500);
-  setTimeout(restoreStickyType, 4000);
+  // Sticky TYPE DISABLED (2026-11-09, his ruling: "no fighting me").
+  // The delayed restores re-applied the saved filter and clicked Apply
+  // after he had already switched to BIMS — pushing him back to psych.
+  // The select now stays exactly where he puts it.
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
@@ -1284,7 +1288,7 @@
 
   // ---- Keyboard shortcuts ----
   var enabled = true;
-  if (shouldRun()) document.addEventListener('keydown', function(e) {
+  document.addEventListener('keydown', function(e) { // unconditional (2026-11-09): doFAction gates per-call; a late footer must not cost the whole session's keys
     // Ignore synthetic events (Snippety, etc.) — only real keypresses
     if (!e.isTrusted) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return;
