@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.7
+// @version      2.11.8
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -7077,6 +7077,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				hideDashChrome();
 				return;
 			}
+			// (2026-11-09) Never plant twice: fit() runs on the ladder and on
+			// every iframe load, and each call used to create another seg —
+			// the 10-30 duplication bug, live again in 2.11.7.
+			if (document.getElementById("tmViewSeg")) return;
 			var tds = document.querySelectorAll("td");
 			var cell = null;
 			for (var i = 0; i < tds.length; i++) {
@@ -9180,7 +9184,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						strength: ""
 					} : st;
 				});
-				localStorage.setItem("tmGatherV2:" + storeKey, JSON.stringify(out));
+				var json = JSON.stringify(out);
+				// Change detection (perf 2026-11-09): skip the write when
+				// nothing changed — each write fires a storage event in every
+				// other frame and Copy to note re-diffs the whole note.
+				try {
+					if (window.__tmLastSaved && window.__tmLastSaved.key === storeKey && window.__tmLastSaved.json === json) return;
+					window.__tmLastSaved = { key: storeKey, json: json };
+				} catch (e6) {}
+				localStorage.setItem("tmGatherV2:" + storeKey, json);
 			} catch (e) {}
 		}
 		var settleOpen = true;
@@ -10064,17 +10076,18 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			return !!t.closest("a[href]");
 		}
 		document.addEventListener("click", function(e) {
-			// Throttle: full gather max once per 2s on non-nav clicks.
-			// Nav clicks always gather (page changed). (Perf fix 2026-11-04)
+			// Throttle: full gather max once per 2s, nav clicks included.
+			// (Perf fix 2026-11-09: isNavClick matches nearly every PCC
+			// click, so the old nav exemption made the throttle a no-op —
+			// every link click ran the full gatherPage innerText scans.)
+			// Nav clicks still abort in-flight fetches immediately.
 			var now = Date.now();
 			var isNav = false;
 			try { isNav = isNavClick(e); } catch (e2) {}
-			if (!isNav) {
-				if (window.__tmLastGather && now - window.__tmLastGather < 2000) {
-					// Skip heavy gather, but still publish (cheap)
-					try { publish(true); } catch (e3) {}
-					return;
-				}
+			if (window.__tmLastGather && now - window.__tmLastGather < 2000) {
+				if (isNav) { try { abortFetches(); } catch (e5) {} }
+				try { publish(true); } catch (e3) {}
+				return;
 			}
 			try { window.__tmLastGather = now; } catch (e4) {}
 			gatherPage();
