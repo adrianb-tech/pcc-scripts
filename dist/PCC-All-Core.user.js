@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.8
+// @version      2.11.9
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -6705,7 +6705,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var cdm = hdr.match(/(\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*(?:mg|mcg|g))\b/i);
 				if (cdm) comboDose = cdm[1].replace(/\s+/g, " ").trim().toUpperCase();
 				var ustr = null, uunit = null, cnum = null, cunit = null, cden = 1, m;
-				if (m = hdr.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b(?!\s*\/)/i)) {
+				// Patch dose: "4.6 MG/24HR" — the MG is followed by "/", so the
+				// plain dose regex below (with its (?!\s*\/) guard) skips it.
+				// Without this, transdermal patches (Rivastigmine/Exelon) get
+				// dnum=null and are excluded from the tile entirely.
+				if (m = hdr.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g)\s*\/\s*24\s*(?:hr|h)\b/i)) {
+					ustr = m[1];
+					uunit = m[2].toLowerCase();
+				} else if (m = hdr.match(/(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b(?!\s*\/)/i)) {
 					ustr = m[1];
 					uunit = m[2].toLowerCase();
 				}
@@ -6723,7 +6730,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					if (sm = seg.match(/\btotal of\s*(\d+(?:\.\d+)?)\s*(mg|mcg|g)\b/i)) {
 						sdnum = +sm[1];
 						sdunit = sm[2].toLowerCase();
-					} else if (sm = seg.match(/\b(?:Give|Inject|Take|Administer|Infuse|Instill)\s+(\d+(?:\.\d+)?)\s*(mg|milligrams?|mcg|micrograms?|g|grams?)\b/i)) {
+					} else if (sm = seg.match(/\b(?:Give|Inject|Take|Administer|Infuse|Instill|Apply)\s+(\d+(?:\.\d+)?)\s*(mg|milligrams?|mcg|micrograms?|g|grams?)\b/i)) {
 						sdnum = +sm[1];
 						sdunit = normUnit(sm[2]);
 					} else if (ustr !== null && (sm = seg.match(/\b(?:Give|Take)\s+(\d+\s*\/\s*\d+|[½¼¾]|\d*\.?\d+)\s*(?:tablets?|capsules?|tabs?|caps?)\b/i))) {
