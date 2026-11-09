@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.26
+// @version 1.27
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -204,6 +204,14 @@ var __s3mod_Hide_unused_tabs = 1;
     return (target && norm(target.textContent) === name) ? target : el;
   }
 
+  // Perf 2026-11-09 (round 2): the repair below is a one-time migration
+  // (un-hide exact-label elements an EARLIER version hid by mistake).
+  // It ran on EVERY run() call — load burst ticks, every swapBurst tick
+  // (up to 8 per tab click), every MORE toggle — each time a full-document
+  // attribute-substring query + textContent reads. Once repaired on a page
+  // load there is nothing left to repair: the current script never hides
+  // non-bar elements, and a PCC swap brings fresh DOM, never stale-hidden.
+  var repairDone = false;
   function run() {
     var cands = candidates();
     if (!cands.length) return false;
@@ -219,13 +227,17 @@ var __s3mod_Hide_unused_tabs = 1;
     });
     if (order.length < 5) return false;
 
-    // Repair: un-hide any exact-label element outside the bar that an
-    // earlier version hid by mistake (e.g. the header "Allergies" label).
-    var styled = document.querySelectorAll('[style*="display: none"],[style*="display:none"]');
-    for (var i = 0; i < styled.length; i++) {
-      var s = styled[i];
-      if (bar.contains(s)) continue;
-      if (ALL_TABS.indexOf(norm(s.textContent)) !== -1 && s.children.length <= 2) s.style.display = '';
+    // Repair (once per page load): un-hide any exact-label element outside
+    // the bar that an earlier version hid by mistake (e.g. the header
+    // "Allergies" label).
+    if (!repairDone) {
+      repairDone = true;
+      var styled = document.querySelectorAll('[style*="display: none"],[style*="display:none"]');
+      for (var i = 0; i < styled.length; i++) {
+        var s = styled[i];
+        if (bar.contains(s)) continue;
+        if (ALL_TABS.indexOf(norm(s.textContent)) !== -1 && s.children.length <= 2) s.style.display = '';
+      }
     }
 
     // Current tab from the URL first (v1.16): the page URL
