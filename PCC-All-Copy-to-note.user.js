@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.18
+// @version      1.19
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -498,14 +498,18 @@
     setTimeout(publishTileWarn, 50);
   }, true);
 
+  var noteFieldCache = null, noteFieldUrl = '';
   function findNoteField() {
+    try {
+      if (noteFieldCache && noteFieldUrl === location.href && document.contains(noteFieldCache)) return noteFieldCache;
+    } catch (e0) {}
     var labels = document.querySelectorAll('td, th, div, span, label, b');
     for (var i = 0; i < labels.length; i++) {
       var t = (labels[i].textContent || '').replace(/\s+/g, ' ').trim();
       if (/^1\.\s*Psychiatry\s+Consult:?$/i.test(t) || /^Psychiatry\s+Consult:?$/i.test(t) || /^\d\.\s*HPI\s*\//i.test(t) || /^HPI\s*\//i.test(t)) {
         var all = document.querySelectorAll('textarea');
         for (var j = 0; j < all.length; j++) {
-          if (labels[i].compareDocumentPosition(all[j]) & Node.DOCUMENT_POSITION_FOLLOWING) return all[j];
+          if (labels[i].compareDocumentPosition(all[j]) & Node.DOCUMENT_POSITION_FOLLOWING) { noteFieldCache = all[j]; try { noteFieldUrl = location.href; } catch (e0b) {} return all[j]; }
         }
       }
     }
@@ -515,6 +519,7 @@
       var area = r.width * r.height;
       if (area > bestArea && r.width > 100 && r.height > 50) { bestArea = area; best = tas[k]; }
     }
+    if (best) { noteFieldCache = best; try { noteFieldUrl = location.href; } catch (e0c) {} }
     return best;
   }
 
@@ -672,7 +677,15 @@
     renderDiff(labels, sig);
   }
 
-  window.addEventListener('storage', function () { setTimeout(checkAndApply, 60); });
+  // Coalesce (perf 2026-11-09): storage events arrive in bursts (Core
+  // writes once per land); queue at most one pending checkAndApply.
+  var checkPending = false;
+  function scheduleCheck(ms) {
+    if (checkPending) return;
+    checkPending = true;
+    setTimeout(function () { checkPending = false; try { checkAndApply(); } catch (e) {} }, ms);
+  }
+  window.addEventListener('storage', function () { scheduleCheck(60); });
   [800, 2000, 4000, 8000, 15000].forEach(function (ms) { setTimeout(checkAndApply, ms); });
   var lastClickCheck = 0;
   document.addEventListener('click', function (e) {
@@ -680,6 +693,6 @@
     var now = Date.now();
     if (now - lastClickCheck < 1000) return;
     lastClickCheck = now;
-    setTimeout(checkAndApply, 400);
+    scheduleCheck(400);
   }, true);
 })();
