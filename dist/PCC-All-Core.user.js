@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.13
+// @version      2.11.14
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -10783,6 +10783,52 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				/\bfianc[e\u00e9]e?\b/,
 				"fiancé",
 				"fiancés"
+			],
+			// In-laws (2026-11-09, his report: "Daughter in law" became
+			// "daughter"). These MUST precede the base forms below — relCanon
+			// returns the FIRST match, and /\bdaughters?\b/ also matches
+			// "Daughter in law". Without these, the canonical path drops the
+			// "-in-law" while the raw-text path keeps it, so the tile (and
+			// any queued transfer) flip-flops between the two values.
+			[
+				/\bdaughter[\s-]*in[\s-]*law\b/,
+				"daughter-in-law",
+				"daughters-in-law"
+			],
+			[
+				/\bson[\s-]*in[\s-]*law\b/,
+				"son-in-law",
+				"sons-in-law"
+			],
+			[
+				/\bmother[\s-]*in[\s-]*law\b/,
+				"mother-in-law",
+				"mothers-in-law"
+			],
+			[
+				/\bfather[\s-]*in[\s-]*law\b/,
+				"father-in-law",
+				"fathers-in-law"
+			],
+			[
+				/\bsister[\s-]*in[\s-]*law\b/,
+				"sister-in-law",
+				"sisters-in-law"
+			],
+			[
+				/\bbrother[\s-]*in[\s-]*law\b/,
+				"brother-in-law",
+				"brothers-in-law"
+			],
+			[
+				/\bgranddaughter[\s-]*in[\s-]*law\b/,
+				"granddaughter-in-law",
+				"granddaughters-in-law"
+			],
+			[
+				/\bgrandson[\s-]*in[\s-]*law\b/,
+				"grandson-in-law",
+				"grandsons-in-law"
 			],
 			[
 				/\bdaughters?\b/,
