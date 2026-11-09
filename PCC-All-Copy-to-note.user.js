@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.20
+// @version      1.21
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -18,16 +18,27 @@
   // placeholders or FOLLOW UP updates — then consumes them (single use).
   //
   // Rules (all his): nothing applies if he has clicked/typed in the form;
-  // fills are fresh for 15 minutes only; formatting of his note is preserved
-  // exactly (empty lines, single spaces); diagnoses replace only between the
-  // Medical Hx and Family/Social Hx lines; BIMS appends below the latest score
-  // line (same score + same date is not duplicated); age updates the number
-  // only; allergies compare first and change only if different; meds reconcile
-  // (dose/frequency from the chart, his indication wording stays, new meds
-  // bring the chart's indication, annotation lines untouched); relationships
-  // apply only when queued.
+  // a queued fill may land ONLY within 30 seconds of the user action that
+  // queued it (tile click / G) — never minutes later on a storage event,
+  // load timer, or unrelated click (his law, 2026-11-09: the note changed
+  // from "daughter-in-law" to "daughter" with nothing pressed); formatting
+  // of his note is preserved exactly (empty lines, single spaces); diagnoses
+  // replace only between the Medical Hx and Family/Social Hx lines; BIMS
+  // appends below the latest score line (same score + same date is not
+  // duplicated); age updates the number only; allergies compare first and
+  // change only if different; meds reconcile (dose/frequency from the chart,
+  // his indication wording stays, new meds bring the chart's indication,
+  // annotation lines untouched); relationships apply only when queued.
 
-  var FRESH_MS = 15 * 60 * 1000;
+  // APPLY WINDOW (2026-11-09): the queue-write timestamp IS the user-action
+  // timestamp — queueCopy runs only from a tile click or G — so a request
+  // older than 30s cannot be a live response to his action. The old 15-minute
+  // freshness let a stale queue overwrite his note long after the click that
+  // wrote it (his 2026-11-09 report). 30s still covers every legitimate path:
+  // click->apply is <2s, and the load timers run to 15s for slow renders.
+  // A request older than 30s is dead — readQueue returns null, so no trigger
+  // (storage event, load timer, click, heartbeat chain) can ever apply it.
+  var FRESH_MS = 30 * 1000;
 
   // ==PURE-BEGIN== (text transforms — no DOM in this section)
 
