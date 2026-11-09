@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.21
+// @version      1.22
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -18,27 +18,63 @@
   // placeholders or FOLLOW UP updates — then consumes them (single use).
   //
   // Rules (all his): nothing applies if he has clicked/typed in the form;
-  // a queued fill may land ONLY within 30 seconds of the user action that
-  // queued it (tile click / G) — never minutes later on a storage event,
-  // load timer, or unrelated click (his law, 2026-11-09: the note changed
-  // from "daughter-in-law" to "daughter" with nothing pressed); formatting
-  // of his note is preserved exactly (empty lines, single spaces); diagnoses
-  // replace only between the Medical Hx and Family/Social Hx lines; BIMS
-  // appends below the latest score line (same score + same date is not
-  // duplicated); age updates the number only; allergies compare first and
-  // change only if different; meds reconcile (dose/frequency from the chart,
-  // his indication wording stays, new meds bring the chart's indication,
-  // annotation lines untouched); relationships apply only when queued.
+  // a queued fill may land ONLY if it still matches the live chart
+  // (tmTileChart) — the chart is the authority, so a value the chart
+  // still shows is current at any age, and a value the chart no longer
+  // shows is stale and must never land (his law, 2026-11-09: the note
+  // changed from "daughter-in-law" to "daughter" with nothing pressed).
+  // Only when there is NO live chart value for a topic does the 30-second
+  // window apply. Formatting of his note is preserved exactly (empty
+  // lines, single spaces); diagnoses replace only between the Medical Hx
+  // and Family/Social Hx lines; BIMS appends below the latest score line
+  // (same score + same date is not duplicated); age updates the number
+  // only; allergies compare first and change only if different; meds
+  // reconcile (dose/frequency from the chart, his indication wording
+  // stays, new meds bring the chart's indication, annotation lines
+  // untouched); relationships apply only when queued.
 
-  // APPLY WINDOW (2026-11-09): the queue-write timestamp IS the user-action
-  // timestamp — queueCopy runs only from a tile click or G — so a request
-  // older than 30s cannot be a live response to his action. The old 15-minute
-  // freshness let a stale queue overwrite his note long after the click that
-  // wrote it (his 2026-11-09 report). 30s still covers every legitimate path:
-  // click->apply is <2s, and the load timers run to 15s for slow renders.
-  // A request older than 30s is dead — readQueue returns null, so no trigger
-  // (storage event, load timer, click, heartbeat chain) can ever apply it.
+  // APPLY RULE (2026-11-09, v1.22): the LIVE CHART is the authority, not
+  // the clock. v1.21's flat 30-second window stopped the stale auto-write
+  // but also killed his real flow — click tiles on the Dashboard, then
+  // open the form minutes later (PCC is slow; the queue was dead on
+  // arrival, so nothing transferred). The queued value and the live chart
+  // value come from the SAME source (Core's buildCards writes both the
+  // tile's data-fill-value and tmTileChart from the same d.* fields), so:
+  //   - queue matches the live chart value -> CURRENT, may land at any age.
+  //   - queue disagrees with the live chart -> STALE (the chart moved on),
+  //     must never land — this is what stops the auto-write, even for a
+  //     FRESH queue (v1.21 let a fresh-but-wrong value land).
+  //   - no live chart value for the topic (Dashboard closed, chart stale)
+  //     -> fall back to the 30-second window, so the v1.21 protection
+  //     still holds when there is no chart to check against.
+  // No resident check: if the value matches THIS patient's live chart it
+  // is correct content for this patient regardless of who queued it.
   var FRESH_MS = 30 * 1000;
+
+  // Queue key -> tmTileChart field (Core's buildCards writes both from the
+  // same d.* fields, so a current queue and the live chart always agree).
+  var CHART_FIELDS = {
+    pccFillAgeSex: 'ageSex',
+    pccFillAllergies: 'allergies',
+    pccFillPsychMeds: 'meds',
+    pccFillRelationships: 'rel',
+    pccFillBims: 'bims',
+    pccFillDiagnoses: 'dx'
+  };
+  function normVal(s) { return String(s).replace(/\s+/g, ' ').trim(); }
+  // The live chart value for a topic, or null when there is none to check
+  // against (no record, stale record, or no value for this topic).
+  function chartValueFor(topic) {
+    try {
+      var chart = JSON.parse(localStorage.getItem('tmTileChart') || 'null');
+      if (!chart || !chart.ts || Date.now() - chart.ts > 45000) return null;
+      var f = CHART_FIELDS[topic.key];
+      if (!f) return null;
+      var v = chart[f];
+      if (v === null || v === undefined || String(v).trim() === '') return null;
+      return v;
+    } catch (e) { return null; }
+  }
 
   // ==PURE-BEGIN== (text transforms — no DOM in this section)
 
@@ -553,7 +589,10 @@
       if (!req || !req.value || !req.ts) return null;
       var seen = parseInt(localStorage.getItem(topic.seen) || '0', 10);
       if (req.ts <= seen) return null;                    // already used
-      if (Date.now() - req.ts > FRESH_MS) return null;    // stale — ignore
+      var cv = chartValueFor(topic);
+      if (cv !== null) {
+        if (normVal(req.value) !== normVal(cv)) return null;   // stale — chart moved on
+      } else if (Date.now() - req.ts > FRESH_MS) return null;   // no live chart: 30s window
       return req;
     } catch (e) { return null; }
   }
