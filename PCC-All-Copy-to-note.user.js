@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.19
+// @version      1.20
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -686,7 +686,9 @@
     setTimeout(function () { checkPending = false; try { checkAndApply(); } catch (e) {} }, ms);
   }
   window.addEventListener('storage', function () { scheduleCheck(60); });
-  [800, 2000, 4000, 8000, 15000].forEach(function (ms) { setTimeout(checkAndApply, ms); });
+  // Perf 2026-11-09: route load-time checks through the coalescer too —
+  // the direct calls could stack with storage-event checks.
+  [800, 2000, 4000, 8000, 15000].forEach(function (ms) { setTimeout(function () { scheduleCheck(0); }, ms); });
   var lastClickCheck = 0;
   document.addEventListener('click', function (e) {
     if (!e.isTrusted) return;
