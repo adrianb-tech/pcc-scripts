@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.9
+// @version      2.11.10
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9155,7 +9155,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						changed = true;
 					}
 				});
-				if (changed) publish();
+				if (changed) { try { publishCache.dirty = true; } catch (e) {} publish(); }
 			} catch (e) {}
 		}
 		function feedBimsTile(stop) {
@@ -9203,6 +9203,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			} catch (e) {}
 		}
 		var settleOpen = true;
+		var publishCache = { json: null, dirty: true };
 		function publish(force) {
 			var node = document.getElementById(NODE_ID);
 			if (!node) {
@@ -9213,7 +9214,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				(document.body || document.documentElement).appendChild(node);
 				feedFromPacket();
 			}
-			node.textContent = JSON.stringify(packet);
+			// Perf 2026-11-09: skip the full JSON.stringify when the
+			// packet hasn't changed since the last publish. publish()
+			// runs on every click and every keydown — stringifying a
+			// large packet that often is the #1 cost.
+			if (publishCache.dirty || publishCache.json === null) {
+				publishCache.json = JSON.stringify(packet);
+				publishCache.dirty = false;
+			}
+			node.textContent = publishCache.json;
 			if (force || settleOpen) try {
 				document.dispatchEvent(new CustomEvent("tm-gather-update"));
 			} catch (e) {}
@@ -9227,6 +9236,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			}
 			data.status = "landed";
 			packet.stops[key] = data;
+			try { publishCache.dirty = true; } catch (e) {}
 			publish();
 			saveStored();
 		}
@@ -9532,6 +9542,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		function stampBimsWhy(s) {
 			try {
 				packet.stops.bims.why = s;
+				try { publishCache.dirty = true; } catch (e2) {}
 				publish();
 			} catch (e) {}
 		}
@@ -10107,6 +10118,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (e.metaKey || e.ctrlKey || e.altKey) return;
 			var t = e.target;
 			if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT" || t.tagName === "SELECT" || t.isContentEditable)) return;
+			// Perf 2026-11-09: throttle keydown publish to max once per
+			// 1s — it only re-emits the (cached) packet JSON.
+			var now = Date.now();
+			if (window.__tmLastKeyPub && now - window.__tmLastKeyPub < 1000) return;
+			try { window.__tmLastKeyPub = now; } catch (e2) {}
 			publish(true);
 		}, true);
 		loadStored();
