@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.20
+// @version      2.21
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -157,10 +157,6 @@
   // ---- F button on Save & Sign & Lock & Exit (Bedford / Crown Heights only) ----
   var FBTN_CLASS = 'pcc-f-btn';
   function isBedfordOrCH() { return false; } // Boro Park only script
-  function isBedfordOrCH_ORIG_DISABLED() {
-    var f = facilityName();
-    return f === 'bedford' || f === 'crown-heights';
-  }
   function findSaveSignLockExit() {
     try {
       var els = document.querySelectorAll('input[type="button"], input[type="submit"], button');
@@ -379,6 +375,7 @@
       if (!sel) return false;
       var picked = pickTypeOption(sel, kind);
       if (!picked) return false;
+      __tmUserChangedType = true; // his choice — never restore over it
       for (var j = 0; j < sel.options.length; j++) sel.options[j].selected = (sel.options[j] === picked);
       try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e2) {}
       saveStickyType(sel);
@@ -403,17 +400,22 @@
       if (t) { try { localStorage.setItem(STICKY_TYPE_KEY, t); } catch (e2) {} }
     } catch (e) {}
   }
+  // Sticky TYPE guard (2.21): once the user changes the TYPE on this page
+  // load (dropdown, 1/2/3 key, or badge), never restore again. This is
+  // what stops the fighting — restore only runs before he touches it.
+  var __tmUserChangedType = false;
   function restoreStickyType() {
     try {
-      if (!shouldRun()) return;
+      if (!shouldRun()) return false;
+      if (__tmUserChangedType) return true; // he already chose — leave it alone
       var saved = null;
       try { saved = localStorage.getItem(STICKY_TYPE_KEY); } catch (e) {}
-      findInFrames(window.top || window, function(doc) {
+      var done = findInFrames(window.top || window, function(doc) {
         var sel = findTypeSelect(doc);
         if (!sel) return null;
         if (!sel.__stickyAttached) {
           sel.__stickyAttached = true;
-          sel.addEventListener('change', function() { saveStickyType(sel); });
+          sel.addEventListener('change', function() { __tmUserChangedType = true; saveStickyType(sel); });
         }
         if (!saved) return true;
         var cur = stickyTypeText(sel);
@@ -422,7 +424,7 @@
         for (i = 0; i < opts.length; i++) {
           if ((opts[i].text || '').replace(/\s+/g, ' ').trim().toUpperCase() === saved.toUpperCase()) { found = opts[i]; break; }
         }
-        if (!found) return true;
+        if (!found) return null; // select not ready yet — retry
         for (j = 0; j < opts.length; j++) opts[j].selected = (opts[j] === found);
         try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e2) {}
         saveStickyType(sel);
@@ -430,7 +432,25 @@
         if (apply) fireClick(apply);
         return true;
       });
-    } catch (e) {}
+      return done === true;
+    } catch (e) { return false; }
+  }
+  // Bounded retry ladder: PCC may not have populated the TYPE select at
+  // document-idle. Retry at 600/1500/3000ms, but stop the moment the user
+  // touches the select (the guard above). This is NOT the old fighting
+  // behavior — the old code re-applied AFTER he changed it; this only
+  // restores BEFORE he touches it.
+  function restoreStickyTypeLadder() {
+    var tries = [600, 1500, 3000];
+    var i = 0;
+    (function next() {
+      if (i >= tries.length) return;
+      if (__tmUserChangedType) return;
+      var ok = false;
+      try { ok = restoreStickyType(); } catch (e) {}
+      if (ok) return;
+      setTimeout(next, tries[i++]);
+    })();
   }
   function applyNumberBadges() {
     try {
@@ -1272,9 +1292,10 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // Sticky TYPE (his 2026-11-09): restore where he left it, ONCE on load,
-  // then never touch it again. No delayed restores (those were the fighting).
-  restoreStickyType();
+  // Sticky TYPE (his 2026-11-09): restore where he left it, with a bounded
+  // retry ladder so it catches the select when PCC populates it. Stops
+  // the moment he touches the select — never fights him.
+  restoreStickyTypeLadder();
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
