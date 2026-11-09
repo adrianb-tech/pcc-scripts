@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.56
+// @version      1.57
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1710,10 +1710,10 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // Sticky TYPE: restore his last filter (once PCC has rendered the select)
+  // Sticky TYPE (perf/fighting 2026-11-09): restore ONCE on load only.
+  // Delayed restores re-applied the saved filter after he changed it —
+  // the same fighting removed from BP (2.19) and Bedford-CH (2.15).
   restoreStickyType();
-  setTimeout(restoreStickyType, 1500);
-  setTimeout(restoreStickyType, 4000);
   // (v1.22: the date now fills FIRST, in the init order above — the
   // F buttons are the ones that wait.)
   // Runs last: on a both-green section list, no F badge survives (v1.7)
