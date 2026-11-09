@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.19
+// @version      2.20
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1272,10 +1272,9 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // Sticky TYPE DISABLED (2026-11-09, his ruling: "no fighting me").
-  // The delayed restores re-applied the saved filter and clicked Apply
-  // after he had already switched to BIMS — pushing him back to psych.
-  // The select now stays exactly where he puts it.
+  // Sticky TYPE (his 2026-11-09): restore where he left it, ONCE on load,
+  // then never touch it again. No delayed restores (those were the fighting).
+  restoreStickyType();
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
     window.addEventListener('scroll', placeABadge, true);
