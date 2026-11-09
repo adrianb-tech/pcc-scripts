@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Boro Park — Navigation keys (A + F + 1 + 2 + 3)
-// @version      2.23
+// @version      2.24
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Boro-Park-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -377,10 +377,16 @@
       if (!picked) return false;
       __tmUserChangedType = true; // his choice — never restore over it
       for (var j = 0; j < sel.options.length; j++) sel.options[j].selected = (sel.options[j] === picked);
+      // The select's own onchange IS the navigation (PCC: async pref-save
+      // then submit). Do NOT click Apply after it — Apply is the
+      // status/date path (submitStatusRefresh), which fires a competing
+      // SYNCHRONOUS submit before the async pref-save completes, so the
+      // page reloads with the OLD session filter. That race is what
+      // bounced him off TYPE 3 (his 2026-11-09: "can't get to number 3,
+      // it bounces away"). One change = one navigation.
       try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e2) {}
       saveStickyType(sel);
-      var apply = findApply(doc);
-      if (apply) { fireClick(apply); return true; }
+      return true;
     } catch (e) {}
     return false;
   }
@@ -434,7 +440,9 @@
         // select is sitting on a retired BIMS TYPE and a live BIMS
         // TYPE exists, correct to the live one. Runs before the saved
         // checks so it fires even when the saved value was just
-        // cleared as poison.
+        // cleared as poison. The select's own onchange navigates —
+        // no Apply click (see setTypeFilter note: the Apply submit
+        // races PCC's async pref-save).
         if (/retired/i.test(cur) && /bims/i.test(cur)) {
           var liveBims0 = null;
           try { liveBims0 = pickTypeOption(sel, 'bims'); } catch (e7) {}
@@ -443,8 +451,6 @@
             for (jj0 = 0; jj0 < sel.options.length; jj0++) sel.options[jj0].selected = (sel.options[jj0] === liveBims0);
             try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e8) {}
             saveStickyType(sel);
-            var apply0 = findApply(doc);
-            if (apply0) fireClick(apply0);
             return true;
           }
         }
@@ -455,17 +461,16 @@
         // PCC loads the list with its own session filter; if the
         // select already shows a specific TYPE, that IS where he is —
         // adopt it as the new sticky and do NOT restore over it.
-        // Only restore when the select is at the default (first
-        // option 'All', or the MD type PCC opens on).
+        // ROBUST RULE (2.24, his "so it never happens again"): the
+        // current value ALWAYS wins. Only the first option ("All" —
+        // no filter chosen yet) may be restored over. MD is NOT a
+        // default: treating it as one let a poll in the async window
+        // after his own TYPE-3 change restore BIMS over his choice.
         var isDefault = false;
         try {
           var firstOpt = sel.options[0];
           var firstTxt = firstOpt ? (firstOpt.text || '').replace(/\s+/g, ' ').trim() : '';
           if (cur.toUpperCase() === firstTxt.toUpperCase()) isDefault = true;
-          if (!isDefault) {
-            var mdOpt = pickTypeOption(sel, 'md');
-            if (mdOpt && cur.toUpperCase() === (mdOpt.text || '').replace(/\s+/g, ' ').trim().toUpperCase()) isDefault = true;
-          }
         } catch (e2) {}
         if (!isDefault) {
           // PCC/user already filtered — adopt it as the new sticky
@@ -485,30 +490,62 @@
           return true;
         }
         for (j = 0; j < opts.length; j++) opts[j].selected = (opts[j] === found);
+        // The select's own onchange navigates — no Apply click (see
+        // setTypeFilter note: the Apply submit races PCC's async
+        // pref-save and reloads with the OLD session filter).
         try { sel.dispatchEvent(new Event('change', { bubbles: true })); } catch (e6) {}
         saveStickyType(sel);
-        var apply = findApply(doc);
-        if (apply) fireClick(apply);
         return true;
       });
       return done === true;
     } catch (e) { return false; }
   }
-  // Bounded retry ladder: PCC may not have populated the TYPE select at
-  // document-idle. Retry at 600/1500/3000ms, but stop the moment the user
-  // touches the select (the guard above). This is NOT the old fighting
-  // behavior — the old code re-applied AFTER he changed it; this only
-  // restores BEFORE he touches it.
+  // Snapshot of the TYPE select for the stability gate: only act once
+  // PCC has finished settling the select (options populated AND the
+  // session value applied). Acting on a transient value is how the
+  // restore fought him.
+  function stickySnapshot(sel) {
+    try {
+      var o = sel.options[sel.selectedIndex];
+      return sel.options.length + '|' + sel.selectedIndex + '|' + (o ? (o.text || '') : '');
+    } catch (e) { return ''; }
+  }
+  // Stability-gated restore (2.24): the old fixed-time ladder
+  // (600/1500/3000ms) could act on a TRANSIENT select — options
+  // populated but PCC's session value not yet applied, or a poll
+  // landing in the async window after his own change. Poll every
+  // 250ms (bounded, ~3s) and act exactly once, only when the select's
+  // snapshot is UNCHANGED across three consecutive polls (500ms of
+  // stability). The change listener attaches on first sight of the
+  // select, so a manual change during settling still sets the guard.
+  // Stop the moment he touches the select.
   function restoreStickyTypeLadder() {
-    var tries = [600, 1500, 3000];
-    var i = 0;
+    var maxTries = 12, intervalMs = 250, tries = 0, stableCount = 0, lastSnap = null;
     (function next() {
-      if (i >= tries.length) return;
       if (__tmUserChangedType) return;
-      var ok = false;
-      try { ok = restoreStickyType(); } catch (e) {}
-      if (ok) return;
-      setTimeout(next, tries[i++]);
+      if (tries++ >= maxTries) return;
+      var selFound = false, snap = null;
+      try {
+        findInFrames(window.top || window, function(doc) {
+          var sel = findTypeSelect(doc);
+          if (!sel) return null;
+          selFound = true;
+          if (!sel.__stickyAttached) {
+            sel.__stickyAttached = true;
+            sel.addEventListener('change', function() { __tmUserChangedType = true; saveStickyType(sel); });
+          }
+          snap = stickySnapshot(sel);
+          return true;
+        });
+      } catch (e) {}
+      if (!selFound) { lastSnap = null; stableCount = 0; setTimeout(next, intervalMs); return; }
+      if (snap !== null && snap === lastSnap) { stableCount++; } else { stableCount = 1; }
+      lastSnap = snap;
+      if (stableCount >= 3) {
+        try { restoreStickyType(); } catch (e) {}
+        return;
+      }
+      setTimeout(next, intervalMs);
     })();
   }
   function applyNumberBadges() {
@@ -1362,9 +1399,10 @@
   applyNumberBadges();
   setTimeout(applyNumberBadges, 1500);
   setTimeout(applyNumberBadges, 4000);
-  // Sticky TYPE (his 2026-11-09): restore where he left it, with a bounded
-  // retry ladder so it catches the select when PCC populates it. Stops
-  // the moment he touches the select — never fights him.
+  // Sticky TYPE (his 2026-11-09): restore where he left it, gated on
+  // the select being STABLE (2.24) so it never acts on a transient
+  // value or fights his own change. Stops the moment he touches the
+  // select — never fights him.
   restoreStickyTypeLadder();
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
