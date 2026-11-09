@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.12
+// @version      2.11.13
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5016,7 +5016,22 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		} catch {}
 		return false;
 	}
+	// Perf 2026-11-09 (round 2): memoize per URL. The header is
+	// server-rendered — it cannot change without navigation — but this
+	// 25k-element scan (textContent + regex normalize per element) ran
+	// on EVERY __tmCore.key() call (~220ms in jsdom), and residentKey()
+	// calls key() on every gatherFetches. A found token is definitive
+	// (permanent per URL); a miss re-scans after a 10s TTL (late header,
+	// or a frame adopting the top token late).
+	var _shCache = { url: "", ok: false, at: 0 };
 	function scanHeader() {
+		try {
+			var _u = location.href;
+			if (_shCache.url === _u) {
+				if (_shCache.ok) return true;
+				if (Date.now() - _shCache.at < 10000) return false;
+			}
+		} catch (e0) {}
 		try {
 			const els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
 			for (let i = 0; i < els.length; i++) {
@@ -5027,10 +5042,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				if (em) {
 					cachedToken = em[1].toUpperCase();
 					cachedDigits = em[2];
+					try { _shCache = { url: location.href, ok: true, at: Date.now() }; } catch (e2) {}
 					return true;
 				}
 			}
 		} catch {}
+		try { _shCache = { url: location.href, ok: false, at: Date.now() }; } catch (e3) {}
 		return false;
 	}
 	var ladderFns = new Map();
@@ -9023,10 +9040,27 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		};
 		var curStrength = "copy";
 		var packet = emptyPacket();
+	// Perf 2026-11-09 (round 2): memoize per URL — see scanHeader.
+	// residentKey() ran TWO full 25k-element scans on every call
+	// (__tmCore.key() -> scanHeader, then its own identical scan)
+	// because the chart pattern matches nothing on list pages and the
+	// result was never cached. refreshKey() calls this on every
+	// gatherFetches (every non-nav click past the throttle + every
+	// ladder pass): ~550ms per click. Now: one scan per URL for chart
+	// keys, one scan per 10s for EID/null outcomes.
+	var _rkCache = { url: "", key: undefined, at: 0 };
+	function _rkStore(v) { try { _rkCache = { url: location.href, key: v, at: Date.now() }; } catch (e9) {} return v; }
 		function residentKey() {
 			try {
+				var _u = location.href;
+				if (_rkCache.url === _u && _rkCache.key !== undefined) {
+					if (_rkCache.key && _rkCache.key.indexOf("chart:") === 0) return _rkCache.key;
+					if (Date.now() - _rkCache.at < 10000) return _rkCache.key;
+				}
+			} catch (e8) {}
+			try {
 				var _ck = window.__tmCore && window.__tmCore.key();
-				if (_ck) return _ck;
+				if (_ck) return _rkStore(_ck);
 			} catch (e) {}
 			try {
 				var els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
@@ -9035,17 +9069,17 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					if (tx.length > 70 || tx.length < 5) continue;
 					if (/^clinical\s/i.test(tx)) continue;
 					var em = tx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
-					if (em) return "chart:" + em[1].toUpperCase();
+					if (em) return _rkStore("chart:" + em[1].toUpperCase());
 				}
 			} catch (e) {}
 			var m = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
-			if (m) return "eid:" + m[1];
+			if (m) return _rkStore("eid:" + m[1]);
 			var as = document.querySelectorAll("a[href*=\"ESOLclientid=\"]");
 			for (var i = 0; i < as.length; i++) {
 				var mm = (as[i].getAttribute("href") || "").match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
-				if (mm) return "eid:" + mm[1];
+				if (mm) return _rkStore("eid:" + mm[1]);
 			}
-			return null;
+			return _rkStore(null);
 		}
 		var storeKey = null;
 		var FILL_KEYS = [
@@ -9183,6 +9217,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		// land() could not upgrade it anyway (native cannot beat native),
 		// so re-scanning the DOM for it is pure waste.
 		var landedHere = {};
+		// Perf 2026-11-09: fingerprint of the last gatherPage (row/table/
+		// tile counts). After settle, a repeat gather with an unchanged
+		// fingerprint cannot find anything new — skip the table scans.
+		var lastPrint = "";
 		function saveStored() {
 			try {
 				if (!storeKey) storeKey = residentKey();
@@ -9433,6 +9471,58 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			if (stopped) return;
 			mergeStored();
 			curStrength = "native";
+			// Perf 2026-11-09: skip the table scans when the document is
+			// unchanged since the last gather (row/table counts + body text
+			// length). Row-count changes (in-place list updates) and text
+			// changes (placeholder rows filling in) re-arm the scans;
+			// navigation reloads the page, which resets this context anyway.
+			// Same-length text swaps inside existing rows are not caught
+			// until navigation — PCC edits happen in forms (separate pages).
+			var skipScan = false;
+			try {
+				// Perf 2026-11-09 (round 2, #9): the fingerprint MUST NOT
+				// include Core's own planted DOM. #8 subtracted 5 fixed
+				// ids but missed the transient tile-measure host
+				// (div[data-tm-measure], a tile clone appended to body
+				// while fitting, ~344 chars) plus other Core plants
+				// (tmBoxesRow, pccLabsRow, tmMedsPanel, tmDxPanel,
+				// popups) — measured h247d: the measure host appears
+				// after settle and vanishes later, flipping the
+				// fingerprint and forcing full 435-602ms gathers on
+				// alternating clicks. So: walk every element once
+				// (getElementsByTagName, no slow attribute selectors) and
+				// subtract the text of every TOPMOST Core-owned subtree
+				// (tm-tile tag, data-tm-measure, id^tm, pccLabsRow,
+				// psychToggle). Topmost-only so nested Core text is never
+				// double-counted. The remainder is exactly PCC's text.
+				var bodyLen = document.body ? document.body.textContent.length : 0;
+				try {
+					var _all = document.getElementsByTagName("*");
+					var _own = [];
+					for (var _oi = 0; _oi < _all.length; _oi++) {
+						var _oe = _all[_oi];
+						var _oid = _oe.id || "";
+						if (_oe.tagName === "TM-TILE" || _oid.indexOf("tm") === 0 || _oid === "pccLabsRow" || _oid === "psychToggle") _own.push(_oe);
+					}
+					// Measure hosts (div[data-tm-measure]) are always direct
+					// children of body; checking the attribute only there
+					// keeps hasAttribute() out of the 26k-element walk.
+					var _kids = document.body ? document.body.children : [];
+					for (var _ok = 0; _ok < _kids.length; _ok++) {
+						if (_kids[_ok].hasAttribute && _kids[_ok].hasAttribute("data-tm-measure")) _own.push(_kids[_ok]);
+					}
+					for (var _oj = 0; _oj < _own.length; _oj++) {
+						var _top = true;
+						for (var _p = _own[_oj].parentElement; _p; _p = _p.parentElement) {
+							if (_own.indexOf(_p) !== -1) { _top = false; break; }
+						}
+						if (_top) bodyLen -= ((_own[_oj].textContent || "").length);
+					}
+				} catch (e2) {}
+				var fp = document.querySelectorAll("tr").length + "/" + document.querySelectorAll("table").length + "/" + bodyLen;
+				if (fp === lastPrint) skipScan = true;
+				lastPrint = fp;
+			} catch (e) {}
 			// Perf 2026-11-09: skip re-reading stops already landed native
 			// in this page load — land() could not upgrade them anyway.
 			var h = landedHere.header ? {} : selfHeader(document);
@@ -9442,7 +9532,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				facts: h
 			});
 			var b = "", bev = [];
-			if (!landedHere.behaviors) {
+			if (!landedHere.behaviors && !skipScan) {
 				b = readTile(/^Behaviors?\b/i, 700);
 				var behBox = document.getElementById("pnBehBox");
 				if (behBox) b = norm(behBox.textContent).slice(0, 700);
@@ -9473,7 +9563,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			});
 			// Assessments lands bims + ownnotes (+ hisnotes via merge).
 			// Skip only when both are already native in this load.
-			if (!(landedHere.bims && landedHere.ownnotes)) try {
+			if (!(landedHere.bims && landedHere.ownnotes) && !skipScan) try {
 				parseAssessments(document);
 			} catch (e) {}
 			try {
@@ -9482,16 +9572,16 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			try {
 				parseOpenedConsult(document);
 			} catch (e) {}
-			if (!landedHere.labs) try {
+			if (!landedHere.labs && !skipScan) try {
 				parseLabReport(document);
 			} catch (e) {}
-			if (!landedHere.relations) try {
+			if (!landedHere.relations && !skipScan) try {
 				parseProfile(document);
 			} catch (e) {}
-			if (!landedHere.orders) try {
+			if (!landedHere.orders && !skipScan) try {
 				parseOrders(document);
 			} catch (e) {}
-			if (!landedHere.labs) try {
+			if (!landedHere.labs && !skipScan) try {
 				parseResults(document);
 			} catch (e) {}
 		}
@@ -9738,7 +9828,15 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			curStrength = strengthFor("assess", doc);
 			landSectionParse(doc, null, curStrength);
 		}
+	// Perf 2026-11-09 (round 2): memoize per URL + skip the label
+	// pass when the href pass found all 6 keys (the common case:
+	// probe on AssessList found all 6 in pass 0). The two passes
+	// over every a[href] (textContent + norm regex per anchor) cost
+	// 65-72ms per gatherFetches; tab URLs cannot change without
+	// navigation (a PCC tab-bar swap re-plants the same hrefs).
+	var _duCache = { url: "", map: null };
 		function discoverUrls() {
+			try { if (_duCache.map && location.href === _duCache.url) return _duCache.map; } catch (e0) {}
 			var want = [
 				{
 					key: "assess",
@@ -9782,19 +9880,23 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					return null;
 				}
 			}
-			for (var p = 0; p < 2; p++) for (var i = 0; i < anchors.length; i++) {
-				var a = anchors[i];
-				var href = a.getAttribute("href") || "";
-				var label = norm(a.textContent);
-				for (var j = 0; j < want.length; j++) {
-					var w = want[j];
-					if (map[w.key]) continue;
-					if (p === 0 ? w.href.test(href) : label && label.length <= 24 && w.label.test(label)) {
-						var u = accept(a);
-						if (u) map[w.key] = u;
+			for (var p = 0; p < 2; p++) {
+				for (var i = 0; i < anchors.length; i++) {
+					var a = anchors[i];
+					var href = a.getAttribute("href") || "";
+					var label = p === 0 ? "" : norm(a.textContent);
+					for (var j = 0; j < want.length; j++) {
+						var w = want[j];
+						if (map[w.key]) continue;
+						if (p === 0 ? w.href.test(href) : label && label.length <= 24 && w.label.test(label)) {
+							var u = accept(a);
+							if (u) map[w.key] = u;
+						}
 					}
 				}
+				if (p === 0) { var _all = true; for (var j2 = 0; j2 < want.length; j2++) if (!map[want[j2].key]) { _all = false; break; } if (_all) break; }
 			}
+			try { _duCache = { url: location.href, map: map }; } catch (e1) {}
 			return map;
 		}
 		var controllers = [];
@@ -10158,9 +10260,13 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		clearStaleFillKeys();
 		if (packet.stops.relations.status === "landed") feedEvent({ rel: packet.stops.relations.summary });
 		if (packet.stops.bims.status === "landed") feedBimsTile(packet.stops.bims);
+		// Perf/robustness 2026-11-09: a throwing gather (e.g. fetch
+	// unavailable) used to abort this callback before the settle block,
+	// leaving settleOpen true forever — every later publish re-ran the
+	// full pull/build path. Each gather is now individually guarded.
 		window.__tmCore.ladder(function(ms) {
-			gatherPage();
-			gatherFetches();
+			try { gatherPage(); } catch (e) {}
+			try { gatherFetches(); } catch (e) {}
 			if (ms === 3e3) {
 				feedFromPacket(true);
 				publish(true);
@@ -10839,7 +10945,10 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var rows = tables[ti].querySelectorAll("tr");
 				var tjunk = hasJunkEl(tables[ti]);
 				var hdr = -1, nameCol = -1, relCol = -1;
-				for (var i = 0; i < rows.length; i++) {
+				// Perf 2026-11-09: the header row (Name + Contact Type) is
+				// always at the top of its table — never scan all 1200 rows
+				// of a list table looking for it.
+				for (var i = 0; i < rows.length && i < 5; i++) {
 					var cells = rows[i].querySelectorAll("td, th");
 					var texts = [];
 					for (var c0 = 0; c0 < cells.length; c0++) texts.push(cellText(cells[c0], tjunk));
@@ -10898,22 +11007,30 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			}
 			if (!val) {
-				var els = doc.querySelectorAll("div, span, td");
-				for (var i = 0; i < els.length; i++) {
-					// Perf 2026-11-09: textContent substring pre-filter
-					// before closest()+innerText (17k elements on the
-					// assessments list). innerText "Relationships" implies
-					// textContent contains it, so nothing is missed.
-					if ((els[i].textContent || "").toLowerCase().indexOf("relationships") === -1) continue;
-					if (els[i].closest && els[i].closest("tm-tile")) continue;
-					if (/^Relationships$/i.test(G.txt(els[i])) && els[i].parentElement) {
-						var pt = G.txt(els[i].parentElement);
+				// Perf 2026-11-09: TreeWalker over text nodes instead of
+				// textContent on every div/span/td (17k elements; top
+				// containers rebuild megabytes of text per read). The exact
+				// old test (G.txt === "Relationships", not in a tm-tile)
+				// still gates the match — the walker is only a fast finder.
+				// A label split across several nodes is missed here, but
+				// then relations still arrives via the profile fetch.
+				try {
+					var walker = doc.createTreeWalker(doc.body || doc.documentElement, 4, null);
+					var tn;
+					while ((tn = walker.nextNode())) {
+						if ((tn.nodeValue || "").trim().toLowerCase() !== "relationships") continue;
+						var pel = tn.parentElement;
+						if (!pel || pel.tagName === "SCRIPT" || pel.tagName === "STYLE") continue;
+						if (pel.closest && pel.closest("tm-tile")) continue;
+						if (!/^Relationships$/i.test(G.txt(pel))) continue;
+						if (!pel.parentElement) continue;
+						var pt = G.txt(pel.parentElement);
 						if (pt.length > 14) {
 							val = pt.replace(/^Relationships\s*/i, "");
 							break;
 						}
 					}
-				}
+				} catch (e) {}
 			}
 			if (val && !/^[—–-]+$/.test(G.norm(val)) && !/^N\/?A$/i.test(G.norm(val))) {
 				landRelations(val, G);
