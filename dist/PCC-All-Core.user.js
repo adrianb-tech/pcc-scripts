@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.16
+// @version      2.11.17
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -5021,19 +5021,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 	// 25k-element scan (textContent + regex normalize per element) ran
 	// on EVERY __tmCore.key() call (~220ms in jsdom), and residentKey()
 	// calls key() on every gatherFetches. A found token is definitive
-	// (permanent per URL); a miss re-scans after a 10s TTL (late header,
+	// (permanent per URL); a miss re-scans after a 30s TTL (late header,
+// round 3, 2026-11-11: the scan first tries the resident header,
+// the full-document scan is only the fallback).
 	// or a frame adopting the top token late).
 	var _shCache = { url: "", ok: false, at: 0 };
-	function scanHeader() {
+	function scanHeaderIn(root) {
 		try {
-			var _u = location.href;
-			if (_shCache.url === _u) {
-				if (_shCache.ok) return true;
-				if (Date.now() - _shCache.at < 10000) return false;
-			}
-		} catch (e0) {}
-		try {
-			const els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
+			const els = root.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
 			for (let i = 0; i < els.length; i++) {
 				const tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
 				if (tx.length > 70 || tx.length < 5) continue;
@@ -5047,6 +5042,25 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			}
 		} catch {}
+		return false;
+	}
+	function scanHeader() {
+		try {
+			var _u = location.href;
+			if (_shCache.url === _u) {
+				if (_shCache.ok) return true;
+				if (Date.now() - _shCache.at < 30000) return false;
+			}
+		} catch (e0) {}
+		// Perf 2026-11-11 (round 3): scope the chart-number scan to the
+		// resident header first (~250 descendants vs ~25k document-wide).
+		// The "Last, First (BC...)" text lives in the header; the full
+		// scan below stays as fallback for pages where it doesn't.
+		try {
+			var _hdr = document.getElementById("residentHeader") || document.getElementById("mainPageHeader") || document.getElementById("slHeader");
+			if (_hdr && scanHeaderIn(_hdr)) return true;
+		} catch (e1) {}
+		if (scanHeaderIn(document)) return true;
 		try { _shCache = { url: location.href, ok: false, at: Date.now() }; } catch (e3) {}
 		return false;
 	}
@@ -9055,14 +9069,34 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				var _u = location.href;
 				if (_rkCache.url === _u && _rkCache.key !== undefined) {
 					if (_rkCache.key && _rkCache.key.indexOf("chart:") === 0) return _rkCache.key;
-					if (Date.now() - _rkCache.at < 10000) return _rkCache.key;
+					if (Date.now() - _rkCache.at < 30000) return _rkCache.key;
 				}
 			} catch (e8) {}
+			var _coreTried = false;
 			try {
 				var _ck = window.__tmCore && window.__tmCore.key();
+				_coreTried = !!(window.__tmCore && window.__tmCore.key);
 				if (_ck) return _rkStore(_ck);
 			} catch (e) {}
+			// Perf 2026-11-11 (round 3): scoped header scan first
+			// (~250 descendants). The full-document scan below runs ONLY
+			// when __tmCore is unavailable — when it is available it
+			// already did scoped+full, so re-scanning here doubles the
+			// cost for the same (negative) answer.
 			try {
+				var _hdr = document.getElementById("residentHeader") || document.getElementById("mainPageHeader") || document.getElementById("slHeader");
+				if (_hdr) {
+					var _hels = _hdr.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
+					for (var _hi = 0; _hi < _hels.length; _hi++) {
+						var _htx = (_hels[_hi].textContent || "").replace(/\s+/g, " ").trim();
+						if (_htx.length > 70 || _htx.length < 5) continue;
+						if (/^clinical\s/i.test(_htx)) continue;
+						var _hem = _htx.match(/^[A-Za-z][A-Za-z'’.\-]+(?:\s+[A-Za-z][A-Za-z'’.\-]+)?\s*,\s*[A-Za-z][A-Za-z'’.\- ]+?\s*\(\s*([A-Za-z]{0,5}\d{3,})\s*\)/);
+						if (_hem) return _rkStore("chart:" + _hem[1].toUpperCase());
+					}
+				}
+			} catch (e9) {}
+			if (!_coreTried) try {
 				var els = document.querySelectorAll("span, div, h1, h2, h3, td, a, b, strong");
 				for (var i = 0; i < els.length; i++) {
 					var tx = (els[i].textContent || "").replace(/\s+/g, " ").trim();
@@ -9184,6 +9218,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		function mergeStored() {
 			try {
+				storedDirty = false;
 				if (!storeKey) storeKey = residentKey();
 				if (!storeKey) return;
 				var raw = localStorage.getItem("tmGatherV2:" + storeKey);
@@ -9222,6 +9257,12 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		// itself was the cost, not the write. Only stringify when a land
 		// (or merge) actually changed the packet, or the store key changed.
 		var saveDirty = false, savedKey = null;
+		// Perf 2026-11-11 (round 3): the click-path mergeStored() re-read
+		// + re-parsed the whole stored packet on EVERY click, but the
+		// storage event already notifies cross-frame changes — and this
+		// frame's own lands update memory directly. Gate the click-path
+		// re-read on a flag the storage listener sets.
+		var storedDirty = true;
 		// Stops landed by THIS page load (not restored from storage).
 		// gatherPage skips re-parsing a stop already landed native here:
 		// land() could not upgrade it anyway (native cannot beat native),
@@ -9231,6 +9272,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		// tile counts). After settle, a repeat gather with an unchanged
 		// fingerprint cannot find anything new — skip the table scans.
 		var lastPrint = "";
+		var lastCheap = "";
 		function saveStored() {
 			try {
 				if (!storeKey) storeKey = residentKey();
@@ -9479,7 +9521,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		function gatherPage() {
 			if (stopped) return;
-			mergeStored();
+			if (storedDirty) mergeStored();
 			curStrength = "native";
 			// Perf 2026-11-09: skip the table scans when the document is
 			// unchanged since the last gather (row/table counts + body text
@@ -9506,32 +9548,48 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				// psychToggle). Topmost-only so nested Core text is never
 				// double-counted. The remainder is exactly PCC's text.
 				var bodyLen = document.body ? document.body.textContent.length : 0;
-				try {
-					var _all = document.getElementsByTagName("*");
-					var _own = [];
-					for (var _oi = 0; _oi < _all.length; _oi++) {
-						var _oe = _all[_oi];
-						var _oid = _oe.id || "";
-						if (_oe.tagName === "TM-TILE" || _oid.indexOf("tm") === 0 || _oid === "pccLabsRow" || _oid === "psychToggle") _own.push(_oe);
-					}
-					// Measure hosts (div[data-tm-measure]) are always direct
-					// children of body; checking the attribute only there
-					// keeps hasAttribute() out of the 26k-element walk.
-					var _kids = document.body ? document.body.children : [];
-					for (var _ok = 0; _ok < _kids.length; _ok++) {
-						if (_kids[_ok].hasAttribute && _kids[_ok].hasAttribute("data-tm-measure")) _own.push(_kids[_ok]);
-					}
-					for (var _oj = 0; _oj < _own.length; _oj++) {
-						var _top = true;
-						for (var _p = _own[_oj].parentElement; _p; _p = _p.parentElement) {
-							if (_own.indexOf(_p) !== -1) { _top = false; break; }
+				var _trN = document.querySelectorAll("tr").length;
+				var _tabN = document.querySelectorAll("table").length;
+				var _cheap = _trN + "/" + _tabN + "/" + bodyLen;
+				if (_cheap === lastCheap) {
+					// Perf 2026-11-11 (round 3b): nothing moved — no PCC
+					// text change and no Core plant appeared/vanished
+					// (either would move raw bodyLen). The adjusted
+					// fingerprint cannot have changed, so skip the walk.
+					skipScan = true;
+				} else {
+					try {
+						// Perf 2026-11-11 (round 3b): the [id^="tm"]
+						// selector tried in round 3 cost 217ms in jsdom
+						// (nwsapi prefix match) — worse than the 59ms walk
+						// it replaced. [id] (presence, 46ms) + a JS prefix
+						// filter finds the same set.
+						var _withId = document.querySelectorAll('[id]');
+						var _ownSet = new Set();
+						for (var _wi = 0; _wi < _withId.length; _wi++) {
+							var _wo = _withId[_wi];
+							var _wid = _wo.id || "";
+							if (_wid.indexOf("tm") === 0 || _wid === "pccLabsRow" || _wid === "psychToggle") _ownSet.add(_wo);
 						}
-						if (_top) bodyLen -= ((_own[_oj].textContent || "").length);
-					}
-				} catch (e2) {}
-				var fp = document.querySelectorAll("tr").length + "/" + document.querySelectorAll("table").length + "/" + bodyLen;
-				if (fp === lastPrint) skipScan = true;
-				lastPrint = fp;
+						var _tiles = document.getElementsByTagName("tm-tile");
+						for (var _ti2 = 0; _ti2 < _tiles.length; _ti2++) _ownSet.add(_tiles[_ti2]);
+						var _kids = document.body ? document.body.children : [];
+						for (var _ok = 0; _ok < _kids.length; _ok++) {
+							if (_kids[_ok].hasAttribute && _kids[_ok].hasAttribute("data-tm-measure")) _ownSet.add(_kids[_ok]);
+						}
+						_ownSet.forEach(function(_oe) {
+							var _top = true;
+							for (var _p = _oe.parentElement; _p; _p = _p.parentElement) {
+								if (_ownSet.has(_p)) { _top = false; break; }
+							}
+							if (_top) bodyLen -= ((_oe.textContent || "").length);
+						});
+					} catch (e2) {}
+					var fp = _trN + "/" + _tabN + "/" + bodyLen;
+					if (fp === lastPrint) skipScan = true;
+					lastPrint = fp;
+					lastCheap = _cheap;
+				}
 			} catch (e) {}
 			// Perf 2026-11-09: skip re-reading stops already landed native
 			// in this page load — land() could not upgrade them anyway.
@@ -10297,6 +10355,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		window.addEventListener("storage", function(e) {
 			if (!e.key || e.key.indexOf("tmGatherV2:") !== 0) return;
 			try {
+				storedDirty = true;
 				mergeStored();
 			} catch (err) {}
 		});
@@ -13629,7 +13688,28 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			tileInputLast = now;
 			setTimeout(publishTileWarn, 50);
 		}, true);
+		// Perf 2026-11-11 (round 3): findNoteField ran a full-document
+		// label scan (td/th/div/span/label/b + textContent each) on every
+		// publishTileWarn — 400ms after every click, plus on input. The
+		// note field doesn't move once found; cache it (re-scan only when
+		// it detaches) and cache the miss for 2s.
+		var _noteFieldCache = null, _noteFieldMissAt = 0;
 		function findNoteField() {
+			try {
+				if (_noteFieldCache && _noteFieldCache.isConnected) return _noteFieldCache;
+				if (_noteFieldCache && !_noteFieldCache.isConnected) _noteFieldCache = null;
+				if (!_noteFieldCache && _noteFieldMissAt && Date.now() - _noteFieldMissAt < 2000) return null;
+			} catch (e0) {}
+			var _found = findNoteFieldScan();
+			try {
+				if (_found) _noteFieldCache = _found;
+				else _noteFieldMissAt = Date.now();
+			} catch (e1) {}
+			return _found;
+		}
+		function findNoteFieldScan() {
+			// Early-out: no textareas, no note field — skip the label scan.
+			try { if (!document.querySelectorAll("textarea").length) return null; } catch (e2) {}
 			var labels = document.querySelectorAll("td, th, div, span, label, b");
 			for (var i = 0; i < labels.length; i++) {
 				var t = (labels[i].textContent || "").replace(/\s+/g, " ").trim();
