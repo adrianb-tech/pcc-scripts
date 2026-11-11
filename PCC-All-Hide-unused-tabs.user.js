@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Hide unused tabs
-// @version 1.27
+// @version 1.28
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Hide-unused-tabs.user.js
 // @match        https://*.pointclickcare.com/*
@@ -212,6 +212,7 @@ var __s3mod_Hide_unused_tabs = 1;
   // load there is nothing left to repair: the current script never hides
   // non-bar elements, and a PCC swap brings fresh DOM, never stale-hidden.
   var repairDone = false;
+  var lastTabRestoreDone = false; // last-tab restore fires once per page load
   function run() {
     var cands = candidates();
     if (!cands.length) return false;
@@ -252,7 +253,14 @@ var __s3mod_Hide_unused_tabs = 1;
       var u = location.href;
       if (/cp_residentdashboard/i.test(u)) return 'DASH';
       if (/cp_careclientprofile/i.test(u)) return 'PROFILE';
+      if (/ordersChart|ordersPortal/i.test(u)) return 'ORDERS';
+      if (/cp_assessment/i.test(u)) return tabs['ASSMNTS'] ? 'ASSMNTS' : 'FORMS';
       if (/progressnotes/i.test(u)) return 'PROG NOTES';
+      if (/cp_weightsandvitals/i.test(u)) return 'WTS/VITALS';
+      if (/cp_mds/i.test(u)) return 'MDS';
+      if (/cp_careplans_rev/i.test(u)) return 'CARE PLAN';
+      if (/cp_tasks/i.test(u)) return 'TASKS';
+      if (/clinicaldisplay/i.test(u)) return 'CENSUS';
       return '';
     }
     // Current-tab memory (v1.7, his report): MORE -> click a hidden tab ->
@@ -302,9 +310,48 @@ var __s3mod_Hide_unused_tabs = 1;
             if (HIDE.indexOf(name) !== -1) sessionStorage.setItem('pccCurTab', name);
             else sessionStorage.removeItem('pccCurTab');
           } catch (e2) {}
+          // Last-tab memory (v1.28, his request 2026-11-11): every tab
+          // click saves the tab to localStorage, so the next chart opens
+          // where he left off. Persistent across patients and sessions.
+          try { localStorage.setItem('tmLastTab', name); } catch (e3) {}
         });
       }
     });
+
+    // Last-tab restore (v1.28, his request 2026-11-11): a fresh chart
+    // open lands on PCC's default (ORDERS). If he left the last chart on
+    // a different tab, go there instead — ONCE, then never touch tabs
+    // again on this load. Only fires when the URL says ORDERS: a
+    // deliberate Orders click saves ORDERS first, so saved==current and
+    // no restore fires; any other explicit navigation lands on a URL
+    // naming its own tab, which this never overrides. Top window only
+    // (a frame must never navigate the chart). Navigates the same way
+    // the tab keys do (href as-is, click fallback); the hook records
+    // intent for the harness (jsdom cannot navigate).
+    if (!lastTabRestoreDone && window === window.top) {
+      var landed = urlTab();
+      if (landed === 'ORDERS') {
+        var savedTab = null;
+        try { savedTab = localStorage.getItem('tmLastTab') || ''; } catch (eRT) {}
+        if (savedTab && savedTab !== 'ORDERS') {
+          var want = savedTab;
+          // The assessments tab is ONE tab with two facility labels
+          // (ASSMNTS at Boro Park, FORMS elsewhere). Inline pair check
+          // — TAB_ALIASES is declared later in this file and is not yet
+          // assigned when the document-start burst first runs run().
+          if (!tabs[want] && want === 'FORMS' && tabs['ASSMNTS']) want = 'ASSMNTS';
+          if (!tabs[want] && want === 'ASSMNTS' && tabs['FORMS']) want = 'FORMS';
+          if (tabs[want]) {
+            var tEl = tabs[want];
+            var tA = (tEl.tagName === 'A') ? tEl : tEl.querySelector('a');
+            lastTabRestoreDone = true;
+            window.__tmLastTabRestore = (tA && tA.href) ? tA.href : ('click:' + want);
+            if (tA && tA.href) { location.href = tA.href; }
+            else { try { (tA || tEl).click(); } catch (eRC) {} }
+          }
+        }
+      }
+    }
 
     HIDE.forEach(function (name) {
       if (!tabs[name]) return;
@@ -490,6 +537,10 @@ var __s3mod_Hide_unused_tabs = 1;
     window.__tmTabKeys = window.__tmTabKeys || {};
     var found = tabKeyFind(name);
     if (!found) return;
+    // Last-tab memory (v1.28): key jumps navigate via location.href, so
+    // the tab click listener never fires — save the resolved label here
+    // (the bar's own label, so FORMS/ASSMNTS stays facility-correct).
+    try { localStorage.setItem('tmLastTab', norm((found.a || found.el).textContent)); } catch (eSK) {}
     if (found.href) {
       window.__tmTabKeys.lastNav = found.href; // href as-is (the Dot's 1.1 lesson: no params appended)
       location.href = found.href;
