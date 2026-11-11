@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.24
+// @version      1.25
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -57,6 +57,15 @@
   // queue can land even if the chart moved on since the click (the
   // window is 30 min, not 15). The value comparison is the backstop
   // whenever a chart value exists at all.
+  // v1.25 (2026-11-11, wrong-age case): "HPI 100M" landed in an 86M
+  // patient's note. The queue (100M, previous patient) and the chart
+  // record (still the previous patient's "100M") agreed with each other,
+  // so the value comparison could not catch it — and here was null, so
+  // the patient check was skipped. Fixes: hereKey() falls back to the
+  // form URL's ESOLclientid; readQueue cross-checks tmTileChart.key
+  // against here and against the queue's resident stamp; and with no
+  // patient proof at all (here null) no queue lands — it only delays
+  // the transfer until a later checkAndApply run resolves here.
   var FRESH_MS = 30 * 1000;
   var SAME_PATIENT_MS = 30 * 60 * 1000;
 
@@ -76,8 +85,17 @@
   // as a patient. (residentKey() is memoized in Core, so this is cheap.)
   function hereKey() {
     try {
-      if (window.__tmGather && window.__tmGather.key) return window.__tmGather.key() || null;
+      if (window.__tmGather && window.__tmGather.key) { var k = window.__tmGather.key(); if (k) return k; }
     } catch (e) {}
+    // Fallback (2026-11-11, wrong-age case): the form/chart URL carries
+    // the patient EID (ESOLclientid). Core's gatherer may not have
+    // resolved yet (its header scan has a 10s miss TTL), but the URL is
+    // available immediately. Without this, here is null and the patient
+    // gates in readQueue below are skipped entirely.
+    try {
+      var m = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+      if (m) return 'eid:' + m[1];
+    } catch (e2) {}
     return null;
   }
   // "chart:BC123456" -> "bc123456"; "eid:EID_ABC123" -> "eid_abc123".
@@ -620,6 +638,29 @@
       var samePatient = !!(here && req.resident && normKey(req.resident) === normKey(here));
       var age = Date.now() - req.ts;
       var chart = chartRecord();
+      // Chart-record patient check (2026-11-11, wrong-age case):
+      // tmTileChart carries key (chart number), but the value comparison
+      // below never looked at it. A stale chart record (previous patient)
+      // agrees with a stale queue from the same previous patient, so the
+      // value check cannot catch it — both say "100M". If the chart's key
+      // and this document's patient are both known chart numbers and
+      // differ, the chart is stale: ignore it. If the chart's key and the
+      // queue's resident are both known chart numbers and differ, the
+      // queue is stale: refuse it.
+      var chartKey = chart && chart.key ? normKey(chart.key) : null;
+      var hereIsChart = !!(here && here.indexOf('chart:') === 0);
+      var reqIsChart = !!(req.resident && req.resident.indexOf('chart:') === 0);
+      if (chartKey && hereIsChart && chartKey !== normKey(here)) chart = null;
+      if (chart && chartKey && reqIsChart && chartKey !== normKey(req.resident)) return null;
+      // No patient proof at all (2026-11-11, wrong-age case): when this
+      // document's patient cannot be resolved (here is null even after
+      // the URL fallback), no queue may land on clock rules alone. A
+      // stale queue and a stale chart record from the same previous
+      // patient agree with each other, so the value comparison cannot
+      // catch them. Refusing here only delays the transfer:
+      // checkAndApply re-runs on load timers, storage events and clicks,
+      // and a later run with here resolved lands it.
+      if (!here) return null;
       if (chart) {
         var cv = chartField(chart, topic);
         if (cv !== null) {
