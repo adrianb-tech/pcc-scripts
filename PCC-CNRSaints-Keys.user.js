@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.59
+// @version      1.60
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1980,7 +1980,10 @@
       var um = href2.match(/openPopup\('([^']+)'/);
       if (!um) return false;
       var url = um[1].replace(/&amp;/g, '&');
-      fetch(url, { credentials: 'same-origin' })
+      // Cache-bust (parity with fillFromHistory; 2026-11-11): a stale
+      // cached popup returns a previous patient's history.
+      url += (url.indexOf('?') !== -1 ? '&' : '?') + '_=' + Date.now();
+      fetch(url, { credentials: 'same-origin', cache: 'no-store' })
         .then(function (resp) { return resp.arrayBuffer(); })
         .then(function (buf) {
           // PCC popups may be Windows-1252, not UTF-8. Try UTF-8 strict first,
@@ -1996,6 +1999,9 @@
         .then(function (html) {
           var txt = extractRecentHistory(html);
           if (!txt) return;
+          // HPI only (Cust_2_I_2): the header age comes from the live
+          // chart, never from history (wrong-age case, 2026-11-11).
+          if (sec.qkey === 'Cust_2_I_2') txt = normalizeHpiHeader(txt);
           ta.focus();
           ta.value = txt;
           try {
@@ -2010,6 +2016,33 @@
       return true;
     } catch (e) {}
     return false;
+  }
+  // Normalize the HPI header age from the LIVE chart (2026-11-11,
+  // wrong-age case): H copies history verbatim, so the "HPI 100M" line is
+  // whatever the old note said — a stale age, or a wrong-patient age from
+  // an old note corrupted the same way, survives into the new note. After
+  // filling the HPI section, rewrite the header from tmTileChart.ageSex —
+  // but ONLY when the chart is proven to be this patient's:
+  // tmTileChart.key (chart number) must equal this document's patient as
+  // resolved by Core (__tmGather.key()), both in chart: form. Otherwise
+  // leave the header alone — never guess. Also corrects benign aging
+  // (July note says 85M, patient is 86M now).
+  function normalizeHpiHeader(txt) {
+    try {
+      if (!/^([ \t]*HPI[ \t]+)\d{1,3}[MF]\b/m.test(txt)) return txt;
+      var chart = null;
+      try { chart = JSON.parse(localStorage.getItem('tmTileChart') || 'null'); } catch (e1) {}
+      if (!chart || !chart.ageSex || !chart.key) return txt;
+      var m = String(chart.ageSex).match(/^(\d{1,3})([MF])$/);
+      if (!m) return txt;
+      var here = null;
+      try { if (window.__tmGather && window.__tmGather.key) here = window.__tmGather.key(); } catch (e2) {}
+      if (!here || here.indexOf('chart:') !== 0) return txt;
+      var ck = String(chart.key).toLowerCase();
+      var hk = String(here).toLowerCase().replace(/^chart:/, '');
+      if (ck !== hk) return txt;
+      return txt.replace(/^([ \t]*HPI[ \t]+)\d{1,3}[MF]\b/m, '$1' + m[1] + m[2]);
+    } catch (e) { return txt; }
   }
   // H: fill ALL history sections at once (his 2026-11-04).
   // Finds every (textarea, H link) pair on the form, fetches each section's
@@ -2041,6 +2074,9 @@
           .then(function (html) {
             var txt = extractRecentHistory(html);
             if (!txt) return;
+            // HPI only (Cust_2_I_2): the header age comes from the live
+            // chart, never from history (wrong-age case, 2026-11-11).
+            if (sec.qkey === 'Cust_2_I_2') txt = normalizeHpiHeader(txt);
             ta.value = txt;
             try {
               ta.dispatchEvent(new Event('input', { bubbles: true }));
