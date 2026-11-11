@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.23
+// @version      1.24
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -37,20 +37,28 @@
   // APPLY RULE (2026-11-09, v1.22): the LIVE CHART is the authority, not
   // the clock. v1.21's flat 30-second window stopped the stale auto-write
   // but also killed his real flow — click tiles on the Dashboard, then
-  // open the form minutes later (PCC is slow; the queue was dead on
-  // arrival, so nothing transferred). The queued value and the live chart
-  // value come from the SAME source (Core's buildCards writes both the
-  // tile's data-fill-value and tmTileChart from the same d.* fields), so:
-  //   - queue matches the live chart value -> CURRENT, may land at any age.
-  //   - queue disagrees with the live chart -> STALE (the chart moved on),
-  //     must never land — this is what stops the auto-write, even for a
-  //     FRESH queue (v1.21 let a fresh-but-wrong value land).
-  //   - no live chart value for the topic (Dashboard closed, chart stale)
-  //     -> fall back to the 30-second window, so the v1.21 protection
-  //     still holds when there is no chart to check against.
-  // No resident check: if the value matches THIS patient's live chart it
-  // is correct content for this patient regardless of who queued it.
+  // v1.24 (2026-11-11): the v1.22/v1.23 rule — queue matches the LIVE
+  // chart (fresh <5 min) or the queue must be <30s old — broke the
+  // delayed-open flow. His real flow is click tiles on the Dashboard,
+  // THEN open the form; PCC is slow, so by the time the form loads the
+  // chart record is >5 min old AND the queue is >30s old, and both gates
+  // failed together: nothing transferred. The fix is a PATIENT check,
+  // not a longer clock. Copy can ask Core, in THIS document, who the
+  // form's patient is (window.__tmGather.key()) and compare it with the
+  // resident stamp queueCopy wrote on the queue. Rules now:
+  //   - wrong patient (both known, stamps differ) -> never lands, any age.
+  //   - queue matches a LIVE chart value -> CURRENT, may land at any age.
+  //   - queue matches a STALE chart value + same patient proven + queue
+  //     <30 min -> lands (delayed-open flow; the Dashboard was idle).
+  //   - no chart value to compare + same patient proven + queue <30 min
+  //     -> lands. No patient proof -> the old 30-second window.
+  //   - queue disagrees with any chart value -> STALE, never lands.
+  // Residual risk, stated plainly: with no live chart, a same-patient
+  // queue can land even if the chart moved on since the click (the
+  // window is 30 min, not 15). The value comparison is the backstop
+  // whenever a chart value exists at all.
   var FRESH_MS = 30 * 1000;
+  var SAME_PATIENT_MS = 30 * 60 * 1000;
 
   // Queue key -> tmTileChart field (Core's buildCards writes both from the
   // same d.* fields, so a current queue and the live chart always agree).
@@ -63,18 +71,33 @@
     pccFillDiagnoses: 'dx'
   };
   function normVal(s) { return String(s).replace(/\s+/g, ' ').trim(); }
-  // The live chart value for a topic, or null when there is none to check
-  // against (no record, stale record, or no value for this topic).
-  function chartValueFor(topic) {
+  // This document's patient, via Core's gatherer when available.
+  // null when Core hasn't resolved one — callers must NOT treat null
+  // as a patient. (residentKey() is memoized in Core, so this is cheap.)
+  function hereKey() {
+    try {
+      if (window.__tmGather && window.__tmGather.key) return window.__tmGather.key() || null;
+    } catch (e) {}
+    return null;
+  }
+  // "chart:BC123456" -> "bc123456"; "eid:EID_ABC123" -> "eid_abc123".
+  // Chart stamps and EID stamps never equal each other — a format
+  // mismatch falls back to the clock rules, never to a false match.
+  function normKey(k) { return String(k || '').toLowerCase().replace(/^(chart|eid):/, ''); }
+  // The chart record even when stale (freshness is a separate question).
+  function chartRecord() {
     try {
       var chart = JSON.parse(localStorage.getItem('tmTileChart') || 'null');
-      if (!chart || !chart.ts || Date.now() - chart.ts > 300000) return null;
-      var f = CHART_FIELDS[topic.key];
-      if (!f) return null;
-      var v = chart[f];
-      if (v === null || v === undefined || String(v).trim() === '') return null;
-      return v;
+      if (!chart || !chart.ts) return null;
+      return chart;
     } catch (e) { return null; }
+  }
+  function chartField(chart, topic) {
+    var f = CHART_FIELDS[topic.key];
+    if (!f) return null;
+    var v = chart[f];
+    if (v === null || v === undefined || String(v).trim() === '') return null;
+    return v;
   }
 
   // ==PURE-BEGIN== (text transforms — no DOM in this section)
@@ -582,7 +605,7 @@
     return anchors >= 2;
   }
 
-  function readQueue(topic) {
+  function readQueue(topic, here) {
     try {
       var raw = localStorage.getItem(topic.key);
       if (!raw) return null;
@@ -590,10 +613,29 @@
       if (!req || !req.value || !req.ts) return null;
       var seen = parseInt(localStorage.getItem(topic.seen) || '0', 10);
       if (req.ts <= seen) return null;                    // already used
-      var cv = chartValueFor(topic);
-      if (cv !== null) {
-        if (normVal(req.value) !== normVal(cv)) return null;   // stale — chart moved on
-      } else if (Date.now() - req.ts > FRESH_MS) return null;   // no live chart: 30s window
+      // Wrong patient: the queue's resident stamp must match this
+      // document's patient when both are known. A queue from another
+      // patient never lands, at any age.
+      if (here && req.resident && normKey(req.resident) !== normKey(here)) return null;
+      var samePatient = !!(here && req.resident && normKey(req.resident) === normKey(here));
+      var age = Date.now() - req.ts;
+      var chart = chartRecord();
+      if (chart) {
+        var cv = chartField(chart, topic);
+        if (cv !== null) {
+          if (normVal(req.value) !== normVal(cv)) return null;   // stale — chart moved on
+          if (Date.now() - chart.ts <= 300000) return req;       // live chart agrees: current
+          if (samePatient && age <= SAME_PATIENT_MS) return req;  // stale chart, same patient
+          if (age <= FRESH_MS) return req;                       // fresh queue regardless
+          return null;
+        }
+      }
+      // No chart value to compare against. Same patient (proven by the
+      // stamp) gets a 30-minute window — the delayed-open flow needs it;
+      // the patient match is what makes it safe. No patient proof: the
+      // old 30-second window.
+      if (samePatient && age <= SAME_PATIENT_MS) return req;
+      if (age > FRESH_MS) return null;
       return req;
     } catch (e) { return null; }
   }
@@ -667,8 +709,9 @@
     var medsTxt = medsField ? (medsField.value || '') : null;
 
     var reqs = {};
+    var here = hereKey();   // this document's patient, resolved once per run
     TOPICS.forEach(function (topic) {
-      var r = readQueue(topic);
+      var r = readQueue(topic, here);
       if (r && r.ts > touchedAt) reqs[topic.key] = r;   // pre-touch grabs stay blocked
     });
 
@@ -737,6 +780,11 @@
     setTimeout(function () { checkPending = false; try { checkAndApply(); } catch (e) {} }, ms);
   }
   window.addEventListener('storage', function () { scheduleCheck(60); });
+  // 2026-11-11 (v1.24): Core's queueCopy dispatches this in the SAME
+  // document right after writing a queue (tile click / G). Storage
+  // events do not fire in the originating document, so without this a
+  // G press in the form doc queued values nothing ever applied.
+  document.addEventListener('tm-queue-written', function () { scheduleCheck(0); });
   // Perf 2026-11-09: route load-time checks through the coalescer too —
   // the direct calls could stack with storage-event checks.
   [800, 2000, 4000, 8000, 15000].forEach(function (ms) { setTimeout(function () { scheduleCheck(0); }, ms); });
