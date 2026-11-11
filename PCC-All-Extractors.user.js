@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.1.0
+// @version      1.1.1
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -179,10 +179,12 @@
         }
 
         var items = [];
-        document.querySelectorAll('tr').forEach(function (r) {
+        var _trs = document.querySelectorAll('tr');
+        _trs.forEach(function (r) {
             var it = readRow(r);
             if (it) items.push(it);
         });
+        try { bimsLastTr = _trs.length; } catch (e) {}
 
         organize(items);
 
@@ -224,7 +226,7 @@
     // organize() itself is no-op-safe and atomic: sort
     // decision and highlights land in a single pass, and
     // a pass over an already-sorted list moves nothing.
-    var bimsLastSig = null, bimsAgree = 0, bimsTries = 0;
+    var bimsLastSig = null, bimsAgree = 0, bimsTries = 0, bimsLastTr = -1;
     function bimsBurst() {
         var sig = tick();
         bimsTries++;
@@ -232,7 +234,11 @@
         else bimsAgree = 0;
         bimsLastSig = sig;
         if (bimsAgree >= 1 || bimsTries >= 28) return;
-        setTimeout(bimsBurst, 250);
+        // Perf 2026-11-11 (round 3): null sig = not the list page —
+        // back off to 1s and count it triple, so the ~7s window keeps
+        // its shape with a quarter of the ticks.
+        if (sig === null) bimsTries += 3;
+        setTimeout(bimsBurst, sig === null ? 1000 : 250);
     }
     bimsBurst();
     var lastClickRun = 0;
@@ -241,6 +247,22 @@
         var now = Date.now();
         if (now - lastClickRun < 800) return;
         lastClickRun = now;
+        // Perf 2026-11-11 (round 3): the old restart re-ran the full
+        // row-scan burst after EVERY click. Only a list-changing click
+        // (Apply, or a row-count change) can change the BIMS badge.
+        var _apply = false;
+        try {
+          var _t = e.target;
+          if (_t) {
+            if (/^apply$/i.test(_t.value || '')) _apply = true;
+            else if (!_t.children || _t.children.length <= 30) {
+              if (/^apply$/i.test((_t.textContent || '').replace(/\s+/g, ' ').trim())) _apply = true;
+            }
+          }
+        } catch (e2) {}
+        var _rowsChanged = false;
+        try { _rowsChanged = (bimsLastTr !== -1 && document.querySelectorAll('tr').length !== bimsLastTr); } catch (e3) {}
+        if (!_apply && !_rowsChanged) return;
         setTimeout(function () { bimsLastSig = null; bimsAgree = 0; bimsTries = 0; bimsBurst(); }, 350);
     }, true);
 })();
@@ -1130,6 +1152,7 @@ var __s3mod_Behavior_extractor = 1;
   // and the notes fingerprint is stable across two
   // passes; after that, silence until his click.
   var behTries = 0, behLastFp = null, behAgree = 0;
+  var behNoLinksAt = 0;
   function behBurst() {
     tick();
     behTries++;
@@ -1137,8 +1160,22 @@ var __s3mod_Behavior_extractor = 1;
     if (fp && fp === behLastFp && document.getElementById('pnBehBox')) behAgree++;
     else behAgree = 0;
     behLastFp = fp;
-    if (behAgree >= 1 || behTries >= 32) return;
-    setTimeout(behBurst, 250);
+    if (behAgree >= 1 || behTries >= 32) {
+      // Perf 2026-11-11 (round 3b): the burst's goal is planting
+      // pnBehBox. If it exits without the box, this page has no notes
+      // view to plant into — click-restarts skip until 30s pass (a
+      // very late render still gets found by a later click). The
+      // round-3 !fp test was wrong: fp is truthy on the assessments
+      // list (view links exist in the table) while the box can never
+      // plant there, so the flag was never set.
+      if (!document.getElementById('pnBehBox')) behNoLinksAt = Date.now();
+      return;
+    }
+    // Perf 2026-11-11 (round 3): no view links yet — back off to 1s
+    // and count it triple, so the ~8s window keeps its shape with a
+    // quarter of the ticks.
+    if (!fp) behTries += 3;
+    setTimeout(behBurst, fp ? 250 : 1000);
   }
   behBurst();
   var last = 0;
@@ -1147,6 +1184,11 @@ var __s3mod_Behavior_extractor = 1;
     var now = Date.now();
     if (now - last < 800) return;
     last = now;
+    // Perf 2026-11-11 (round 3b): skip the restart when the last burst
+    // already established this page has no notes view (box never
+    // planted; flag expires after 30s, so a very late render still
+    // gets found).
+    if (behNoLinksAt && Date.now() - behNoLinksAt < 30000) return;
     setTimeout(function () { behTries = 0; behLastFp = null; behAgree = 0; behBurst(); }, 350);
   }, true);
 })();
@@ -2192,6 +2234,7 @@ var __s3mod_Diagnosis_extractor = 1;
   // notes fingerprint is stable across two passes; after
   // that, silence until his click re-arms the burst.
   var dxTries = 0, dxLastFp = null, dxAgree = 0;
+  var dxNoBoxAt = 0;
   function dxBurst() {
     tick();
     dxTries++;
@@ -2200,7 +2243,15 @@ var __s3mod_Diagnosis_extractor = 1;
     if (fp3 && fp3 === dxLastFp && document.getElementById('pnDxBox')) dxAgree++;
     else dxAgree = 0;
     dxLastFp = fp3;
-    if (dxAgree >= 1 || dxTries >= 32) return;
+    if (dxAgree >= 1 || dxTries >= 32) {
+      // Perf 2026-11-11 (round 3c): same flag as the behaviors burst —
+      // if it exits without pnDxBox planted, this page has no notes
+      // table to extract from; click-restarts skip for 30s. (The
+      // un-gated restart cost 48 calls / 2584ms after 3 clicks in the
+      // probe window.)
+      if (!document.getElementById('pnDxBox')) dxNoBoxAt = Date.now();
+      return;
+    }
     setTimeout(dxBurst, 250);
   }
   dxBurst();
@@ -2210,6 +2261,7 @@ var __s3mod_Diagnosis_extractor = 1;
       var now = Date.now();
       if (now - pccSchedLast < 800) return;
       pccSchedLast = now;
+      if (dxNoBoxAt && Date.now() - dxNoBoxAt < 30000) return;
       setTimeout(function () { dxTries = 0; dxLastFp = null; dxAgree = 0; dxBurst(); }, 350);
   }, true);
 })();
