@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Bedford + Crown Heights — Navigation keys (A + F + 1 + 2)
-// @version      2.17
+// @version      2.18
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-Bedford-CH-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -631,7 +631,21 @@
     return null;
   }
   // Progress Notes: VIEW ALL button (may be div/span styled as button, not a real <button>)
+  // Perf 2026-11-11 (round 3): negative cached 2s — the button can't
+  // appear without PCC re-rendering, so the click/scroll re-plants hit
+  // the cache instead of re-scanning tens of thousands of elements.
+  var _fvaCache = { at: 0, val: undefined };
   function findViewAllButton() {
+    try {
+      var _now = Date.now();
+      if (_fvaCache.val !== undefined && _now - _fvaCache.at < 2000) return _fvaCache.val;
+      var _found = findViewAllButtonScan();
+      _fvaCache = { at: _now, val: _found };
+      return _found;
+    } catch (e) {}
+    return null;
+  }
+  function findViewAllButtonScan() {
     try {
       var docs = allDocs();
       for (var d = 0; d < docs.length; d++) {
@@ -645,14 +659,14 @@
           var label = ((els[i].value || '') + ' ' + (els[i].textContent || '')).replace(/\s+/g, ' ').trim().toLowerCase();
           if (label.indexOf('view all') !== -1 && visible(els[i])) return els[i];
         }
-        // Fallback: any element with "view all" text that looks clickable
+        // Fallback, leaf-only (round 3): the old pass read textContent
+        // of every div/span container (~1s on a 25k-element page).
+        // A "View All" label lives on a leaf; containers are never it.
         var all = docs[d].querySelectorAll('div, span');
         for (var k = 0; k < all.length; k++) {
+          if (all[k].children && all[k].children.length) continue;
           var t = (all[k].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-          if (t === 'view all' && visible(all[k])) {
-            // Must not be a container with lots of other text
-            if ((all[k].innerHTML || '').length < 200) return all[k];
-          }
+          if (t === 'view all' && visible(all[k])) return all[k];
         }
       }
     } catch (e) {}
@@ -1240,8 +1254,13 @@
   // Was restoring saved filter on load and bouncing him back from BIMS.
   // Reposition on scroll/resize (cheap, no DOM scan beyond the badge itself)
   try {
-    window.addEventListener('scroll', placeABadge, true);
-    window.addEventListener('resize', placeABadge);
+    // Perf 2026-11-11 (round 3): placeABadge was unthrottled on scroll
+    // (findResidentSearchBox + getClientRects per event). Same 250ms
+    // throttle as vaOnScroll.
+    var _paLast = 0;
+    function placeABadgeThrottled() { var n = Date.now(); if (n - _paLast < 250) return; _paLast = n; placeABadge(); }
+    window.addEventListener('scroll', placeABadgeThrottled, true);
+    window.addEventListener('resize', placeABadgeThrottled);
     var vaScrollLast = 0;
     function vaOnScroll() { var n = Date.now(); if (n - vaScrollLast < 250) return; vaScrollLast = n; applyFViewAllBadge(); }
     window.addEventListener('scroll', vaOnScroll, true);
