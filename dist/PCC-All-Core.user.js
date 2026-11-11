@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.15
+// @version      2.11.16
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9978,12 +9978,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 		}
 		function feedRowTile(summary) {
 			feedEvent({ rel: summary });
-			try {
-				localStorage.setItem("pccFillRelationships", JSON.stringify({
-					value: summary,
-					ts: Date.now()
-				}));
-			} catch (e) {}
+			// 2026-11-11 (2.11.16): the pccFillRelationships queue write
+			// that used to live here is REMOVED. It ran on every gather/
+			// land with a fresh timestamp, so Copy-to-note applied it on
+			// any later trigger (load timer, storage event, click) with
+			// NO tile click and NO G press — relationships auto-wrote
+			// into his note. A pccFill* queue is a user-action artifact:
+			// only queueCopy (tile click / G) may write one. The scoped
+			// tmRelFor: feed below is kept — it is not a transfer queue.
 			try {
 				var k = storeKey || residentKey();
 				if (k) localStorage.setItem("tmRelFor:" + k, JSON.stringify({
@@ -11524,6 +11526,11 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 					resident: rk
 				}));
 			} catch (err) {}
+			// 2026-11-11 (2.11.16): a storage event does NOT fire in the
+			// document that made the write, so a queue written by a tile
+			// click or G in THIS document was invisible to Copy-to-note
+			// here until the next click/timer. Tell it directly.
+			try { document.dispatchEvent(new CustomEvent("tm-queue-written")); } catch (e3) {}
 		}
 		function hlTile(tl, withLabel) {
 			if (tl.hasAttribute("data-tm-hl")) return;
