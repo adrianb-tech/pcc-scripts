@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.22
+// @version      1.23
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -19,8 +19,9 @@
   //
   // Rules (all his): nothing applies if he has clicked/typed in the form;
   // a queued fill may land ONLY if it still matches the live chart
-  // (tmTileChart) — the chart is the authority, so a value the chart
-  // still shows is current at any age, and a value the chart no longer
+  // (tmTileChart, fresh <5 min) — the chart is the authority, so a value
+  // the chart still shows is current at any age, and a value the chart
+  // no longer
   // shows is stale and must never land (his law, 2026-11-09: the note
   // changed from "daughter-in-law" to "daughter" with nothing pressed).
   // Only when there is NO live chart value for a topic does the 30-second
@@ -67,7 +68,7 @@
   function chartValueFor(topic) {
     try {
       var chart = JSON.parse(localStorage.getItem('tmTileChart') || 'null');
-      if (!chart || !chart.ts || Date.now() - chart.ts > 45000) return null;
+      if (!chart || !chart.ts || Date.now() - chart.ts > 300000) return null;
       var f = CHART_FIELDS[topic.key];
       if (!f) return null;
       var v = chart[f];
