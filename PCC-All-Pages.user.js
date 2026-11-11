@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Pages (forms list & furniture)
-// @version      1.2.1
+// @version      1.2.2
 // @description  Stage 3 merge: Forms List (2.5, incl. last-mode memory), Forms highlight, CNR/Saints Forms List, Readmission flag, Hide profile sections, Header emphasis, View All checkbox, Split view - eight page scripts in ONE, each module gated to its own page as before. The tab bar (Hide unused tabs) ships as its own standalone script since 1.2.1.
 // @match        https://*.pointclickcare.com/*
 // @match        https://*.pointclickcare.ca/*
@@ -329,6 +329,12 @@
 				if (tr.querySelector("tr")) continue;
 				var cells = tr.children;
 				if (cells.length < 5) continue;
+				// Perf 2026-11-11 (round 3): skip rows already painted —
+				// runAll runs 6x per load + on clicks, and re-setting the
+				// same style on every row every pass is pure waste.
+				var _pbg = "";
+				try { _pbg = (cells[0].style && cells[0].style.getPropertyValue("background-color")) || ""; } catch (e) {}
+				if (_pbg === "rgb(95, 184, 106)" || _pbg === "#5fb86a") continue;
 				var table = tr.closest("table");
 				if (!table) continue;
 				var ti = tables.indexOf(table);
@@ -517,8 +523,19 @@
 			var m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
 			return m ? new Date(+m[3], +m[1] - 1, +m[2]) : null;
 		}
+		// Perf 2026-11-11 (round 3d): same per-load cache as
+		// reentryDate — the last psych form date is a historical fact.
+		var _lpCache = null;
 		function lastPsychForm() {
+			if (_lpCache) return _lpCache;
 			var best = null, bestStr = "", psychRows = 0;
+			// Perf 2026-11-11 (round 3b): cheap negative paths first — one
+			// textContent read (18ms) instead of a TreeWalker over every
+			// text node plus a textContent read per table row.
+			var _low = ((document.body ? document.body.textContent : "") || "").toLowerCase();
+			var _hasPsych = _low.indexOf("psychiatry") !== -1 || _low.indexOf("psych:") !== -1;
+			var _hasHdr = _low.indexOf("form date") !== -1 || _low.indexOf("assessment date") !== -1;
+			if (_hasPsych) {
 			var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, { acceptNode: function(n) {
 				var p = n.parentElement;
 				while (p) {
@@ -554,7 +571,9 @@
 					}
 				}
 			}
+			} // end _hasPsych
 			var headerRow = false;
+			if (_hasHdr) {
 			var trs = document.querySelectorAll("tr");
 			for (var i = 0; i < trs.length; i++) {
 				var ht = (trs[i].textContent || "").toLowerCase();
@@ -564,29 +583,45 @@
 					break;
 				}
 			}
-			return {
+			}
+			var _lf = {
 				tableFound: headerRow || psychRows > 0 || !!document.getElementById("assessments"),
 				d: best,
 				s: bestStr
 			};
+			// Cache only a found table: tableFound:false may just mean
+			// late render, and caching it would blind later ladder calls.
+			if (_lf.tableFound) _lpCache = _lf;
+			return _lf;
 		}
+		// Perf 2026-11-11 (round 3d): the ladder calls update() 4x on a
+		// static document. Cache a FOUND re-entry date per page load (a
+		// null is never cached, so late render is still caught later).
+		var _reCache = null;
 		function reentryDate() {
+			if (_reCache) return _reCache;
+			// Perf 2026-11-11 (round 3b): the TreeWalker below visits every
+			// text node (~500-800ms on a big page) on every update() ladder
+			// call. Cheap negative path first: one textContent read (18ms)
+			// proves the page has no re-entry admission at all.
+			var _tx = (document.body ? document.body.textContent : "") || "";
+			if (!/Admission\s*\(\s*re-?entry\s*\)/i.test(_tx)) return null;
 			var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), nodes = [], n;
 			while (n = w.nextNode()) nodes.push(n);
 			for (var i = 0; i < nodes.length; i++) {
 				if (!/Admission\s*\(\s*re-?entry\s*\)/i.test(nodes[i].nodeValue)) continue;
 				var same = nodes[i].nodeValue.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
-				if (same) return {
+				if (same) { _reCache = {
 					node: nodes[i],
 					str: same[0]
-				};
+				}; return _reCache; }
 				for (var j = i + 1; j < nodes.length; j++) {
 					var v = nodes[j].nodeValue.trim();
 					if (!v) continue;
-					if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) return {
+					if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) { _reCache = {
 						node: nodes[j],
 						str: v
-					};
+					}; return _reCache; }
 					break;
 				}
 			}
@@ -666,6 +701,10 @@
 		}
 		function update() {
 			var re = reentryDate();
+			// Perf 2026-11-11 (round 3b): with no re-entry date the
+			// verdict is "clear" and lastPsychForm's result is discarded
+			// — skip its TreeWalker (another ~500ms) entirely.
+			if (!re) { clear(); return; }
 			var lf = lastPsychForm();
 			if (!re || !lf.tableFound) {
 				clear();
@@ -774,8 +813,12 @@
 			}
 			return null;
 		}
+		var _isProfileCache = { url: "", val: undefined };
 		function isProfilePage() {
-			return containsHeading(document.body, "Admission Record") || containsHeading(document.body, "Resident Profile");
+			if (_isProfileCache.url === location.href && _isProfileCache.val === false) return false;
+			var v = containsHeading(document.body, "Admission Record") || containsHeading(document.body, "Resident Profile");
+			if (!v) _isProfileCache = { url: location.href, val: false };
+			return v;
 		}
 		function run() {
 			if (!isProfilePage()) return;
@@ -911,7 +954,18 @@
 		}, true);
 		document.addEventListener("click", function(e) {
 			if (!e.isTrusted) return;
-			var v = (e.target && (e.target.value || e.target.textContent) || "").trim();
+			// Perf 2026-11-11 (round 3): the old read took textContent of
+			// every click target — on body/a table that's the whole page
+			// (~17ms). Value first; textContent only for small targets.
+			var v = "";
+			try {
+				var _t = e.target;
+				if (_t) {
+					v = (_t.value || "");
+					if (!/^Apply$/i.test(v) && (!_t.children || _t.children.length <= 30)) v = (_t.textContent || "");
+					v = (v || "").trim();
+				}
+			} catch (e2) {}
 			if (/^Apply$/i.test(v)) setTimeout(tick, 900);
 		}, true);
 	})();
