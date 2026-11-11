@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.14
+// @version      2.11.15
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -9094,12 +9094,22 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 			try {
 				var k = storeKey || residentKey();
 				if (!k) return;
+				// EID-safe (2026-11-11, h259): an EID key is NOT proof of a
+				// different patient — the key upgrades EID->chart: later
+				// (refreshKey migrates stamps). Deleting on an EID key wiped
+				// queues stamped chart: at form-load init, before the header
+				// resolved — so nothing transferred. Only a chart: key proves
+				// identity; delete only a DIFFERENT chart: key. EID-stamped
+				// and unstamped queues are kept (Copy's value comparison
+				// against the live chart is the backstop for wrong content).
+				if (k.indexOf("chart:") !== 0) return;
 				FILL_KEYS.forEach(function(fk) {
 					try {
 						var raw = localStorage.getItem(fk);
 						if (!raw) return;
 						var o = JSON.parse(raw);
-						if (!o || o.resident !== k) localStorage.removeItem(fk);
+						if (!o || !o.resident) return;
+						if (o.resident.indexOf("chart:") === 0 && o.resident !== k) localStorage.removeItem(fk);
 					} catch (e2) {}
 				});
 			} catch (e) {}
@@ -11500,7 +11510,8 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				"Allergies": "pccFillAllergies",
 				"Psych meds": "pccFillPsychMeds",
 				"Relationships": "pccFillRelationships",
-				"BIMS": "pccFillBims"
+				"BIMS": "pccFillBims",
+				"Diagnoses": "pccFillDiagnoses"
 			}[label] || null;
 			var rk = null;
 			try {
