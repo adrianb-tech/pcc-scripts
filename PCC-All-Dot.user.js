@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         PCC — Dot
-// @version      1.2
+// @version      1.3
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dot.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Dot.user.js
 // @match        https://*.pointclickcare.com/*
@@ -82,9 +82,9 @@
   // (CH187985)'), the same element Core's S key reads. URL EIDs rotate
   // per page and per link — never used as a key, so a missing header
   // means no stored merge, not a wrong resident's notes.
-  function headerChart() {
+  function headerChartIn(root) {
     try {
-      var els = document.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
+      var els = root.querySelectorAll('span, div, h1, h2, h3, td, a, b, strong');
       for (var i = 0; i < els.length; i++) {
         var tx = (els[i].textContent || '').replace(/\s+/g, ' ').trim();
         if (tx.length > 70 || tx.length < 5) continue;
@@ -95,12 +95,47 @@
     } catch (e) {}
     return '';
   }
+  // Perf 2026-11-11 (round 3b): the full-document fallback ran on
+  // EVERY refineBurst tick (50ms) while the chart was unresolved —
+  // ~200ms x 40 ticks. A miss is cached 500ms (same as the discover
+  // caches); a hit is permanent (the chart cannot change without a
+  // navigation). The burst re-checks twice a second, so a late header
+  // is still found promptly.
+  var _hcCache = { at: 0, val: '', hit: false };
+  function headerChart() {
+    if (_hcCache.hit) return _hcCache.val;
+    if (_hcCache.val === '' && _hcCache.at && Date.now() - _hcCache.at < 500) return '';
+    // Perf 2026-11-11 (round 3): scope to the resident header first
+    // (~250 descendants vs ~25k document-wide); the full scan stays
+    // as fallback. The burst calls this every 50ms, so the scope
+    // change is the whole win.
+    var out = '';
+    try {
+      var hdr = document.getElementById('residentHeader') || document.getElementById('mainPageHeader') || document.getElementById('slHeader');
+      if (hdr) out = headerChartIn(hdr);
+    } catch (e) {}
+    if (!out) out = headerChartIn(document);
+    _hcCache = { at: Date.now(), val: out, hit: !!out };
+    return out;
+  }
 
   // The assessments list URL, discovered live from the tab bar (never
   // hardcoded): pass 1 matches the href itself, pass 2 the tab label.
   // Aimed at the ALL-types view (ESOLstdassessid=-1 is the filter's
   // "All"; status filter empty = All) so his consults come back whole.
+  // Perf 2026-11-11 (round 3): the tab bar doesn't change without
+  // navigation — cache the found URL permanently per page URL, and
+  // cache a miss for 500ms (covers late render) instead of re-scanning
+  // every anchor on every 50ms burst tick.
+  var _discAssess = { url: '', val: '', at: 0 };
   function discoverAssessUrl() {
+    if (_discAssess.url === location.href && _discAssess.val) return _discAssess.val;
+    if (_discAssess.url === location.href && Date.now() - _discAssess.at < 500) return '';
+    var v = discoverAssessUrlScan();
+    _discAssess = { url: location.href, val: v, at: Date.now() };
+    return v;
+  }
+  function discoverAssessUrlScan() {
     var anchors = document.querySelectorAll('a[href]');
     for (var p = 0; p < 2; p++) {
       for (var i = 0; i < anchors.length; i++) {
@@ -121,7 +156,15 @@
   // the tab label. No params appended (the 1.1 lesson — PCC strips
   // them live; the tab's own href is the reliable form, and the
   // View All filter, if needed, is his 1 click on the page).
+  var _discProg = { url: '', val: '', at: 0 };
   function discoverProgNotesUrl() {
+    if (_discProg.url === location.href && _discProg.val) return _discProg.val;
+    if (_discProg.url === location.href && Date.now() - _discProg.at < 500) return '';
+    var v = discoverProgNotesUrlScan();
+    _discProg = { url: location.href, val: v, at: Date.now() };
+    return v;
+  }
+  function discoverProgNotesUrlScan() {
     var anchors = document.querySelectorAll('a[href]');
     for (var p = 0; p < 2; p++) {
       for (var i = 0; i < anchors.length; i++) {
@@ -173,12 +216,17 @@
   // carry { status, summary } — this script reads status + summary
   // ONLY, never note text. Returns landed flags + texts ('' when a
   // stop is not landed or there is no chart key / packet).
+  // Perf 2026-11-11 (round 3): refreshProg runs on every click and
+  // readStoredProg re-parsed the whole stored packet each time. Parse
+  // only when the stored string changed.
+  var _storedProgRaw = null, _storedProgOut = null;
   function readStoredProg() {
     var out = { dxLanded: false, behLanded: false, dxText: '', behText: '' };
     if (!chart) return out;
     try {
       var raw = localStorage.getItem(STORE_PREFIX + chart);
       if (!raw) return out;
+      if (raw === _storedProgRaw && _storedProgOut) return _storedProgOut;
       var stored = JSON.parse(raw);
       var stops = (stored && stored.stops) || {};
       var dx = stops.diagnoses || {}, beh = stops.behaviors || {};
@@ -190,6 +238,7 @@
         out.behLanded = true;
         out.behText = beh.summary || beh.text || '';
       }
+      _storedProgRaw = raw; _storedProgOut = out;
     } catch (e) {}
     return out;
   }
