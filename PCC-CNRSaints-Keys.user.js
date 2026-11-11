@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         CNR + Saints — Navigation keys (A + F + 1 + 2)
-// @version      1.58
+// @version      1.59
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-CNRSaints-Keys.user.js
 // @match        https://*.pointclickcare.com/*
@@ -1864,24 +1864,48 @@
           // Find the matching textarea
           var ta = docs[d].getElementById('link' + qkey) || docs[d].querySelector('textarea[name="' + qkey + '"]');
           if (!ta || !visible(ta)) continue;
-          // SCOPE: only MSE, HPI, Impression — identified by nearby label text.
-          // (His 2026-11-04: "largest 3" grabbed demographics.)
-          var isMain = false;
-          try {
-            // Walk up to find the section container, check its text
-            var el = ta;
-            for (var up = 0; up < 6 && el && el !== docs[d].body; up++) {
-              var t = (el.textContent || '').toLowerCase();
-              // Must contain the section label AND be reasonably scoped
-              // (not the whole page)
-              if (t.length < 2000) {
-                if (t.indexOf('mental status examination') !== -1) { isMain = true; break; }
-                if (t.indexOf('hpi / cc / progress') !== -1) { isMain = true; break; }
-                if (t.indexOf('impression/diagnosis/recommendation') !== -1) { isMain = true; break; }
+          // SCOPE: only MSE, HPI, Impression.
+          // PRIMARY: PCC question keys — stable identifiers for this form,
+          // independent of label text and page layout. Verified in capture
+          // TREE-0616: Cust_2_II_1 = MSE, Cust_2_I_2 = HPI,
+          // Cust_2_II_5 = Impression.
+          // (His 2026-11-11: H filled HPI only. The 1.56 label walk alone
+          // cannot see MSE/Impression: their labels sit in a sibling
+          // QuestionRow, and the shared TBODY is 3396 chars — over the
+          // 2000-char scope limit — while HPI sits in its own 258-char
+          // table, so only HPI matched.)
+          var MAIN_QKEYS = { 'Cust_2_II_1': true, 'Cust_2_I_2': true, 'Cust_2_II_5': true };
+          var isMain = !!MAIN_QKEYS[qkey];
+          if (!isMain) {
+            try {
+              // Fallback 1: the QuestionRow is the previous sibling of the
+              // AnswerRow holding this textarea — the label lives there,
+              // not in an ancestor container.
+              var row = ta;
+              while (row && row.tagName !== 'TR') row = row.parentElement;
+              var prev = row && row.previousElementSibling;
+              if (prev) {
+                var pt = (prev.textContent || '').toLowerCase();
+                if (pt.indexOf('mental status examination') !== -1 ||
+                    pt.indexOf('hpi / cc / progress') !== -1 ||
+                    pt.indexOf('impression/diagnosis/recommendation') !== -1) isMain = true;
               }
-              el = el.parentElement;
-            }
-          } catch (e2) {}
+              // Fallback 2: ancestor walk (original 1.56 logic) — a section
+              // container under 2000 chars holding the label.
+              if (!isMain) {
+                var el = ta;
+                for (var up = 0; up < 6 && el && el !== docs[d].body; up++) {
+                  var t = (el.textContent || '').toLowerCase();
+                  if (t.length < 2000) {
+                    if (t.indexOf('mental status examination') !== -1) { isMain = true; break; }
+                    if (t.indexOf('hpi / cc / progress') !== -1) { isMain = true; break; }
+                    if (t.indexOf('impression/diagnosis/recommendation') !== -1) { isMain = true; break; }
+                  }
+                  el = el.parentElement;
+                }
+              }
+            } catch (e2) {}
+          }
           if (!isMain) continue;
           var r = ta.getBoundingClientRect();
           sections.push({ ta: ta, hlink: hs[i], qkey: qkey, top: r.top });
