@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.18
+// @version      2.11.19
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -11995,6 +11995,7 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 						})(),
 						dx: d.dx || null,
 						key: chartNumMatch() || null,
+						clientId: chartClientId(),
 						ts: window.__tmChartTs
 					}));
 				}
@@ -13028,6 +13029,35 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				}
 			} catch (e) {}
 			return "";
+		}
+		// Numeric client ID (2026-11-16, h271, Core 2.11.19): PCC's stable
+		// client PK for the resident on this chart page — the same number
+		// the form page carries as #assessClientId / GLOBAL_CLIENT_ID.
+		// Unlike the rotating EID tokens it is stable per patient, so Copy
+		// proves same-patient in the form (where the chart number never
+		// appears) by matching it against the chart record's clientId.
+		// Memoized per load; null when the page exposes no numeric ID.
+		// (getCurrentClientIdNumber is PCC's own page function; the
+		// GLOBAL_CLIENT_ID fallback covers pages that define it instead.)
+		function chartClientId() {
+			try {
+				if (chartClientId._v !== undefined) return chartClientId._v;
+			} catch (e0) {}
+			var v = null;
+			try {
+				if (typeof window.getCurrentClientIdNumber === "function") {
+					var r = window.getCurrentClientIdNumber();
+					if (/^\d+$/.test(String(r))) v = String(r);
+				}
+			} catch (e1) {}
+			if (!v) {
+				try {
+					var g = window.GLOBAL_CLIENT_ID;
+					if (g && /^\d+$/.test(String(g))) v = String(g);
+				} catch (e2) {}
+			}
+			try { chartClientId._v = v; } catch (e3) {}
+			return v;
 		}
 		function plantChipSlots() {
 			var g = document.getElementById("tmGBtn");
