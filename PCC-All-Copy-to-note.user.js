@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.26
+// @version      1.27
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -177,15 +177,20 @@
   }
 
   function applyAgeSex(txt, val) {
-    var ageM = val.match(/\d{1,3}/);
-    if (!ageM) return txt;
-    if (/^([ \t]*HPI[ \t]+)xx\b/m.test(txt)) {
-      return txt.replace(/^([ \t]*HPI[ \t]+)xx\b/m, '$1' + val);   // NEW: "HPI xx" -> "HPI 86F"
+    // Whole-word rule (his, 2026-11-16): replace the word after HPI
+    // with the tile value — whatever word is there (wrong age, wrong
+    // letter, "xx", anything). The old code replaced the digits only
+    // and kept the note's sex letter, so "HPI 86F" stayed "86F"
+    // against tile "86M"; a non-number word replaced nothing at all.
+    if (!val) return txt;
+    if (/^([ \t]*HPI[ \t]+)\S+/m.test(txt)) {
+      return txt.replace(/^([ \t]*HPI[ \t]+)\S+/m, '$1' + val);
     }
-    // FOLLOW UP: update the age number only; the sex letter stays his
-    return txt.replace(/^([ \t]*HPI[ \t]+)\d{1,3}([MF])\b/m, function (m, p1, letter) {
-      return p1 + ageM[0] + letter;
-    });
+    // No word after HPI yet ("HPI" alone on its line): put the value in.
+    if (/^([ \t]*HPI)[ \t]*$/m.test(txt)) {
+      return txt.replace(/^([ \t]*HPI)[ \t]*$/m, function (m, p1) { return p1 + ' ' + val; });
+    }
+    return txt;
   }
 
   function allergySet(s) {
