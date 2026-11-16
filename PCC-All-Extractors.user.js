@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.1.1
+// @version      1.1.2
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -1151,16 +1151,22 @@ var __s3mod_Behavior_extractor = 1;
   // ladder's ~8s window) runs until the box is planted
   // and the notes fingerprint is stable across two
   // passes; after that, silence until his click.
-  var behTries = 0, behLastFp = null, behAgree = 0;
+  var behTries = 0, behLastFp = null, behAgree = 0, behExitFp, behExitAt = 0;
   var behNoLinksAt = 0;
   function behBurst() {
     tick();
     behTries++;
     var fp = notesFp();
-    if (fp && fp === behLastFp && document.getElementById('pnBehBox')) behAgree++;
+    // Perf round 4c: agree on fingerprint stability alone. The old test
+    // also required pnBehBox, so on a page where the box can never plant
+    // (AssessList) every list-changing click re-armed a full 32-tick
+    // burst that could never succeed. A stable fp across two passes
+    // means the DOM is settled; a later change alters fp and re-arms.
+    if (fp && fp === behLastFp) behAgree++;
     else behAgree = 0;
     behLastFp = fp;
     if (behAgree >= 1 || behTries >= 32) {
+      behExitFp = notesFp(); behExitAt = Date.now();
       // Perf 2026-11-11 (round 3b): the burst's goal is planting
       // pnBehBox. If it exits without the box, this page has no notes
       // view to plant into — click-restarts skip until 30s pass (a
@@ -1188,7 +1194,12 @@ var __s3mod_Behavior_extractor = 1;
     // already established this page has no notes view (box never
     // planted; flag expires after 30s, so a very late render still
     // gets found).
-    if (behNoLinksAt && Date.now() - behNoLinksAt < 30000) return;
+    // Perf round 4: restart only when the notes actually changed — the
+    // fingerprint is the precise signal. The old code re-armed a full 8s
+    // burst on every click once the 30s flag expired, even when nothing
+    // had changed. The 30s window stays as the backstop for a burst that
+    // exited before a late render.
+    if (behExitAt && Date.now() - behExitAt < 30000 && notesFp() === behExitFp) return;
     setTimeout(function () { behTries = 0; behLastFp = null; behAgree = 0; behBurst(); }, 350);
   }, true);
 })();
@@ -2233,17 +2244,19 @@ var __s3mod_Diagnosis_extractor = 1;
   // insertBox) runs until the box is planted and the
   // notes fingerprint is stable across two passes; after
   // that, silence until his click re-arms the burst.
-  var dxTries = 0, dxLastFp = null, dxAgree = 0;
+  var dxTries = 0, dxLastFp = null, dxAgree = 0, dxExitFp, dxExitAt = 0;
   var dxNoBoxAt = 0;
   function dxBurst() {
     tick();
     dxTries++;
     var tbl3 = notesTable();
     var fp3 = tbl3 ? tbl3.rows.length + ':' + (tbl3.textContent || '').length : '';
-    if (fp3 && fp3 === dxLastFp && document.getElementById('pnDxBox')) dxAgree++;
+    // Perf round 4c: agree on fingerprint stability alone (see behBurst).
+    if (fp3 && fp3 === dxLastFp) dxAgree++;
     else dxAgree = 0;
     dxLastFp = fp3;
     if (dxAgree >= 1 || dxTries >= 32) {
+      dxExitFp = (function () { var t = notesTable(); return t ? t.rows.length + ':' + (t.textContent || '').length : ''; })(); dxExitAt = Date.now();
       // Perf 2026-11-11 (round 3c): same flag as the behaviors burst —
       // if it exits without pnDxBox planted, this page has no notes
       // table to extract from; click-restarts skip for 30s. (The
@@ -2261,7 +2274,8 @@ var __s3mod_Diagnosis_extractor = 1;
       var now = Date.now();
       if (now - pccSchedLast < 800) return;
       pccSchedLast = now;
-      if (dxNoBoxAt && Date.now() - dxNoBoxAt < 30000) return;
+      // Perf round 4: fingerprint-gated restart (see behBurst above).
+      if (dxExitAt && Date.now() - dxExitAt < 30000) { var _fp3 = (function () { var t = notesTable(); return t ? t.rows.length + ':' + (t.textContent || '').length : ''; })(); if (_fp3 === dxExitFp) return; }
       setTimeout(function () { dxTries = 0; dxLastFp = null; dxAgree = 0; dxBurst(); }, 350);
   }, true);
 })();
@@ -2332,7 +2346,12 @@ var __s3mod_Diagnosis_extractor = 1;
   var NAME_SKIP = { other: 1, nurse: 1, clergy: 1, self: 1 };     // too ambiguous to guess from a name
 
   function clean(s) { return (s || '').replace(/\s+/g, ' ').trim(); }
-  function cellText(c) { return clean(c.innerText || c.textContent); }
+  // Perf 2026-11-16 (round 4, real-browser h266): textContent, NOT
+  // innerText — innerText forces a full layout per cell, and the
+  // relationships scan maps it over every cell of every table (13,141
+  // forced layouts per scan on AssessList, ~175ms each). clean() already
+  // collapses whitespace, so the values are identical.
+  function cellText(c) { return clean(c.textContent || ''); }
 
   function tidy(t) { return /^[A-Z]{2,4}$/.test(t) ? t : t.toLowerCase(); }
 
@@ -2374,6 +2393,10 @@ var __s3mod_Diagnosis_extractor = 1;
     var i;
     for (i = 0; i < tables.length; i++) {
       var hit = Array.from(tables[i].rows).some(function (r) {
+        // Perf round 4: row-level textContent pre-check (layout-free) —
+        // only map cells when the row can possibly be the header.
+        var rt = (r.textContent || '').toLowerCase();
+        if (rt.indexOf('name') === -1 || rt.indexOf('contact type') === -1) return false;
         var t = Array.from(r.cells).map(cellText);
         return t.some(function (x) { return /^name\b/i.test(x); }) && t.some(function (x) { return /^contact type\b/i.test(x); });
       });
@@ -2390,6 +2413,8 @@ var __s3mod_Diagnosis_extractor = 1;
     var rows = Array.from(table.rows);
     var hdr = -1, nameCol = -1, relCol = -1;
     for (var i = 0; i < rows.length; i++) {
+      var rt2 = (rows[i].textContent || '').toLowerCase();
+      if (rt2.indexOf('name') === -1 || rt2.indexOf('contact type') === -1) continue;
       var cells = Array.from(rows[i].cells).map(cellText);
       var n = cells.findIndex(function (x) { return /^name\b/i.test(x); });
       if (n > -1 && cells.some(function (x) { return /^contact type\b/i.test(x); })) {
@@ -2462,7 +2487,7 @@ var __s3mod_Diagnosis_extractor = 1;
 
   function run() {
     var table = contactsTable();
-    if (!table) return;
+    if (!table) return false;
     var out = extract(table) || 'N/A';
     var box = ensureBox(table);
     box.querySelector('#relOut').textContent = out;
@@ -2477,6 +2502,7 @@ var __s3mod_Diagnosis_extractor = 1;
         localStorage.setItem('pccFillRelationships', JSON.stringify({ value: out, ts: Date.now() }));
       } catch(err){}
     };
+    return true;
   }
 
   // Scheduling (Smooth Arrival, audit B1): the staggered
@@ -2485,7 +2511,7 @@ var __s3mod_Diagnosis_extractor = 1;
   // across two passes; after that, re-runs on his clicks
   // only. run() is idempotent - the box is created once
   // and its text updates in place.
-  var relTries = 0, relLastOut = null, relAgree = 0;
+  var relTries = 0, relLastOut = null, relAgree = 0, relNoTableAt = 0;
   function relBurst() {
     run();
     relTries++;
@@ -2494,7 +2520,13 @@ var __s3mod_Diagnosis_extractor = 1;
     if (cur !== null && cur === relLastOut) relAgree++;
     else relAgree = 0;
     relLastOut = cur;
-    if (relAgree >= 1 || relTries >= 24) return;
+    if (relAgree >= 1 || relTries >= 24) {
+      // Perf round 4: burst exited without the box — this page has no
+      // contacts table. Click-restarts skip for 30s (same pattern as
+      // beh/dx); a later click re-arms once the flag expires.
+      if (!document.getElementById('relCopyBtn')) relNoTableAt = Date.now();
+      return;
+    }
     setTimeout(relBurst, 250);
   }
   relBurst();
@@ -2504,6 +2536,7 @@ var __s3mod_Diagnosis_extractor = 1;
       var now = Date.now();
       if (now - pccSchedLast < 800) return;
       pccSchedLast = now;
+      if (relNoTableAt && Date.now() - relNoTableAt < 30000) return;
       setTimeout(run, 350);
   }, true);
 })();
@@ -2928,6 +2961,7 @@ var __s3mod_Diagnosis_extractor = 1;
   // Run only on the Orders screen.
   // ---------------------------------------------------------------------------
   function run() {
+    if (poSettledAt && Date.now() - poSettledAt < 60000) return;
     if (!onOrdersScreen()) { removeToggle(); return; }
     reorderOrderTables();
     mountToggle();
@@ -2943,12 +2977,16 @@ var __s3mod_Diagnosis_extractor = 1;
   // only on his clicks. reorderTable is no-op-safe, so
   // a repeat pass over sorted rows moves nothing.
   run();
-  let poTries = 0, poSeen = 0;
+  let poTries = 0, poSeen = 0, poSettledAt = 0;
   function poBurst() {
     run();
     poTries++;
     if (onOrdersScreen()) poSeen++; else poSeen = 0;
-    if (poSeen >= 2 || poTries >= 16) return;
+    // Perf round 4: burst exited without ever seeing the Orders screen —
+    // this page isn't Orders. Click-restarts skip for 60s (a >4s-late
+    // Orders render is still caught by a click after the window). The old
+    // code read document.body.innerText (a full-page layout) on EVERY click.
+    if (poSeen >= 2 || poTries >= 16) { if (poSeen === 0) poSettledAt = Date.now(); return; }
     setTimeout(poBurst, 250);
   }
   setTimeout(poBurst, 250);
@@ -2958,6 +2996,7 @@ var __s3mod_Diagnosis_extractor = 1;
     const now = Date.now();
     if (now - poLastClick < 800) return;
     poLastClick = now;
+    if (poSettledAt && Date.now() - poSettledAt < 60000) return;
     setTimeout(run, 350);
   }, true);
 })();
@@ -3270,7 +3309,19 @@ var __s3mod_Diagnosis_extractor = 1;
   // idempotent (data-g-badge marks the done ones), so a
   // badge is planted exactly once, beside its button, in
   // the pass that first sees the button.
-  var badgeTries = 0, badgeLastCount = -1, badgeAgree = 0;
+  var badgeTries = 0, badgeLastCount = -1, badgeAgree = 0, badgeNoBtnAt = 0;
+  // Perf round 4b: buttons addBadges could actually badge — visible and
+  // not already badged. Core's tiles carry data-g-badge="1" themselves
+  // (applyTile: the tile renders its own G indicator), and a hidden
+  // button (e.g. the rels box inside a collapsed Profile section) can
+  // never take one. Bounded: at most one getClientRects per unbadged
+  // button, and the common case (none unbadged) reads nothing.
+  function badgeableCount() {
+    var btns = document.querySelectorAll('.pcc-fill-copy:not([data-g-badge])');
+    var n = 0;
+    for (var i = 0; i < btns.length; i++) if (isShown(btns[i])) n++;
+    return n;
+  }
   function badgeBurst() {
     addBadges();
     badgeTries++;
@@ -3278,7 +3329,21 @@ var __s3mod_Diagnosis_extractor = 1;
     if (n === badgeLastCount && n > 0) badgeAgree++;
     else badgeAgree = 0;
     badgeLastCount = n;
-    if (badgeAgree >= 1 || badgeTries >= 32) return;
+    if (badgeAgree >= 1 || badgeTries >= 32) {
+      // Perf round 4: exited with no badges planted — this page has no
+      // (visible) Copy buttons. The old code re-ran the full 32-tick
+      // burst after EVERY click (8s of ticking per click on AssessList).
+      // Click-restarts skip for 30s; a later click re-arms once expired.
+      if (document.querySelectorAll('.pcc-g-badge').length === 0) badgeNoBtnAt = Date.now();
+      return;
+    }
+    // Perf round 4b: nothing left to badge right now — exit instead of
+    // ticking 32 times. A button appearing later is caught by the next
+    // click (the click gate re-checks badgeableCount).
+    if (badgeableCount() === 0) {
+      if (n === 0) badgeNoBtnAt = Date.now();
+      return;
+    }
     setTimeout(badgeBurst, 250);
   }
   badgeBurst();
@@ -3288,6 +3353,9 @@ var __s3mod_Diagnosis_extractor = 1;
     var now = Date.now();
     if (now - lastBadgeRun < 1000) return;
     lastBadgeRun = now;
+    if (badgeNoBtnAt && Date.now() - badgeNoBtnAt < 30000) return;
+    // Nothing to badge — no VISIBLE unbadged Copy buttons on this page.
+    if (badgeableCount() === 0) return;
     setTimeout(function () { badgeTries = 0; badgeLastCount = -1; badgeAgree = 0; badgeBurst(); }, 350);
   }, true);
 })();
