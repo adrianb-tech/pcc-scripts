@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Core (tiles & gather)
-// @version      2.11.17
+// @version      2.11.18
 // @description  The consolidated tile system: gatherer + dashboard + tiles + psychiatry in ONE script. One resident identity (the kernel), one boot ladder, one record. Replaces the separate Gatherer, Dashboard, More/Less and Psychiatry tab scripts.
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Core.user.js
@@ -13415,9 +13415,14 @@ Set the \`cycles\` parameter to \`"ref"\` to resolve cyclical schemas with defs.
 				dx: false
 			};
 			if (chart.ageSex) {
-				var hm = txt.match(/^[ \t]*HPI[ \t]+(\d{1,3})[MF]\b/m);
-				var qa = String(chart.ageSex).match(/\d{1,3}/);
-				v.age = !hm || !qa || hm[1] !== qa[0];
+				// Whole-word rule (his, 2026-11-16): red iff the word
+				// after HPI differs from the tile — age AND sex letter.
+				// The old test took the digits only, so "HPI 86F"
+				// against tile "86M" stayed quiet. Trailing punctuation
+				// on the word (a comma after the age) is not a difference.
+				var hm = txt.match(/^[ \t]*HPI[ \t]+(\S+)/m);
+				var word = hm ? hm[1].replace(/[.,;:]+$/, '') : null;
+				v.age = !word || word !== String(chart.ageSex);
 			}
 			if (chart.allergies && !chart.facCH && !chart.facBedford) {
 				var am = txt.match(/^[ \t]*Allergies[ \t]*:?[ \t]*(.*)$/m);
