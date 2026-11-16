@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Grab all (G)
-// @version      1.3
+// @version      1.4
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Grab-all.user.js
 // @match        https://*.pointclickcare.com/*
@@ -183,7 +183,17 @@
   // idempotent (data-g-badge marks the done ones), so a
   // badge is planted exactly once, beside its button, in
   // the pass that first sees the button.
-  var badgeTries = 0, badgeLastCount = -1, badgeAgree = 0;
+  var badgeTries = 0, badgeLastCount = -1, badgeAgree = 0, badgeNoBtnAt = 0;
+  // Perf round 4 (X8): visible + unbadged Copy buttons only. Core's tiles
+  // carry data-g-badge themselves, so on most pages this is 0 and the
+  // burst exits at once instead of ticking 32 times. A button appearing
+  // later is caught by the next click (the click gate re-checks).
+  function badgeableCount() {
+    var btns = document.querySelectorAll('.pcc-fill-copy:not([data-g-badge])');
+    var n = 0;
+    for (var i = 0; i < btns.length; i++) if (isShown(btns[i])) n++;
+    return n;
+  }
   function badgeBurst() {
     addBadges();
     badgeTries++;
@@ -191,7 +201,14 @@
     if (n === badgeLastCount && n > 0) badgeAgree++;
     else badgeAgree = 0;
     badgeLastCount = n;
-    if (badgeAgree >= 1 || badgeTries >= 32) return;
+    if (badgeAgree >= 1 || badgeTries >= 32) {
+      if (document.querySelectorAll('.pcc-g-badge').length === 0) badgeNoBtnAt = Date.now();
+      return;
+    }
+    if (badgeableCount() === 0) {
+      if (n === 0) badgeNoBtnAt = Date.now();
+      return;
+    }
     setTimeout(badgeBurst, 250);
   }
   badgeBurst();
@@ -201,6 +218,8 @@
     var now = Date.now();
     if (now - lastBadgeRun < 1000) return;
     lastBadgeRun = now;
+    if (badgeNoBtnAt && Date.now() - badgeNoBtnAt < 30000) return;
+    if (badgeableCount() === 0) return;
     setTimeout(function () { badgeTries = 0; badgeLastCount = -1; badgeAgree = 0; badgeBurst(); }, 350);
   }, true);
 })();
