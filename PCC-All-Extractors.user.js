@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.1.3
+// @version      1.1.4
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -3012,8 +3012,12 @@ var __s3mod_Diagnosis_extractor = 1;
   // been seen twice, and after that the pass re-runs
   // only on his clicks. reorderTable is no-op-safe, so
   // a repeat pass over sorted rows moves nothing.
-  run();
+  // The let MUST precede the first run() call: run() reads poSettledAt,
+  // and a let declared after its first use throws a TDZ ReferenceError
+  // that kills the whole script at load, so the S + Grab-all modules
+  // after this one never register. Found 2026-11-16 via h269.
   let poTries = 0, poSeen = 0, poSettledAt = 0;
+  run();
   function poBurst() {
     run();
     poTries++;
