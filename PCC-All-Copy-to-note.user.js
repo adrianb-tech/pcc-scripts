@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.27
+// @version      1.28
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -83,19 +83,79 @@
   // This document's patient, via Core's gatherer when available.
   // null when Core hasn't resolved one — callers must NOT treat null
   // as a patient. (residentKey() is memoized in Core, so this is cheap.)
+  //
+  // EID DEFERRAL (2026-11-16, second Ear FAIL on 1.28): a rotating
+  // eid: result must NEVER shadow the stable cid:. Core runs on the
+  // form page too, so the local key() is the form URL's EID token
+  // ("eid:EID_..."), NOT null — verified against the real Core 2.11.19
+  // dist eval'd in the real TREE-0616 follow-up form capture at its
+  // real URL: residentKey() has no resident header on the form page
+  // and falls through to location.href's ESOLclientid. Only a
+  // chart:-prefixed key is accepted from the local gatherer or the
+  // opener; an eid: result defers to the opener, then to
+  // formClientId(). eid: survives only as the last-resort fallback
+  // (the old H4 behavior) — the form URL's EID first, then a
+  // remembered eid: (a link-derived local one, or the opener's).
   function hereKey() {
+    var eidFallback = null;
+    function chartKeyOnly(k) {
+      if (!k) return null;
+      if (String(k).indexOf('chart:') === 0) return k;
+      if (String(k).indexOf('eid:') === 0 && !eidFallback) eidFallback = k;
+      return null;
+    }
     try {
-      if (window.__tmGather && window.__tmGather.key) { var k = window.__tmGather.key(); if (k) return k; }
+      if (window.__tmGather && window.__tmGather.key) { var k = chartKeyOnly(window.__tmGather.key()); if (k) return k; }
     } catch (e) {}
+    // Opener (2026-11-16, h271): a NEW consult opens as a popup from the
+    // chart page (PCC's launchNewAssessment uses pccPopup). The popup has
+    // no resident header, so the local key() cannot resolve — but the
+    // opener (the chart page) can. Same-origin; guarded. Follow-up forms
+    // open by same-tab navigation (window.location), so they have no
+    // opener — the numeric ID below covers them. Same treatment as the
+    // local key: only a chart: opener key is accepted here; an eid:
+    // opener key defers to formClientId() (its token is the chart
+    // page's URL EID, a different page's token).
+    try {
+      var op = window.opener;
+      if (op && op.__tmGather && op.__tmGather.key) { var ok = chartKeyOnly(op.__tmGather.key()); if (ok) return ok; }
+    } catch (e1) {}
+    // Numeric client ID (2026-11-16, h271): the form page carries PCC's
+    // stable client PK — hidden #assessClientId / ESOLclientid inputs and
+    // the GLOBAL_CLIENT_ID global (TREE-0616). Unlike the rotating EID
+    // tokens, the number is stable per patient, so it identifies the
+    // form's patient. Returned as 'cid:<digits>'; readQueue proves
+    // same-patient against the chart record's clientId (Core 2.11.19).
+    try {
+      var cid = formClientId();
+      if (cid) return 'cid:' + cid;
+    } catch (e2) {}
     // Fallback (2026-11-11, wrong-age case): the form/chart URL carries
-    // the patient EID (ESOLclientid). Core's gatherer may not have
-    // resolved yet (its header scan has a 10s miss TTL), but the URL is
-    // available immediately. Without this, here is null and the patient
-    // gates in readQueue below are skipped entirely.
+    // the patient EID (ESOLclientid). An EID token rotates per page/link
+    // and identifies nothing stable — it only keeps here non-null so the
+    // patient gates run; a queue whose stamp is a chart number can never
+    // match it (readQueue refuses cross-format without cid proof).
     try {
       var m = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
       if (m) return 'eid:' + m[1];
-    } catch (e2) {}
+    } catch (e3) {}
+    if (eidFallback) return eidFallback;
+    return null;
+  }
+  // The form's own numeric client ID (PCC's ESOLclientid PK): hidden
+  // #assessClientId first, then any numeric ESOLclientid input, then the
+  // GLOBAL_CLIENT_ID page global. Digits only; anything else is not a
+  // client ID. null when the page carries none.
+  function formClientId() {
+    try {
+      var el = document.querySelector('#assessClientId');
+      if (el && /^\d+$/.test(String(el.value || ''))) return String(el.value);
+    } catch (e0) {}
+    try {
+      var els = document.querySelectorAll('input[name="ESOLclientid"]');
+      for (var i = 0; i < els.length; i++) { var v = els[i] && els[i].value; if (v && /^\d+$/.test(String(v))) return String(v); }
+    } catch (e1) {}
+    try { var g = window.GLOBAL_CLIENT_ID; if (g && /^\d+$/.test(String(g))) return String(g); } catch (e2) {}
     return null;
   }
   // "chart:BC123456" -> "bc123456"; "eid:EID_ABC123" -> "eid_abc123".
@@ -644,10 +704,20 @@
       var seen = parseInt(localStorage.getItem(topic.seen) || '0', 10);
       if (req.ts <= seen) return null;                    // already used
       // Wrong patient: the queue's resident stamp must match this
-      // document's patient when both are known. A queue from another
-      // patient never lands, at any age.
-      if (here && req.resident && normKey(req.resident) !== normKey(here)) return null;
-      var samePatient = !!(here && req.resident && normKey(req.resident) === normKey(here));
+      // document's patient when both are known AND in the same format.
+      // A chart: stamp and an eid: stamp never equal each other — they
+      // are two IDs for the same patient (a Dashboard click stamps
+      // chart:, the form resolves eid: from its URL), so a format
+      // mismatch is NOT proof of a different patient. Only a same-format
+      // mismatch refuses here; the cross-format case is settled by the
+      // corroboration gate below (1.28). This is the same rule Core's
+      // clearStaleFillKeys got in 2.11.15, and what the normKey comment
+      // always promised ("a format mismatch falls back to the clock
+      // rules, never to a false match").
+      var reqFmt = req.resident ? String(req.resident).split(':')[0] : null;
+      var hereFmt = here ? String(here).split(':')[0] : null;
+      if (here && req.resident && reqFmt === hereFmt && normKey(req.resident) !== normKey(here)) return null;
+      var samePatient = !!(here && req.resident && reqFmt === hereFmt && normKey(req.resident) === normKey(here));
       var age = Date.now() - req.ts;
       var chart = chartRecord();
       // Chart-record patient check (2026-11-11, wrong-age case):
@@ -659,11 +729,74 @@
       // differ, the chart is stale: ignore it. If the chart's key and the
       // queue's resident are both known chart numbers and differ, the
       // queue is stale: refuse it.
+      // Digit-tail identity (2026-11-16, Ear FAIL on 1.28): Core writes
+      // tmTileChart.key as DIGITS ONLY — chartNumMatch() returns
+      // __tmCore.chartDigits() or a (\d{3,}) capture ("1802714" for
+      // chart BC1802714) — while queues stamp "chart:BC1802714" and
+      // here resolves "chart:BC1802714". The letters are a facility
+      // prefix, not identity, so chartKey comparisons use the trailing
+      // digits on both sides. Empty tails never match: an identifier
+      // with no trailing digits (an EID token, a placeholder key) must
+      // never equal another by empty string. The helpers live inside
+      // readQueue so the function stays self-contained for the
+      // harnesses, which extract readQueue alone (h263/h271).
+      function digitsOf(k) { var m = String(k || '').match(/(\d+)\s*$/); return m ? m[1] : ''; }
+      function sameChartKey(a, b) { var da = digitsOf(a), db = digitsOf(b); return !!(da && db && da === db); }
       var chartKey = chart && chart.key ? normKey(chart.key) : null;
       var hereIsChart = !!(here && here.indexOf('chart:') === 0);
       var reqIsChart = !!(req.resident && req.resident.indexOf('chart:') === 0);
-      if (chartKey && hereIsChart && chartKey !== normKey(here)) chart = null;
-      if (chart && chartKey && reqIsChart && chartKey !== normKey(req.resident)) return null;
+      if (chartKey && hereIsChart && !sameChartKey(chartKey, here)) chart = null;
+      if (chart && chartKey && reqIsChart && !sameChartKey(chartKey, req.resident)) return null;
+      // Numeric-ID proof (2026-11-16, h271): here is 'cid:<digits>' — the
+      // form's own assessClientId / GLOBAL_CLIENT_ID, PCC's stable client
+      // PK — and the chart record carries the same digits (Core 2.11.19
+      // records it on the chart page). That proves the chart record's
+      // patient IS the form's patient. Combined with the queue matching
+      // the chart record (check 2 above refuses a chart:-stamped queue
+      // that differs from the record — digit tails, since the record's
+      // key is digits-only and the stamp carries the facility prefix),
+      // the queue is this form's patient's. Only a chart:-stamped queue
+      // gets this proof; an EID-stamped or unstamped queue's patient is
+      // unknowable and keeps the clock rules.
+      var cidProof = !!(here && here.indexOf('cid:') === 0 && chart && chart.clientId && String(chart.clientId) === here.slice(4) && reqIsChart && chartKey && sameChartKey(chartKey, req.resident));
+      if (cidProof) samePatient = true;
+      // Same-document proof (2026-11-16, third Ear FAIL on 1.28): G (or a
+      // tile click) pressed inside a form doc stamps the queue with the
+      // form doc's own __tmGather.key() — the URL's EID token. After the
+      // eid deferral, hereKey() resolves cid: (follow-up, from
+      // #assessClientId) or the opener's chart: (NEW-form popup), so the
+      // queue is cross-format with no cidProof and readQueue refuses it
+      // — G-in-form is dead (Ear G1/G3). But an eid:-stamped queue whose
+      // token equals THIS form's own URL EID, read by a document whose
+      // own key() is itself eid: (a headerless form doc), could only
+      // have been written by a headerless document carrying this URL
+      // token — this form doc itself, or another headerless doc opened
+      // from the same link. EID tokens rotate per page/link and are
+      // never reused across patients, so that writer is this form's
+      // patient. The local-key check matters: a document WITH a resident
+      // header (local key chart:) stamps chart:, never eid: — an eid:
+      // queue read there is a genuine reverse mismatch (h271 M6) and
+      // still refuses. The proof only sets samePatient; the value checks
+      // below still apply (h262 G11: a matching-token queue whose value
+      // disagrees with the live chart refuses).
+      var sameDocProof = false;
+      try {
+        var lk = (window.__tmGather && window.__tmGather.key) ? window.__tmGather.key() : null;
+        if (lk && String(lk).indexOf('eid:') === 0 && req.resident && String(req.resident).indexOf('eid:') === 0) {
+          var mu = location.href.match(/ESOLclientid=(EID_[A-Za-z0-9]+)/);
+          if (mu && ('eid:' + mu[1]) === String(req.resident)) sameDocProof = true;
+        }
+      } catch (e4) {}
+      if (sameDocProof) samePatient = true;
+      // Cross-format default (2026-11-16, h271): a chart: stamp and a
+      // cid:/eid: here can never be compared directly. Without positive
+      // proof (cidProof or the same-document proof above) the queue is
+      // unproven for this form — refuse, same as here-null (1.25 B3).
+      // The clock rules alone never land a cross-format queue: a stale
+      // queue and a stale chart record from the same previous patient
+      // agree with each other (h263), so value agreement is not
+      // identity proof.
+      if (here && req.resident && reqFmt !== hereFmt && !cidProof && !sameDocProof) return null;
       // No patient proof at all (2026-11-11, wrong-age case): when this
       // document's patient cannot be resolved (here is null even after
       // the URL fallback), no queue may land on clock rules alone. A
