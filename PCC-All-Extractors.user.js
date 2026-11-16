@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — PCC Extractors (all miners)
-// @version      1.1.2
+// @version      1.1.3
 // @description  Stage 3 merge: BIMS, Behavior, Diagnosis, Relationships, Vitals, Psych orders, S-key, Header copy table, Grab all - nine keypress miners in ONE script, each module verbatim in its own scope. Replaces the nine separate extractor scripts.
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Extractors.user.js
@@ -18,7 +18,12 @@
     var BIMS_RE = /BIMS|cognitive|cognitively|impair|intact/i;
     var PSYCH_RE = /psychiatr|psych\s*:|psych\s+consult/i;
     var MDACK_RE = /MD:\s*Psychiatry\s+Consult\s+Ack/i;      // "MD: Psychiatry Consult Acknowledgement"
-    var DATE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}$/;
+    // Perf round 5: unanchored - the date cell's textContent carries a
+    // hidden duplicate ("  9/21/20269/21/2026": a display:none span + the
+    // visible date), so the old ^...$ never matched it and the finder fell
+    // through to the LOCK-date cell. Extract the FIRST date substring
+    // instead; identical results under innerText (clean cells).
+    var DATE_RE = /\d{1,2}\/\d{1,2}\/\d{4}/;
     var SCORE_RE = /^\d{1,2}(\.\d+)?$/;
     var STYLE = {
         bims:  { bg: '#cfe8fb', bar: '#007bb6' },   // blue
@@ -27,7 +32,12 @@
     };
     var KIND_RANK = { bims: 0, psych: 1, mdack: 2 };           // display order
 
-    function txt(el) { return (el.innerText || el.textContent || '').trim(); }
+    // Perf round 5: was innerText-first (layout per cell - readRow maps
+    // EVERY cell of EVERY row, 26,202 forced layouts on the assessments
+    // list at injection). Cell text is plain text: textContent is
+    // identical here and forces no layout. (Round 4 made the same swap
+    // for cellText; accuracy held.)
+    function txt(el) { return (el.textContent || '').trim(); }
 
     function findByLabel(root, sel, re) {
         return Array.from(root.querySelectorAll(sel)).find(function (el) {
@@ -55,7 +65,14 @@
     function readRow(row) {
         if (row.querySelector('tr') || row.cells.length < 6) return null;
         var t = Array.from(row.cells).map(txt);
-        var dateStr = t.find(function (c) { return DATE_RE.test(c); }); // first date = assessment/form date
+        // First date = assessment/form date. Extract the matched substring:
+        // the date cell's textContent is doubled (hidden span + visible),
+        // so the whole cell is never a clean date.
+        var dateStr = null;
+        for (var _di = 0; _di < t.length; _di++) {
+            var _dm = DATE_RE.exec(t[_di]);
+            if (_dm) { dateStr = _dm[0]; break; }
+        }
         if (!dateStr) return null;
         var rowText = t.join(' | ');
         var kind = MDACK_RE.test(rowText) ? 'mdack'
@@ -164,10 +181,29 @@
     }
 
     // The Forms/Assessments list has a "Score" column header; the resident search list does not.
+    // Perf round 5: txt() reads innerText (layout per cell - 26,296 reads
+    // on the assessments list, ~270ms of forced layout at injection). The
+    // header text is plain text: textContent is identical here and forces
+    // no layout. Scope to <th> first (the header is a th); fall back to
+    // td only if no th matched. Cached per page load - the header row
+    // does not change without navigation (Apply refreshes rows, not
+    // headers); the click-restart below clears it on Apply/row-change.
+    var _scoreHeaderCache = null;
     function hasScoreHeader() {
-        return Array.from(document.querySelectorAll('th,td')).some(function (c) {
-            return /^Score$/i.test(txt(c));
-        });
+        if (_scoreHeaderCache !== null) return _scoreHeaderCache;
+        var found = false, i;
+        var ths = document.querySelectorAll('th');
+        for (i = 0; i < ths.length; i++) {
+            if (/^Score$/i.test((ths[i].textContent || '').trim())) { found = true; break; }
+        }
+        if (!found) {
+            var tds = document.querySelectorAll('td');
+            for (i = 0; i < tds.length; i++) {
+                if (/^Score$/i.test((tds[i].textContent || '').trim())) { found = true; break; }
+            }
+        }
+        _scoreHeaderCache = found;
+        return found;
     }
 
     function tick() {
@@ -263,7 +299,7 @@
         var _rowsChanged = false;
         try { _rowsChanged = (bimsLastTr !== -1 && document.querySelectorAll('tr').length !== bimsLastTr); } catch (e3) {}
         if (!_apply && !_rowsChanged) return;
-        setTimeout(function () { bimsLastSig = null; bimsAgree = 0; bimsTries = 0; bimsBurst(); }, 350);
+        setTimeout(function () { _scoreHeaderCache = null; bimsLastSig = null; bimsAgree = 0; bimsTries = 0; bimsBurst(); }, 350);
     }, true);
 })();
 ;
