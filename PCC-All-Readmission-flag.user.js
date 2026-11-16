@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.13
+// @version 1.14
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -28,7 +28,15 @@
   // Latest Form Date among psychiatry forms.
   // CNR/Saints: "Consult Form - Psychiatry" under "Form Date".
   // Boro Park: "Psych: Consult" assessments under "Assessment Date".
+  // Perf round 5: the burst called this every 250ms x28 and each call
+  // ran a full TreeWalker (parent-climbing filter per text node) plus a
+  // tr loop. Fingerprint-gate on the row count: the grid stages by ADDING
+  // rows, so an unchanged tr count means no new psych rows can exist.
+  // The burst's stability + publish-change gates still apply on top.
+  var _lfCache = null, _lfTr = -1;
   function lastPsychForm(){
+    var _trs0 = document.querySelectorAll('tr');
+    if (_lfCache && _trs0.length === _lfTr) return _lfCache;
     // v1.10: mine psych ROWS, nothing else. Three poisons
     // killed the earlier versions: script/style text (the
     // Gatherer's packet JSON reads like psych rows), the
@@ -76,7 +84,7 @@
       }
     }
     var headerRow = false;
-    var trs = document.querySelectorAll('tr');
+    var trs = _trs0;
     for (var i = 0; i < trs.length; i++) {
       var ht = (trs[i].textContent || '').toLowerCase();
       // A real column-header row is SHORT. The Dash shell
@@ -88,25 +96,40 @@
       if (ht.indexOf('form date') !== -1 || ht.indexOf('assessment date') !== -1) { headerRow = true; break; }
     }
     var isList = headerRow || psychRows > 0 || !!document.getElementById('assessments');
-    return { tableFound: isList, d: best, s: bestStr };
+    var _out = { tableFound: isList, d: best, s: bestStr };
+    _lfCache = _out; _lfTr = _trs0.length;
+    return _out;
   }
 
   // Finds the date text next to the "Admission (re-entry)" label
+  // Perf round 5: the burst called this every 250ms x28 and each call
+  // walked EVERY text node (~180ms/tick on the assessments list). The
+  // re-entry line lives in the header, not the staging grid, so a FOUND
+  // result is cached per page load (a null is never cached - late render
+  // is still caught). Cheap pre-check first: one textContent read (no
+  // layout) proves the page has no re-entry line at all.
+  var _reCache = null;
   function reentryDate(){
+    if (_reCache) return _reCache;
+    var _tx = (document.body ? document.body.textContent : '') || '';
+    if (!/Admission\s*\(\s*re-?entry\s*\)/i.test(_tx)) return null;
     var w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, null), nodes = [], n;
     while ((n = w.nextNode())) nodes.push(n);
+    var out = null;
     for (var i = 0; i < nodes.length; i++){
       if (!/Admission\s*\(\s*re-?entry\s*\)/i.test(nodes[i].nodeValue)) continue;
       var same = nodes[i].nodeValue.match(/\d{1,2}\/\d{1,2}\/\d{4}/);
-      if (same) return { node: nodes[i], str: same[0] };
+      if (same) { out = { node: nodes[i], str: same[0] }; break; }
       for (var j = i + 1; j < nodes.length; j++){
         var v = nodes[j].nodeValue.trim();
         if (!v) continue;
-        if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) return { node: nodes[j], str: v };
+        if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(v)) { out = { node: nodes[j], str: v }; break; }
         break;
       }
+      if (out) break;
     }
-    return null;
+    if (out) _reCache = out;
+    return out;
   }
 
   function clear(){
