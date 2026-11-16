@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Copy to note
-// @version      1.25
+// @version      1.26
 // @updateURL    https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @downloadURL  https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Copy-to-note.user.js
 // @match        https://*.pointclickcare.com/*
@@ -587,10 +587,16 @@
     setTimeout(publishTileWarn, 50);
   }, true);
 
-  var noteFieldCache = null, noteFieldUrl = '';
+  var noteFieldCache = null, noteFieldUrl = '', noteFieldMissAt = 0, noteFieldMissUrl = '';
   function findNoteField() {
     try {
       if (noteFieldCache && noteFieldUrl === location.href && document.contains(noteFieldCache)) return noteFieldCache;
+      if (noteFieldCache && !document.contains(noteFieldCache)) noteFieldCache = null;
+      // Miss cache (1.26, mirrors Core 2.11.17 C5): on pages with no note
+      // field — e.g. the resident search results list — every input/click/
+      // storage event re-ran the full label scan. Cache the miss for 2s,
+      // per URL, so a miss on one page never blocks a find on another.
+      if (!noteFieldCache && noteFieldMissAt && noteFieldMissUrl === location.href && Date.now() - noteFieldMissAt < 2000) return null;
     } catch (e0) {}
     var labels = document.querySelectorAll('td, th, div, span, label, b');
     for (var i = 0; i < labels.length; i++) {
@@ -609,6 +615,7 @@
       if (area > bestArea && r.width > 100 && r.height > 50) { bestArea = area; best = tas[k]; }
     }
     if (best) { noteFieldCache = best; try { noteFieldUrl = location.href; } catch (e0c) {} }
+    else { try { noteFieldMissAt = Date.now(); noteFieldMissUrl = location.href; } catch (e0d) {} }
     return best;
   }
 
