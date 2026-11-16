@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Every facility — Readmission flag
-// @version 1.14
+// @version 1.15
 // @updateURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @downloadURL https://raw.githubusercontent.com/adrianb-tech/pcc-scripts/main/PCC-All-Readmission-flag.user.js
 // @match        https://*.pointclickcare.com/*
@@ -33,10 +33,60 @@
   // tr loop. Fingerprint-gate on the row count: the grid stages by ADDING
   // rows, so an unchanged tr count means no new psych rows can exist.
   // The burst's stability + publish-change gates still apply on top.
-  var _lfCache = null, _lfTr = -1;
+  // v1.15 (his rule, 2026-11-16): a psych row is DONE only when it is
+  // finished — Status anything but Incomplete, and Score anything but
+  // "1.0". An opened-not-done consult (they open it for him at CNR /
+  // Saints) is not psych having seen the patient. Returns the latest
+  // DONE date (d/s) plus the latest date over ALL psych rows (dAny/sAny)
+  // so update() can tell "no completed psych form" from "no psych rows".
+  var _lfCache = null, _lfTr = -1, _scoreIdx = -1, _statusIdx = -1;
+  // Strict facility (his rule, 2026-11-16): Boro Park / Crown Heights /
+  // Bedford keep the old test — NEW only when no psych consult at all.
+  // Anywhere else (CNR / Saints, where they open the consult for him),
+  // all-not-done psych rows also mean NEW. Cached per load; the
+  // facility never changes under a page.
+  var _strictFac = null;
+  function isStrictFacility(){
+    if (_strictFac !== null) return _strictFac;
+    _strictFac = false;
+    try {
+      var els = document.querySelectorAll('select, button, a, span, div, td');
+      for (var i = 0; i < els.length; i++) {
+        var tx = (els[i].textContent || '').trim();
+        if (tx.length > 90 || tx.length < 6) continue;
+        if (/boro\s*park|bedford|crown\s*heights/i.test(tx)) { _strictFac = true; break; }
+      }
+    } catch (e) {}
+    return _strictFac;
+  }
+  function rowOf(node){
+    var el = node;
+    while (el && el.tagName !== 'TR') el = el.parentElement;
+    return el;
+  }
+  function rowCells(tr){
+    var out = [];
+    if (!tr) return out;
+    var tds = tr.cells || tr.querySelectorAll('td, th');
+    for (var i = 0; i < tds.length; i++) out.push((tds[i].textContent || '').replace(/\s+/g, ' ').trim());
+    return out;
+  }
   function lastPsychForm(){
     var _trs0 = document.querySelectorAll('tr');
     if (_lfCache && _trs0.length === _lfTr) return _lfCache;
+    // Column indices for Score / Status, from the header row (the TR
+    // with a cell reading exactly "Score"). Falls back to -1, in which
+    // case the row readers scan cells by content instead.
+    _scoreIdx = -1; _statusIdx = -1;
+    for (var hi = 0; hi < _trs0.length; hi++) {
+      var hc = rowCells(_trs0[hi]);
+      var si = -1, ti = -1;
+      for (var hj = 0; hj < hc.length; hj++) {
+        if (/^score$/i.test(hc[hj])) si = hj;
+        if (/^status$/i.test(hc[hj])) ti = hj;
+      }
+      if (si !== -1 || ti !== -1) { _scoreIdx = si; _statusIdx = ti; break; }
+    }
     // v1.10: mine psych ROWS, nothing else. Three poisons
     // killed the earlier versions: script/style text (the
     // Gatherer's packet JSON reads like psych rows), the
@@ -50,7 +100,8 @@
     // prove it is a forms list - a header row naming the
     // date column, the #assessments container, or psych
     // rows actually found.
-    var best = null, bestStr = '', psychRows = 0;
+    var best = null, bestStr = '', bestAny = null, bestAnyStr = '';
+    var seenTrs = [], psychRows = 0, doneRows = 0;
     var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
       acceptNode: function (n) {
         var p = n.parentElement;
@@ -77,10 +128,32 @@
         el = el.parentElement;
         depth++;
       }
-      if (found) {
-        psychRows++;
-        var d = parseDate(found);
-        if (d && (!best || d > best)) { best = d; bestStr = found; }
+      if (!found) continue;
+      // One record per ROW, not per text node: several nodes in the
+      // same row would otherwise count it several times.
+      var tr = rowOf(node);
+      if (tr && seenTrs.indexOf(tr) !== -1) continue;
+      if (tr) seenTrs.push(tr);
+      var cells = rowCells(tr);
+      var status = _statusIdx >= 0 ? (cells[_statusIdx] || '') : '';
+      var score = _scoreIdx >= 0 ? (cells[_scoreIdx] || '') : '';
+      if (!status) {
+        for (var ci = 0; ci < cells.length; ci++) {
+          if (/^(incomplete|complete)$/i.test(cells[ci])) { status = cells[ci]; break; }
+        }
+      }
+      if (!score) {
+        for (var cj = 0; cj < cells.length; cj++) {
+          if (/^1\.0$/.test(cells[cj])) { score = cells[cj]; break; }
+        }
+      }
+      var done = !(/^incomplete$/i.test(status) || score === '1.0');
+      psychRows++;
+      if (done) doneRows++;
+      var d = parseDate(found);
+      if (d) {
+        if (!bestAny || d > bestAny) { bestAny = d; bestAnyStr = found; }
+        if (done && (!best || d > best)) { best = d; bestStr = found; }
       }
     }
     var headerRow = false;
@@ -96,7 +169,9 @@
       if (ht.indexOf('form date') !== -1 || ht.indexOf('assessment date') !== -1) { headerRow = true; break; }
     }
     var isList = headerRow || psychRows > 0 || !!document.getElementById('assessments');
-    var _out = { tableFound: isList, d: best, s: bestStr };
+    var _out = { tableFound: isList, d: best, s: bestStr,
+      dAny: bestAny, sAny: bestAnyStr, psychRows: psychRows,
+      allNotDone: psychRows > 0 && doneRows === 0, strictFac: isStrictFacility() };
     _lfCache = _out; _lfTr = _trs0.length;
     return _out;
   }
@@ -260,25 +335,36 @@
     var rd = parseDate(re.str);
     if (!rd){ clear(); return; }
     if (!lf.d){
-      // No psych forms at all = a NEW admission, never a
-      // readmission (his rule, 2026-10-19). v1.6 cleared
-      // the box but left a stale tmReadmitNote behind, so
-      // the warning kept showing on every other tab.
-      if (!stable('new|' + re.str, 3000)) return;
-      dropNote();
-      publishVerdict('new', re.str, '');
-      if (SHOW_OK) render(re.node, 'ok', '', 'readmission check: no psych form in this list');
-      else clear();
-      return;
+      // No COMPLETED psych form on record. NEW (his rule, 2026-10-19,
+      // extended 2026-11-16): no psych rows at all (any facility), OR
+      // every psych row is opened-not-done (Status Incomplete / Score
+      // 1.0) at a facility where they open the consult for him
+      // (CNR/Saints) — never a readmission. At Boro Park / Crown /
+      // Bedford the old test stands: any psych row counts, so a
+      // not-done row there falls through to the date comparison below
+      // with the latest row date. v1.6 cleared the box but left a
+      // stale tmReadmitNote behind, so the warning kept showing on
+      // every other tab.
+      if (lf.psychRows === 0 || (lf.allNotDone && !lf.strictFac)) {
+        if (!stable('new|' + re.str, 3000)) return;
+        dropNote();
+        publishVerdict('new', re.str, '');
+        if (SHOW_OK) render(re.node, 'ok', '', 'readmission check: no psych form in this list');
+        else clear();
+        return;
+      }
     }
-    if (rd >= lf.d) {
+    // The last psych form: the latest COMPLETED one when there is one,
+    // else (strict facility, only not-done rows) the latest row date.
+    var ld = lf.d || lf.dAny, ls = lf.s || lf.sAny;
+    if (rd >= ld) {
       // A readmission alert must be STABLE: the forms
       // grid populates in stages, and a half-loaded list
       // can show a bogus old 'latest' date on an early
       // pass. Publish only when two passes agree.
-      if (!stable('readmit|' + re.str + '|' + lf.s)) return;
-      var wrote = publishVerdict('readmit', re.str, lf.s);
-      render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + lf.s);
+      if (!stable('readmit|' + re.str + '|' + ls)) return;
+      var wrote = publishVerdict('readmit', re.str, ls);
+      render(re.node, 'alert', 'READMISSION', 'on/after last psych form ' + ls);
       // Publish the verdict so the tile-row script can show the same
       // warning beside the G button in the header bar (his ask,
       // 2026-10-14). Keyed to this resident + this re-entry date.
@@ -286,13 +372,13 @@
         localStorage.setItem('tmReadmitNote', JSON.stringify({ id: chartId(), date: re.str, ts: Date.now() }));
       } catch (e) {}
     } else {
-      if (!stable('ok|' + re.str + '|' + lf.s)) return;
-      publishVerdict('ok', re.str, lf.s);
+      if (!stable('ok|' + re.str + '|' + ls)) return;
+      publishVerdict('ok', re.str, ls);
       try {
         var cur = JSON.parse(localStorage.getItem('tmReadmitNote') || 'null');
         if (cur && cur.date === re.str) localStorage.removeItem('tmReadmitNote');
       } catch (e) {}
-      if (SHOW_OK) render(re.node, 'ok', '', 're-entry ' + re.str + ' is before last psych form ' + lf.s + ' - OK');
+      if (SHOW_OK) render(re.node, 'ok', '', 're-entry ' + re.str + ' is before last psych form ' + ls + ' - OK');
       else clear();
     }
   }
